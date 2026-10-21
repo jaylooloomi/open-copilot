@@ -51,11 +51,12 @@ Expected: 沒有輸出。
 | `ExportFormat` | `export/filename.ts` 匯出 `type ExportFormat = 'md' \| 'docx' \| 'txt' \| 'pdf'`，`toFilename` 與 `exportNote` 共用。 |
 | 狀態訊息 | `NoteActions` 內 `<span role="status" class="oc-action-status">`，3 秒（`STATUS_CLEAR_MS`）後自動清除。文字：`已複製全文`、`複製失敗，請再試一次`、`已匯出 Markdown`、`已匯出 Word`、`已匯出純文字`、`匯出失敗，請再試一次`。PDF 成功不顯示訊息（列印對話框本身就是回饋）。 |
 | 使用者取消存檔 | `FileSaver` 介面不變（`save(): Promise<void>`）。約定：**使用者在存檔對話框／分享選單按取消時，`save` 以 `name === 'AbortError'` 的錯誤 reject**（例如 `new DOMException('使用者取消', 'AbortError')`），`NoteActions` 遇到它不顯示任何訊息；其他錯誤顯示「匯出失敗，請再試一次」；正常 resolve 顯示「已匯出 …」。M4 的 `desktopFileSaver`（`ocDesktop.saveFile` 回傳 `false`）與 M5 的 `capacitorFileSaver`（分享被取消）請照此約定。 |
-| 未轉寫片段 | 所有匯出器以節點名稱 `'transcriptGap'`（`export/common.ts` 的 `TRANSCRIPT_GAP_TYPE`）辨識，一律輸出 `TRANSCRIPT_GAP_TEXT = '[未轉寫片段]'`。`toHtml` 在呼叫 `generateHTML` 之前就把它換成文字，所以 M3b 在 `createExtensions()` 加入 `TranscriptGap` 後，剪貼簿與 PDF 也不會出現「⚠ 第 N 段未轉寫・重試」。M3b 可直接 `import { TRANSCRIPT_GAP_TYPE } from '../export/common'` 當作 Node 的 `name`。 |
+| 未轉寫片段 | 所有匯出器以節點名稱 `'transcriptGap'`（`export/common.ts` 的 `TRANSCRIPT_GAP_TYPE`）辨識，一律輸出 `TRANSCRIPT_GAP_TEXT = '[未轉寫片段]'`（Markdown 原始碼寫成 `\[未轉寫片段\]`，渲染結果相同，且後面接 `(…)` 時不會變成連結）。`toHtml` 在呼叫 `generateHTML` 之前就把它換成文字，所以 M3b 在 `createExtensions()` 加入 `TranscriptGap` 後，剪貼簿與 PDF 也不會出現「⚠ 第 N 段未轉寫・重試」。M3b 可直接 `import { TRANSCRIPT_GAP_TYPE } from '../export/common'` 當作 Node 的 `name`。 |
 | 未知節點 | Markdown／純文字／Word 只認得 `paragraph`、`heading`、`bulletList`、`orderedList`、`listItem`、`text`、`hardBreak`、`transcriptGap`；其他節點（含 StarterKit 的 `blockquote`、`codeBlock`、`horizontalRule`，工具列沒有入口，只能經 Markdown 快捷輸入或貼上產生）依契約輸出其文字內容。`toHtml` 則保留 schema 認得的一切節點，只把 schema 不認得的節點換成文字。 |
 | 其他 mark | Markdown／純文字／Word 只保留契約列出的格式；刪除線、行內程式碼、連結只保留文字。HTML（複製、PDF）由 `generateHTML` 照原樣輸出。 |
 | Word 載入方式 | `exportNote` 以 `await import('./toDocx')` 動態載入，docx 套件成為獨立 chunk（約 365 kB），主 bundle 維持約 668 kB，`vite build` 不會出現 >1000 kB 警告。M4／M5 打包時保留 Vite 預設的動態 chunk 即可。 |
-| 列印 iframe | `printPdf` 建立帶 `data-oc-print` 屬性的隱藏 iframe（`PRINT_FRAME_ATTRIBUTE`），寫入完整 HTML 文件後呼叫 `contentWindow.print()`，在該 window 的 `afterprint` 移除 iframe；下次列印前也會清掉殘留的 iframe。M4 需在 Electron 手動確認列印對話框可開啟。 |
+| 列印 iframe | `printPdf` 建立帶 `data-oc-print` 屬性的隱藏 iframe（`PRINT_FRAME_ATTRIBUTE`），寫入完整 HTML 文件後呼叫 `contentWindow.print()`。Chrome 以**分頁標題**（最上層 `document.title`）當「另存為 PDF」的預設檔名，所以列印期間 `document.title` 暫時換成筆記標題（空白時為「未命名筆記」）；在該 window 的 `afterprint` 換回原標題並移除 iframe。下次列印前也會先換回標題、清掉殘留的 iframe（`afterprint` 沒觸發時）。其他程式不要在列印期間改 `document.title`。M4 需在 Electron 手動確認列印對話框可開啟。 |
+| Markdown 強調 | 契約的 `**`／`*`／`<u></u>` 不變。為了符合 CommonMark 的分隔符規則：底線 `<u>` 放最外層（`<u>**全**</u>`）；有粗體或斜體的文字，前後的空白與標點移到分隔符外（`**重點**：內容`、`「*強調*」`），所以這些邊緣標點匯出後不是粗／斜體。 |
 | 測試輔助 | `packages/core/src/test/blob.ts`：`readBlobText(blob)`。jsdom 26 的 `Blob` 沒有 `text()`／`arrayBuffer()`，測試一律用它讀 Blob。 |
 | 剪貼簿換行 | Windows 的剪貼簿把 `\n` 存成 `\r\n`；e2e 讀回剪貼簿時先換回 `\n` 再比對。 |
 
@@ -72,7 +73,7 @@ Expected: 沒有輸出。
 | `packages/core/src/export/toMarkdown.ts` | `toMarkdown(note)`：Markdown（含跳脫與 mark 合併） |
 | `packages/core/src/export/toHtml.ts` | `toHtml(note)`：`<h1>` 標題 + `generateHTML`，先清理未知節點；`escapeHtml` |
 | `packages/core/src/export/toDocx.ts` | `toDocx(note)`：以 docx 9 產生 Word Blob |
-| `packages/core/src/export/printPdf.ts` | `printPdf(note)`：隱藏 iframe 列印 |
+| `packages/core/src/export/printPdf.ts` | `printPdf(note)`：隱藏 iframe 列印，列印期間分頁標題換成筆記標題（PDF 預設檔名） |
 | `packages/core/src/export/exportNote.ts` | `exportNote(note, format, platform)`：依格式產檔並交給 `fileSaver`，PDF 走列印 |
 | `packages/core/src/export/copyNote.ts` | `copyNote(note)`：寫入 HTML + 純文字，失敗改純文字 |
 | `packages/core/src/test/blob.ts` | 測試輔助 `readBlobText(blob)` |
@@ -1672,7 +1673,7 @@ git commit -m "feat(core): add Word exporter using docx"
 
 - [ ] **Step 1: 寫失敗的測試**
 
-jsdom 沒有實作 `window.print`（呼叫只會在 console 印出 `Not implemented`），而 iframe 的 window 是另一個 realm，無法事先 spy。測試改為攔截 `document.body.appendChild`：iframe 一掛上就把它 window 的 `print` 換成記錄器（jsdom 的 `print` 是可寫的 own property），並在「被呼叫的當下」記下 iframe 文件的標題、內文與樣式。
+jsdom 沒有實作 `window.print`（呼叫只會在 console 印出 `Not implemented`），而 iframe 的 window 是另一個 realm，無法事先 spy。測試改為攔截 `document.body.appendChild`：iframe 一掛上就把它 window 的 `print` 換成記錄器（jsdom 的 `print` 是可寫的 own property），並在「被呼叫的當下」記下 iframe 文件的標題、內文與樣式，以及當下的分頁標題（`document.title`，Chrome 以它當 PDF 預設檔名）。每個測試前把分頁標題設為 `open-copilot`，驗證列印後會換回來。
 
 `packages/core/src/export/printPdf.test.ts`：
 
@@ -2721,7 +2722,7 @@ git commit -m "feat(core): add copy and export actions with status messages"
 
 - [ ] **Step 1: 寫失敗的端對端測試**
 
-Playwright 預設接受下載；`download.path()` 等下載完成後回傳暫存檔路徑。PDF 測試把列印 iframe 的 `print()` 換成記錄器，不開對話框；複製測試先授予剪貼簿權限，讀回時把 Windows 的 `\r\n` 換回 `\n`。
+Playwright 預設接受下載；`download.path()` 等下載完成後回傳暫存檔路徑。PDF 測試把列印 iframe 的 `print()` 換成記錄器，不開對話框，並確認呼叫當下分頁標題已換成筆記標題、手動送出 `afterprint` 後換回 `open-copilot` 且 iframe 被移除；複製測試先授予剪貼簿權限，讀回時把 Windows 的 `\r\n` 換回 `\n`。
 
 `apps/web/e2e/export.spec.ts`：
 
@@ -3398,7 +3399,7 @@ git commit -m "feat(core): add copy and export buttons to the toolbar"
 
 Run: `npm test`
 Expected:
-- `@oc/core`：`Test Files  29 passed (29)`、`Tests  171 passed (171)`
+- `@oc/core`：`Test Files  29 passed (29)`、`Tests  176 passed (176)`
 - `@oc/shared`：`Test Files  1 passed (1)`、`Tests  3 passed (3)`
 - `@oc/web`：`Test Files  1 passed (1)`、`Tests  1 passed (1)`
 
@@ -3423,13 +3424,13 @@ Expected: `✓ built in`；`dist/assets/` 有 `index-*.js`（約 668 kB）、`to
 
 - [ ] **Step 5: 手動檢查表**
 
-Run: `npm run dev -w @oc/web`，用 Chrome 開 `http://localhost:5173`，建立一篇標題「週會紀錄」的筆記，內文包含：標題 1–3、粗體／斜體／底線、紅色字、黃色螢光、置中與靠右段落、兩層項目清單、編號清單、一段文字後再一個編號清單、Shift+Enter 換行。逐項確認：
+Run: `npm run dev -w @oc/web`，用 Chrome 開 `http://localhost:5173`，建立一篇標題「週會紀錄」的筆記，內文包含：標題 1–3、粗體／斜體／底線、一段以粗體「重點：」開頭的文字（例如 **重點：**明天開會）、一句中間有一段連同引號一起設為粗體的「重要」（例如 請看**「重要」**這段）、紅色字、黃色螢光、置中與靠右段落、兩層項目清單、編號清單、一段文字後再一個編號清單、Shift+Enter 換行。逐項確認：
 
 - [ ] 工具列最右側有「複製」與「匯出 ▾」，與左側格式按鈕之間沒有多餘分隔線。
-- [ ] 匯出 → Markdown：下載 `週會紀錄.md`；以 VS Code 預覽，標題為 `#`、內文標題降一級、粗斜底線正確、清單與編號正確；狀態列顯示「已匯出 Markdown」，約 3 秒後消失。
+- [ ] 匯出 → Markdown：下載 `週會紀錄.md`；以 VS Code 預覽，標題為 `#`、內文標題降一級、粗斜底線正確（「重點」與「重要」顯示為粗體，預覽中沒有任何字面的 `*`）、清單與編號正確；狀態列顯示「已匯出 Markdown」，約 3 秒後消失。
 - [ ] 匯出 → Word：下載 `週會紀錄.docx`；以 Word 開啟，第一段為「標題」樣式，內文標題為「標題 1／2／3」，粗斜底線、紅字、黃色底色、置中／靠右皆保留；項目符號與編號正確，第二個編號清單重新從 1 開始。
 - [ ] 匯出 → 純文字：下載 `週會紀錄.txt`；以記事本開啟，中文無亂碼，第一行標題、空一行、內文，清單保留 `- `／`1. `，沒有任何格式符號。
-- [ ] 匯出 → PDF：出現瀏覽器列印對話框，預覽內容與筆記一致（含紅字與黃色螢光底色）；選「另存為 PDF」時預設檔名為「週會紀錄」；關閉對話框後，DevTools Console 執行 `document.querySelectorAll('iframe[data-oc-print]').length` 得到 `0`。
+- [ ] 匯出 → PDF：出現瀏覽器列印對話框，預覽內容與筆記一致（含紅字與黃色螢光底色）；對話框開著時分頁標題顯示「週會紀錄」；選「另存為 PDF」時預設檔名為「週會紀錄」；關閉對話框後分頁標題回到「open-copilot」，DevTools Console 執行 `document.querySelectorAll('iframe[data-oc-print]').length` 得到 `0`。
 - [ ] 標題留白時匯出 Markdown，檔名為 `未命名筆記.md`；標題含 `/ : * ? " < > |` 時檔名自動去除這些字元。
 - [ ] 複製 → 狀態列顯示「已複製全文」；貼到 Word 或 Google 文件保留標題與粗體等格式；貼到記事本為純文字（標題、空行、內文）。
 - [ ] 鍵盤：Tab 到「匯出」按 Enter 開啟選單、焦點在「Markdown」；↑／↓ 循環移動；Enter 匯出；Esc 關閉選單且焦點回到「匯出」。
