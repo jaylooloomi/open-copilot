@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 建立 npm workspaces monorepo，並完成可在瀏覽器使用的筆記應用：Tiptap 富文本編輯器、筆記清單（新增／切換／刪除，依更新時間排序）、IndexedDB 本機自動存檔。
+**Goal:** 建立 npm workspaces monorepo，並完成可在瀏覽器使用的筆記應用：Tiptap 富文本編輯器、筆記清單（新增／切換／刪除，依更新時間排序）、IndexedDB 本機自動存檔，並附網頁靜態部署說明（spec §10）。
 
 **Architecture:** `@oc/shared` 放前後端共用型別；`@oc/core` 放所有 React 元件與邏輯，平台能力（`NoteStorage`、`FileSaver`）一律經 `PlatformProvider` 注入，core 內不做任何平台判斷；`apps/web` 只負責 `selectPlatform()` 與掛載 `<NotesApp />`。`useNotes` 管理清單、作用中筆記與 500ms debounce 存檔；`useNoteEditor` 以 `noteId` 為 deps 建立 Tiptap editor，切換筆記時整個 editor 重建，因此內容與復原歷史不會跨筆記。
 
@@ -18,7 +18,7 @@
 
 - [ ] **前置步驟：commit 計畫文件（開始 Task 1 之前）**
 
-目前只有 spec 已 commit，`docs/superpowers/plans/`（總覽、M1、M3a…）仍是未追蹤檔；之後每個 Task 的 `git add` 都只列程式碼路徑，不會順便加入它們。先 commit，Task 22 的「工作目錄乾淨」檢查才會成立。
+目前只有 spec 已 commit，`docs/superpowers/plans/`（總覽、M1、M3a…）仍是未追蹤檔；之後每個 Task 的 `git add` 都只列程式碼路徑，不會順便加入它們。先 commit，Task 23 的「工作目錄乾淨」檢查才會成立。
 
 Run: `git status --short`
 Expected: 只有 `docs/superpowers/plans/` 底下的變動，通常是一行 `?? docs/superpowers/plans/`。若已沒有輸出，表示計畫已被 commit，略過本步其餘指令，直接進 Task 1；若出現其他路徑，先停下來回報。
@@ -31,7 +31,7 @@ git commit -m "docs: add v1 implementation plans"
 Run: `git status --short`
 Expected: 沒有輸出（多了一個 commit）。
 
-執行本計畫時勾選 `- [ ]` 會修改計畫檔本身，這是允許的；Task 22 的乾淨檢查會排除 `docs/superpowers/plans`。
+執行本計畫時勾選 `- [ ]` 會修改計畫檔本身，這是允許的；Task 23 的乾淨檢查會排除 `docs/superpowers/plans`。
 
 ## 與共用契約的關係（下游計畫必讀）
 
@@ -53,6 +53,7 @@ Expected: 沒有輸出（多了一個 commit）。
 | 抽屜選單鈕 | 在 `NotesApp` 的 `.oc-topbar` 內，`aria-label` 在 `開啟筆記清單`／`關閉筆記清單` 之間切換；寬度 < 768px 才顯示。 |
 | 測試輔助 | `packages/core/src/test/memoryStorage.ts`：`createMemoryStorage(initial?)`、`createTestPlatform(initial?)`（方法皆為 `vi.fn`）。 |
 | jsdom 補強 | `packages/core/src/test/setup.ts` 給 `Range.prototype.getClientRects/getBoundingClientRect` 空矩形；沒有它，`editor.chain().focus()` 會丟 `target.getClientRects is not a function`。 |
+| 網頁部署說明 | `apps/web/README.md`（Task 22）：建置指令、產物目錄 `apps/web/dist`、Vercel／Cloudflare Pages 設定、部署限制（網域根目錄、HTTPS、ES2022）、把正式網域加進 M3a 的 `ALLOWED_ORIGINS`。下游計畫若改變建置產物或部署限制（例如加入前端路由、改 Vite `base`、改 `ALLOWED_ORIGINS` 預設值），必須同步更新這份文件。 |
 
 額外的**開發**依賴（不是執行期套件）：根目錄 `@types/node`（Vitest 的型別引用 node 型別，缺了 `tsc --noEmit` 會報 `TS2688: Cannot find type definition file for 'node'`）、`@testing-library/dom`（`@testing-library/react@16` 的 peer dependency）、`packages/core` 的 `@vitejs/plugin-react`（給 Vitest 轉譯 JSX）。
 
@@ -100,6 +101,7 @@ lucide-react 1.x 的對齊圖示正式名稱是 `TextAlignStart`／`TextAlignCen
 | `apps/web/src/platform/selectPlatform.ts` | M1：回傳網頁平台 |
 | `apps/web/src/test/setup.ts` | web 單元測試的 fake-indexeddb |
 | `apps/web/playwright.config.ts`、`apps/web/e2e/notes.spec.ts` | 端對端測試 |
+| `apps/web/README.md` | 網頁建置、靜態部署（Vercel／Cloudflare Pages）與後端 `ALLOWED_ORIGINS` 設定說明 |
 
 每個 `*.ts(x)` 旁邊的 `*.test.ts(x)` 為其測試。
 
@@ -4249,7 +4251,166 @@ git commit -m "feat(web): mount NotesApp and add Playwright e2e for notes"
 
 ---
 
-### Task 22: Verification（整體驗證）
+### Task 22: 網頁部署說明 `apps/web/README.md`
+
+**Files:**
+- Create: `apps/web/README.md`
+
+spec §10 要求網頁以靜態檔部署到 Vercel 或 Cloudflare Pages。M3a 只寫後端的 Docker 部署，M4／M5 只處理安裝檔與 Android，所以網頁部署由本 Task 負責：寫一份部署者照做即可上線的 `apps/web/README.md`，並用實際建置驗證文件裡的指令與產物路徑。重點有三：產物必須放在網域根目錄（Vite `base` 維持 `/`，M4／M5 也依賴這點）、必須是 HTTPS（`crypto.randomUUID()` 與麥克風只在安全環境可用）、正式網域要加進 M3a 後端的 `ALLOWED_ORIGINS`（而且設定後會**取代**預設清單，必須連預設值一起寫）。本 Task 不改任何程式碼。
+
+- [ ] **Step 1: 寫失敗的文件檢查**
+
+Run:
+
+```bash
+for s in 'npm run build -w @oc/web' 'apps/web/dist' 'es2022' 'NODE_VERSION' 'ALLOWED_ORIGINS=https://notes.example.com,http://localhost:5173,https://localhost,capacitor://localhost,app://bundle'; do grep -qF -- "$s" apps/web/README.md 2>/dev/null && echo "ok: $s" || echo "MISSING: $s"; done
+```
+
+Expected: FAIL，5 行都是 `MISSING: ...`，因為 `apps/web/README.md` 還不存在。
+
+- [ ] **Step 2: 建立 `apps/web/README.md`**
+
+`apps/web/README.md`：
+
+````markdown
+# @oc/web
+
+open-copilot 的網頁入口（Vite + React）。所有畫面與邏輯都在 `packages/core`（`@oc/core`）；這裡只負責選擇平台（`src/platform/selectPlatform.ts`）並掛載 `<NotesApp />`。
+
+## 本機開發
+
+以下指令都在 repo 根目錄以 Git Bash 執行。
+
+| 指令 | 用途 |
+|---|---|
+| `npm install` | 安裝所有 workspace 的依賴 |
+| `npm run dev -w @oc/web` | 開發伺服器 `http://localhost:5173` |
+| `npm test -w @oc/web` | 單元測試（Vitest） |
+| `npm run typecheck -w @oc/web` | 型別檢查 |
+| `npm run e2e -w @oc/web` | 端對端測試（Playwright；第一次先執行 `npm exec -w @oc/web -- playwright install chromium`） |
+| `npm run build -w @oc/web` | 正式建置，輸出到 `apps/web/dist` |
+| `npm run preview -w @oc/web` | 以靜態伺服器提供 `apps/web/dist`，網址 `http://localhost:4173` |
+
+## 建置產物
+
+`npm run build -w @oc/web` 只產生靜態檔，部署時上傳整個 `apps/web/dist`：
+
+- `index.html`
+- `assets/index-<hash>.js`、`assets/index-<hash>.css`（之後的里程碑會多出按需載入的 `assets/*-<hash>.js` 分塊）
+
+建置不需要任何環境變數。後端網址與存取金鑰（M3 起）由使用者在 App 的「設定」輸入，存在該瀏覽器的 localStorage，不會寫進建置產物。
+
+## 部署限制
+
+- **必須放在網域根目錄**（例如 `https://notes.example.com/`），不可放在子路徑（例如 `https://example.com/notes/`）。Vite `base` 維持預設 `/`，`index.html` 以 `/assets/...` 絕對路徑載入程式；桌面版（Electron）與 Android（Capacitor）也共用同一份建置產物，不要為了子路徑修改 `base`。
+- **必須是 HTTPS**。建立筆記用的 `crypto.randomUUID()` 與錄音用的麥克風只在安全環境（HTTPS 或 `localhost`）可用；用 `http://<區網 IP>` 開啟會無法建立筆記。Vercel 與 Cloudflare Pages 預設就是 HTTPS。
+- **瀏覽器需支援 ES2022**。`src/main.tsx` 使用頂層 `await`，`vite.config.ts` 的 `build.target` 是 `es2022`，至少需要 Chrome／Edge 89、Firefox 89、Safari 15（iOS 15）；更舊的瀏覽器會停在空白頁，Console 顯示語法錯誤。
+- **沒有前端路由**。整個 App 只有 `/` 一頁，不需要設定 SPA rewrite：Cloudflare Pages 在產物沒有 `404.html` 時會把未知路徑回成 `index.html`；Vercel 對未知路徑回 404，兩者都不影響使用。日後若加入前端路由，Vercel 要另外設定把所有路徑 rewrite 到 `/index.html`。
+- **筆記只存在使用者的瀏覽器**（IndexedDB，依網域區分）。換網域或改用預覽網址開啟，會看到另一份筆記；清除網站資料會刪除筆記。正式環境請固定一個網域（建議綁自訂網域）。
+
+## 部署到 Vercel
+
+1. 把 repo 推到 Vercel 支援的 Git 服務（GitHub／GitLab／Bitbucket），在 Vercel 新增 Project 並匯入這個 repo。
+2. Project 設定：
+
+   | 欄位 | 值 |
+   |---|---|
+   | Root Directory | 留空（repo 根目錄；npm workspaces 必須從根目錄安裝） |
+   | Framework Preset | `Other` |
+   | Install Command | `npm ci` |
+   | Build Command | `npm run build -w @oc/web` |
+   | Output Directory | `apps/web/dist` |
+   | Node.js Version（專案 Settings） | `24.x` |
+
+3. 部署完成後，正式網址是 `https://<專案名稱>.vercel.app`；自訂網域在專案 Settings 的 Domains 加入。
+
+## 部署到 Cloudflare Pages
+
+1. 在 Cloudflare 主控台的 Workers & Pages 建立 Pages 專案，連接這個 repo 的 Git 服務。
+2. 建置設定：
+
+   | 欄位 | 值 |
+   |---|---|
+   | Framework preset | `None` |
+   | Build command | `npm run build -w @oc/web` |
+   | Build output directory | `apps/web/dist` |
+   | Root directory（進階） | 留空（repo 根目錄） |
+   | 環境變數 | `NODE_VERSION` = `24` |
+
+   Pages 偵測到根目錄的 `package-lock.json` 會自動安裝依賴，不需另設安裝指令。
+3. 正式網址是 `https://<專案名稱>.pages.dev`；自訂網域在專案的 Custom domains 加入。
+
+沒有 Git 遠端時，可改用 Pages 的 Direct Upload：在本機執行 `npm run build -w @oc/web`，把 `apps/web/dist` 資料夾上傳；之後每次更新都要重新建置再上傳（Direct Upload 專案之後不能改成連接 Git，要改需另建專案）。
+
+## 兩個平台共通
+
+- Node 用 24（與開發機相同；Vite 7 最低需要 20.19 或 22.12）。
+- M4 起，根目錄安裝依賴時也會安裝 `@oc/desktop` 的 `electron`，它會額外下載約 100 MB 的 Electron 執行檔。網頁建置用不到它，可在部署平台加上環境變數 `ELECTRON_SKIP_BINARY_DOWNLOAD` = `1` 跳過下載。
+
+## 連接後端（M3 起）
+
+網頁版錄音會呼叫 M3 的後端（`apps/api`，部署方式見 `apps/api/README.md`）。後端以 CORS 白名單限制來源，**正式網頁的來源必須加進後端的 `ALLOWED_ORIGINS`**，否則瀏覽器會擋下請求：設定頁的「測試連線」顯示「連線失敗，請確認後端網址」，錄音的每一段都變成「⚠ 第 N 段未轉寫・重試」。
+
+- 來源是「協定 + 網域（+ 非預設埠）」，不含路徑與結尾斜線：寫 `https://notes.example.com`，不是 `https://notes.example.com/`。
+- 設定 `ALLOWED_ORIGINS` 會**取代**預設清單，所以要把預設值一起寫上，否則本機開發（`http://localhost:5173`）、Android（`https://localhost`）、iOS（`capacitor://localhost`）與桌面版（`app://bundle`）都會被擋：
+
+  ```
+  ALLOWED_ORIGINS=https://notes.example.com,http://localhost:5173,https://localhost,capacitor://localhost,app://bundle
+  ```
+
+- 預覽部署（Vercel 每次預覽部署的 `*.vercel.app` 網址、Cloudflare Pages 的 `<hash>.<專案名稱>.pages.dev`）是不同的來源；要在預覽網址測錄音，就把該網址也加進 `ALLOWED_ORIGINS`。
+- 正式環境的後端必須是 HTTPS：HTTPS 頁面呼叫 `http://` 後端會被瀏覽器當成混合內容擋下。
+- 改完環境變數要重新啟動（或重新部署）後端才會生效。
+
+確認白名單（把兩個網址換成自己的）：
+
+```bash
+curl -s -i https://api.example.com/health -H 'Origin: https://notes.example.com' | grep -i '^access-control-allow-origin'
+```
+
+應輸出 `access-control-allow-origin: https://notes.example.com`；沒有輸出表示這個來源不在白名單內。
+
+## 部署後檢查
+
+用 Chrome 開正式網址，逐項確認：
+
+- [ ] 網址列是 `https://`；畫面出現一篇「未命名筆記」，標題框顯示「請輸入標題..」，內文顯示「在這裡開始編寫筆記..」。
+- [ ] DevTools → Network（勾選 Disable cache 後重新整理）：文件本身與 `/assets/index-*.js`、`/assets/index-*.css` 都是 200。
+- [ ] 輸入標題與內文，等一秒後重新整理，內容仍在。
+- [ ] DevTools Console 沒有錯誤。
+- [ ] （M3 起）「設定」填入後端網址與存取金鑰，按「測試連線」顯示「連線成功」；按「錄製」說幾句話再停止，文字插入筆記。
+````
+
+- [ ] **Step 3: 執行文件檢查，確認通過**
+
+Run:
+
+```bash
+for s in 'npm run build -w @oc/web' 'apps/web/dist' 'es2022' 'NODE_VERSION' 'ALLOWED_ORIGINS=https://notes.example.com,http://localhost:5173,https://localhost,capacitor://localhost,app://bundle'; do grep -qF -- "$s" apps/web/README.md 2>/dev/null && echo "ok: $s" || echo "MISSING: $s"; done
+```
+
+Expected: PASS，5 行都是 `ok: ...`，沒有 `MISSING`。最後一項與契約 §4 後端（M3a）的 `ALLOWED_ORIGINS` 預設值逐字一致，只在最前面多了正式網域。
+
+- [ ] **Step 4: 確認文件描述的建置產物與實際一致**
+
+Run: `npm run build -w @oc/web && ls apps/web/dist && grep -o 'src="/assets/index-[^"]*\.js"' apps/web/dist/index.html`
+Expected: `✓ built in`；`ls` 只列出 `assets` 與 `index.html`；grep 輸出一行 `src="/assets/index-<hash>.js"`（以 `/assets/` 開頭的絕對路徑，對應 README「必須放在網域根目錄」）。
+
+- [ ] **Step 5: 以靜態伺服器提供產物（模擬部署）**
+
+Run: `npm run preview -w @oc/web`
+Expected: 輸出 `➜  Local:   http://localhost:4173/`（若 4173 被占用會直接報錯，先關掉占用的程式）。用 Chrome 開 `http://localhost:4173`：出現一篇「未命名筆記」、標題框顯示「請輸入標題..」；輸入標題，等一秒後重新整理，標題仍在；DevTools Console 沒有錯誤。確認後在終端機按 Ctrl+C 結束。
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/web/README.md
+git commit -m "docs(web): add build and static deployment guide"
+```
+
+---
+
+### Task 23: Verification（整體驗證）
 
 **Files:** 無新增或修改。
 
@@ -4275,8 +4436,8 @@ Expected: `12 passed`
 
 - [ ] **Step 4: 正式建置**
 
-Run: `npm run build -w @oc/web`
-Expected: `✓ built in`，沒有錯誤。
+Run: `npm run build -w @oc/web && grep -o 'src="/assets/index-[^"]*\.js"' apps/web/dist/index.html`
+Expected: `✓ built in`，沒有錯誤；最後一行是 `src="/assets/index-<hash>.js"`（產物在 `apps/web/dist`，以網域根目錄的絕對路徑載入，與 `apps/web/README.md` 一致）。
 
 - [ ] **Step 5: 手動檢查表**
 
@@ -4298,12 +4459,33 @@ Run: `npm run dev -w @oc/web`，用 Chrome 開 `http://localhost:5173`，逐項�
 - [ ] DevTools → Application → IndexedDB → `open-copilot` 有 `notes` 與 `pendingSegments` 兩個 store，`notes` 內容與畫面一致。
 - [ ] DevTools Console 沒有錯誤或警告。
 
-- [ ] **Step 6: 確認給 M3a 的根設定格式**
+- [ ] **Step 6: 靜態預覽（模擬部署）**
+
+Run: `npm run preview -w @oc/web`（使用 Step 4 的建置產物）
+Expected: 輸出 `➜  Local:   http://localhost:4173/`。用 Chrome 開 `http://localhost:4173`，逐項確認後按 Ctrl+C 結束：
+
+- [ ] 出現一篇「未命名筆記」，標題框顯示「請輸入標題..」。
+- [ ] DevTools → Network（勾選 Disable cache 後重新整理）：文件本身與 `/assets/index-*.js`、`/assets/index-*.css` 都是 200。
+- [ ] 輸入標題與內文，重新整理後仍在。
+- [ ] DevTools Console 沒有錯誤。
+
+- [ ] **Step 7: 正式部署後檢查（需要部署者的 Vercel 或 Cloudflare Pages 帳號）**
+
+由擁有帳號的人依 `apps/web/README.md` 的「部署到 Vercel」或「部署到 Cloudflare Pages」部署，再用 Chrome 開正式網址，逐項完成 README「部署後檢查」的前四項（M3 項目留待 M3b 驗證）：
+
+- [ ] 網址列是 `https://`；畫面出現一篇「未命名筆記」，標題框顯示「請輸入標題..」，內文顯示「在這裡開始編寫筆記..」。
+- [ ] DevTools → Network：文件本身與 `/assets/index-*.js`、`/assets/index-*.css` 都是 200。
+- [ ] 輸入標題與內文，等一秒後重新整理，內容仍在。
+- [ ] DevTools Console 沒有錯誤。
+
+執行計畫的代理不得自行建立帳號或登入部署平台。沒有可用的部署時，不得勾選本步；在回報中寫明「網頁正式部署：未驗證（無部署帳號）」，Step 6 的靜態預覽結果照常回報。
+
+- [ ] **Step 8: 確認給 M3a 的根設定格式**
 
 Run: `grep -n '"workspaces"' package.json`
 Expected: 只有一行 `5:  "workspaces": ["packages/*", "apps/*"],`（單行陣列；M3a 的前置檢查依賴這個格式）。
 
-- [ ] **Step 7: 確認工作目錄乾淨**
+- [ ] **Step 9: 確認工作目錄乾淨**
 
 Run: `git status --short -- . ':(exclude)docs/superpowers/plans'`
 Expected: 沒有輸出（`dist/`、`playwright-report/`、`test-results/` 已被 `.gitignore` 忽略；計畫檔因勾選 checkbox 而變動是允許的，故排除）。

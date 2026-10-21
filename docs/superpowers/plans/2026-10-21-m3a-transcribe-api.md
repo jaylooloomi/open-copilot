@@ -12,10 +12,49 @@
 
 ## 前置條件與相依
 
-- 只依賴 M1 產出的 monorepo 根目錄（`package.json` 含 `"workspaces": ["packages/*", "apps/*"]`、`tsconfig.base.json`、`.gitignore` 含 `.env`）與 `packages/shared`（`@oc/shared`，`src/api.ts` 內容如總覽契約 §4）。
+- 以 **Git Bash** 在 repo 根目錄執行所有指令。Node 24、npm 11。「repo 根目錄」在循序模式是 `D:\git\open-copilot`，在 worktree 模式是 `D:\git\open-copilot-m3a`（見下方「執行方式」）。
+- 只依賴 M1 產出的 monorepo 根目錄（`package.json` 含 `"workspaces": ["packages/*", "apps/*"]` 與 devDependencies `@types/node`／`typescript`／`vitest`、`tsconfig.base.json`、`.gitignore` 含 `.env`）與 `packages/shared`（`@oc/shared`，`src/api.ts` 內容如總覽契約 §4）。
 - 本計畫不修改 `packages/shared`、`packages/core`、`apps/web`。
 - 給 M3b 的保證：**本程式產生的**所有錯誤回應都是 `ApiErrorBody` JSON——包含 `POST /transcribe` 的 400／401／413／429／502、未知路徑或方法的 404（`{ error: 'bad_request' }`，由 `app.notFound` 產生）、未預期例外的 500（`{ error: 'upstream_error' }`，由 `app.onError` 產生）；這些回應都帶 CORS 標頭；`Retry-After` 透過 `Access-Control-Expose-Headers` 公開，瀏覽器 `fetch` 讀得到。
+- 給 M3b 的時間保證：每個 `POST /transcribe` 最多呼叫 OpenAI **一次**（SDK `maxRetries: 0`，`OPENAI_MAX_RETRIES`），單次逾時 25 秒（`OPENAI_TIMEOUT_MS = 25_000`）。所以本程式收完 request body 後約 25 秒內一定回應（200 或 502），早於 M3b `createApiClient` 的 `REQUEST_TIMEOUT_MS = 30_000`（含上傳，留 ≥ 5 秒給上傳與網路）。重試只由 M3b 的 `withRetry` 負責：每次前端請求最多對應一次計費的 OpenAI 呼叫，一段音訊最多 4 次（1 次 + 重試 3 次），每次也只佔一次限流額度；前端不會因逾時放棄一個伺服器其實會成功的請求，也不會在舊的 OpenAI 呼叫仍在進行時疊加新的呼叫。
 - 不在保證內：部署平台或反向代理自己產生的錯誤頁（例如逾時的 502／504）不經過本程式，可能是 HTML 或純文字。M3b 必須以 `res.status` 判斷結果，body 解析失敗時仍以狀態碼建立 `ApiError`，不可假設錯誤 body 一定是 JSON。
+
+### 執行方式（與其他計畫平行時必讀）
+
+總覽 §1 允許 M3a 與 M1 之後的計畫平行執行，但 M2 與本計畫都會執行 `npm install` 並 commit `package-lock.json`（M2 Task 6、本計畫 Task 1），兩者的 Verification 也都要求工作目錄乾淨（M2 Task 13、本計畫 Task 12）。在**同一個工作目錄**同時執行會互搶 `node_modules` 與 lockfile、把對方的 lockfile 變動混進自己的 commit，並讓兩邊的乾淨檢查都失敗；在不同 worktree 各自完成後，`package-lock.json` 合併時又必定衝突。因此只允許以下兩種方式：
+
+1. **循序（建議）**：在 `D:\git\open-copilot` 執行；開始前與整個執行期間，這個工作目錄內沒有其他計畫在跑（例如 M2 尚未開始，或已完成 Task 13）。
+2. **獨立 worktree**：其他計畫正在 `D:\git\open-copilot` 執行時，本計畫改在 `D:\git\open-copilot-m3a`（分支 `feat/m3a-transcribe-api`）執行。完成 Task 12 Step 1–7 後，依 Task 12 Step 8 rebase 到主分支、用 `npm install` 重新產生 `package-lock.json`、重跑全 repo 測試，再 fast-forward 合併回主分支。
+
+不論哪一種方式，執行 Task 12 時，同一個工作目錄內都不得有其他計畫在跑。
+
+- [ ] **前置步驟 1：選定執行方式**
+
+循序模式——Run（`D:\git\open-copilot`）: `git status --short -- . ':(exclude)docs/superpowers/plans'`
+Expected: 沒有輸出。有輸出表示這個工作目錄內有另一份計畫正在執行或留有未 commit 的變動：等它完成，或改用 worktree 模式。
+
+worktree 模式——Run（在 `D:\git\open-copilot` 執行）:
+```bash
+git worktree add ../open-copilot-m3a -b feat/m3a-transcribe-api && cd ../open-copilot-m3a && npm ci
+```
+Expected: 印出 `Preparing worktree (new branch 'feat/m3a-transcribe-api')`，`npm ci` 以 `added N packages` 成功結束。之後本計畫的所有指令都在 `D:\git\open-copilot-m3a` 執行（Claude Code 的 Bash 工具每次呼叫都會重設目錄，請在每個指令前加 `cd /d/git/open-copilot-m3a &&`）。
+
+- [ ] **前置步驟 2：commit 計畫文件**
+
+Run: `git status --short`
+Expected: 沒有輸出，或只有 `docs/superpowers/plans/` 底下的變動（例如前一份計畫勾選 checkbox 造成的 ` M docs/superpowers/plans/2026-10-21-m1-web-editor.md`）。worktree 模式剛建立時一定沒有輸出，直接略過本步其餘指令。若出現其他路徑，先停下來回報。
+
+若有 `docs/superpowers/plans/` 的變動：
+
+```bash
+git add docs/superpowers/plans
+git commit -m "docs: commit plan progress before M3a"
+```
+
+Run: `git status --short`
+Expected: 沒有輸出。
+
+執行本計畫時勾選 `- [ ]` 會修改計畫檔本身，這是允許的；Task 12 的乾淨檢查會排除 `docs/superpowers/plans`。
 
 ## 契約對齊說明
 
@@ -35,8 +74,8 @@
 | `apps/api/src/text/toTraditional.ts` | Create | `toTraditional(text)`：opencc-js `cn` → `tw` |
 | `apps/api/src/text/toTraditional.test.ts` | Create | 簡轉繁單元測試 |
 | `apps/api/src/transcriber/types.ts` | Create | `Transcriber` 介面（日後可換 Groq／Azure） |
-| `apps/api/src/transcriber/openaiTranscriber.ts` | Create | `createOpenAITranscriber(apiKey, client?)`、`buildPrompt` |
-| `apps/api/src/transcriber/openaiTranscriber.test.ts` | Create | 以假 OpenAI client 驗證參數與錯誤傳遞 |
+| `apps/api/src/transcriber/openaiTranscriber.ts` | Create | `createOpenAITranscriber(apiKey, client?)`、`createOpenAIClient`（單次 25 秒、不重試）、`buildPrompt` |
+| `apps/api/src/transcriber/openaiTranscriber.test.ts` | Create | 以假 OpenAI client 驗證參數與錯誤傳遞；驗證真 client 的逾時與重試設定 |
 | `apps/api/src/middleware/auth.ts` | Create | `bearerAuth(accessKeys)`、`AuthEnv` 型別 |
 | `apps/api/src/middleware/auth.test.ts` | Create | 401／通過／`c.get('accessKey')` |
 | `apps/api/src/middleware/rateLimit.ts` | Create | `rateLimit({ limit, windowMs, now })` 固定視窗、依金鑰計數 |
@@ -68,13 +107,14 @@
 
 - [ ] **Step 1: 確認 M1 的共用契約已存在**
 
-Run（Git Bash，repo 根目錄 `D:\git\open-copilot`）:
+Run（Git Bash，repo 根目錄）:
 ```bash
 grep -nE "MAX_AUDIO_BYTES|RATE_LIMIT_PER_MINUTE|TranscribeResponse|HealthResponse|ApiErrorBody" packages/shared/src/api.ts
-grep -n "workspaces" package.json
+grep -n '"workspaces"' package.json
+grep -nE '"(@types/node|typescript|vitest)"' package.json
 test -f tsconfig.base.json && echo "base tsconfig ok"
 ```
-Expected: 第一行指令印出 5 行以上的匹配（含 `export const MAX_AUDIO_BYTES = 5 * 1024 * 1024;`），第二行印出 `"workspaces": ["packages/*", "apps/*"]`，第三行印出 `base tsconfig ok`。任何一項沒有輸出就停止，回報「M1 的 packages/shared 或 monorepo 根設定未完成」。
+Expected: 第一個指令印出 5 行以上的匹配（含 `export const MAX_AUDIO_BYTES = 5 * 1024 * 1024;`）；第二個只印出一行 `5:  "workspaces": ["packages/*", "apps/*"],`（樣式含雙引號並以單引號包住，所以不會比對到 scripts 裡的 `--workspaces`）；第三個印出三行，分別是根 devDependencies 的 `"@types/node"`、`"typescript"`、`"vitest"`（本工作區直接使用它們，不重複宣告）；第四個印出 `base tsconfig ok`。任何一項沒有輸出就停止，回報「M1 的 packages/shared 或 monorepo 根設定未完成」。
 
 - [ ] **Step 2: 建立 `apps/api/package.json`**
 
@@ -97,16 +137,11 @@ Expected: 第一行指令印出 5 行以上的匹配（含 `export const MAX_AUD
     "openai": "^5.23.0",
     "opencc-js": "^1.4.0",
     "tsx": "^4.20.0"
-  },
-  "devDependencies": {
-    "@types/node": "^24.0.0",
-    "typescript": "^5.9.0",
-    "vitest": "^3.2.0"
   }
 }
 ```
 
-說明：`tsx` 放在 `dependencies`，因為 Docker 映像只裝正式依賴、並用 tsx 執行。`--env-file-if-exists` 需 Node ≥ 22.9（開發機 Node 24）；`.env` 不存在時不會報錯。`"@oc/shared": "*"` 讓 npm workspaces 直接連結本機套件。
+說明：`tsx` 放在 `dependencies`，因為 Docker 映像只裝正式依賴、並用 tsx 執行。`--env-file-if-exists` 需 Node ≥ 22.9（開發機 Node 24）；`.env` 不存在時不會報錯。`"@oc/shared": "*"` 讓 npm workspaces 直接連結本機套件。沒有 `devDependencies`：和 `packages/shared`、`packages/core`、`apps/web` 一樣直接使用 M1 根 `package.json` 的 `@types/node`、`typescript`、`vitest`（版本只在根目錄維護一處）。`npm run <script> -w @oc/api` 的 PATH 會包含根目錄的 `node_modules/.bin`，所以 `tsc`、`vitest` 找得到；`tsconfig.json` 的 `types: ["node"]` 會往上找到根目錄的 `node_modules/@types/node`。Docker 映像以 `--omit=dev` 安裝，本來就不需要它們。
 
 - [ ] **Step 3: 建立 `apps/api/tsconfig.json`**
 
@@ -152,14 +187,12 @@ Expected: `npm install` 成功結束（可能有 audit 提示，忽略）。`npm
 `-- @oc/api@0.0.0 -> .\apps\api
   +-- @hono/node-server@1.x.x
   +-- @oc/shared@0.0.0 -> .\packages\shared
-  +-- @types/node@24.x.x
   +-- hono@4.x.x        (≥ 4.13)
   +-- openai@5.x.x
   +-- opencc-js@1.x.x   (≥ 1.4)
-  +-- tsx@4.x.x
-  +-- typescript@5.x.x
-  `-- vitest@3.x.x
+  `-- tsx@4.x.x
 ```
+（`@types/node`、`typescript`、`vitest` 屬於根目錄，不會出現在這裡。）
 
 - [ ] **Step 6: 寫失敗的測試 `apps/api/src/config.test.ts`**
 
@@ -393,9 +426,12 @@ export interface Transcriber {
 import type OpenAI from 'openai';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  OPENAI_MAX_RETRIES,
+  OPENAI_TIMEOUT_MS,
   PROMPT_PREFIX,
   TRANSCRIBE_MODEL,
   buildPrompt,
+  createOpenAIClient,
   createOpenAITranscriber,
 } from './openaiTranscriber';
 
@@ -446,7 +482,14 @@ describe('createOpenAITranscriber', () => {
     await expect(transcriber.transcribe({ file, prompt: '' })).rejects.toThrow('upstream down');
   });
 
-  it('builds a real client when none is injected (no network call)', () => {
+  it('builds a single-attempt real client that answers before the 30 s frontend timeout (no network call)', () => {
+    const client = createOpenAIClient('sk-test');
+    expect(client.timeout).toBe(OPENAI_TIMEOUT_MS);
+    expect(client.maxRetries).toBe(OPENAI_MAX_RETRIES);
+    // M3b retries with withRetry and aborts each request after REQUEST_TIMEOUT_MS = 30_000 (upload included).
+    expect(OPENAI_MAX_RETRIES).toBe(0);
+    expect(OPENAI_TIMEOUT_MS).toBeLessThanOrEqual(25_000);
+
     const transcriber = createOpenAITranscriber('sk-test');
     expect(typeof transcriber.transcribe).toBe('function');
   });
@@ -467,14 +510,29 @@ import type { Transcriber } from './types';
 export const TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe';
 export const PROMPT_PREFIX = '以下是繁體中文的語音內容。';
 
+/**
+ * 單次 OpenAI 呼叫的逾時。M3b 的 REQUEST_TIMEOUT_MS 是 30 秒（含上傳），
+ * 伺服器的最壞情況必須比它短，前端才不會放棄一個伺服器其實會回應的請求。
+ */
+export const OPENAI_TIMEOUT_MS = 25_000;
+
+/**
+ * SDK 不重試：重試全部交給前端 withRetry（1s→2s→4s）。SDK 若再重試，
+ * 一次前端請求會變成多次計費呼叫，最壞耗時也會超過前端逾時。
+ */
+export const OPENAI_MAX_RETRIES = 0;
+
 export function buildPrompt(previousText: string): string {
   const trimmed = previousText.trim();
   return trimmed ? `${PROMPT_PREFIX}${trimmed}` : PROMPT_PREFIX;
 }
 
+export function createOpenAIClient(apiKey: string): OpenAI {
+  return new OpenAI({ apiKey, timeout: OPENAI_TIMEOUT_MS, maxRetries: OPENAI_MAX_RETRIES });
+}
+
 export function createOpenAITranscriber(apiKey: string, client?: OpenAI): Transcriber {
-  // 前端已有 3 次重試，這裡只讓 SDK 重試 1 次並把逾時壓在 30 秒，避免單段卡住整條佇列。
-  const openai = client ?? new OpenAI({ apiKey, timeout: 30_000, maxRetries: 1 });
+  const openai = client ?? createOpenAIClient(apiKey);
   return {
     async transcribe({ file, prompt }) {
       const result = await openai.audio.transcriptions.create({
@@ -490,7 +548,7 @@ export function createOpenAITranscriber(apiKey: string, client?: OpenAI): Transc
 }
 ```
 
-說明：`openai@5` 的 `audio.transcriptions.create` 對 `response_format: 'json'` 的多載回傳 `Transcription`（有 `text`）；`file` 型別為 `Uploadable`，接受全域 `File`。
+說明：`openai@5` 的 `audio.transcriptions.create` 對 `response_format: 'json'` 的多載回傳 `Transcription`（有 `text`）；`file` 型別為 `Uploadable`，接受全域 `File`。`OpenAI` 實例的 `timeout`、`maxRetries` 是公開屬性，測試直接讀取以鎖住「單次 25 秒、不重試」——這是給 M3b 的時間保證（見「前置條件與相依」）：伺服器一定在前端 30 秒逾時之前回應，每次前端請求最多一次計費的 OpenAI 呼叫。`createOpenAIClient` 是契約之外新增的匯出，`createOpenAITranscriber(apiKey, client?)` 的簽章不變。
 
 - [ ] **Step 5: 執行測試確認通過**
 
@@ -1713,7 +1771,7 @@ Run（Git Bash，repo 根目錄）:
 if test -f apps/api/.env; then echo "apps/api/.env exists - move it aside first"; false; else (unset OPENAI_API_KEY ACCESS_KEYS ALLOWED_ORIGINS PORT; npm start -w @oc/api); fi
 ```
 Expected: 程序結束，輸出含 `Error: OPENAI_API_KEY is required`，exit code 非 0。
-若印出 `apps/api/.env exists - move it aside first`：把既有檔案移到 repo 外（例如 `mv apps/api/.env ~/oc-api.env.bak`；不要留在 repo 內改名，否則 Task 12 的 `git status --short` 不會乾淨），重跑本步驟，Step 7 結束後再移回。
+若印出 `apps/api/.env exists - move it aside first`：把既有檔案移到 repo 外（例如 `mv apps/api/.env ~/oc-api.env.bak`；不要留在 repo 內改名，否則 Task 12 Step 5 的 `git status --short -- . ':(exclude)docs/superpowers/plans'` 不會乾淨），重跑本步驟，Step 7 結束後再移回。
 
 - [ ] **Step 6: 用假金鑰啟動並以 curl 驗證接線**
 
@@ -1787,8 +1845,8 @@ FROM node:24-slim AS deps
 WORKDIR /app
 COPY . .
 # Trim the workspace list to the API and its only workspace dependency, then install production deps.
-# `npm ci --workspace @oc/api` is not a strict filter: it walks @oc/api's whole tree including
-# devDependencies, so packages that are also another workspace's production deps leak into the image.
+# `npm ci --workspace @oc/api` is not a strict filter: dev/prod flags are computed over the whole
+# workspace tree, so packages from other workspaces can end up in the image.
 # The lockfile still pins every remaining version; `npm ci` would reject the edited workspace list.
 RUN npm pkg delete workspaces \
  && npm pkg set 'workspaces[]=packages/shared' 'workspaces[]=apps/api' \
@@ -1808,7 +1866,7 @@ EXPOSE 8787
 CMD ["node", "--import", "tsx", "src/server.ts"]
 ```
 
-說明：第一階段複製整個 repo（由 `.dockerignore` 過濾），先用 `npm pkg` 把映像內根 `package.json` 的 `workspaces` 改成只有 `packages/shared` 與 `apps/api`，再 `npm install --omit=dev`：npm 依 lockfile 鎖定的版本，只安裝這兩個工作區的正式依賴（`tsx` 在 `@oc/api` 的 `dependencies` 內），並在映像內修剪 lockfile；repo 裡的 `package.json` 不受影響。不用 `npm ci --omit=dev --workspace @oc/api`：它會走訪 `@oc/api` 含 devDependencies 的整棵樹，`--omit=dev` 只移除被標成 dev 的節點，所以凡是同時出現在 `vitest`／`typescript`／`@types/node` 依賴樹中、又是其他工作區正式依賴的套件都會留在映像裡（以 npm 11.19、`node:24-slim` 實測：另一個工作區的 `ms` 經 `vitest → debug → ms` 被裝進映像）。根目錄的 devDependencies（M1 的 `@types/node`、`typescript`、`vitest`）因 `--omit=dev` 不會安裝。第二階段只帶 `node_modules`、`packages/shared`、`apps/api`。`node --import tsx` 直接在 Node 內載入 tsx（不另開子程序），SIGTERM 可直接送達 `server.ts`。
+說明：第一階段複製整個 repo（由 `.dockerignore` 過濾），先用 `npm pkg` 把映像內根 `package.json` 的 `workspaces` 改成只有 `packages/shared` 與 `apps/api`，再 `npm install --omit=dev`：npm 依 lockfile 鎖定的版本，只安裝這兩個工作區的正式依賴（`tsx` 在 `@oc/api` 的 `dependencies` 內），並在映像內修剪 lockfile；repo 裡的 `package.json` 不受影響。不用 `npm ci --omit=dev --workspace @oc/api`：`--workspace` 不是嚴格的過濾器，`--omit=dev` 只移除在整個 workspace 樹中被標成 dev 的節點，其他工作區的套件可能留在映像裡；修剪清單後，映像內容只取決於 `packages/shared` 與 `apps/api` 的正式依賴。`@oc/api` 沒有自己的 devDependencies；根目錄的 devDependencies（M1 的 `@types/node`、`typescript`、`vitest`）因 `--omit=dev` 不會安裝。第二階段只帶 `node_modules`、`packages/shared`、`apps/api`。`node --import tsx` 直接在 Node 內載入 tsx（不另開子程序），SIGTERM 可直接送達 `server.ts`。
 
 - [ ] **Step 2: 建立 repo 根目錄 `.dockerignore`**
 
@@ -1919,6 +1977,7 @@ docker run --rm -p 8787:8787 --env-file apps/api/.env open-copilot-api
 - 放在 HTTPS 之後（Fly.io／Render 預設提供）；存取金鑰走 `Authorization` 標頭，不可用明文 HTTP 對外。
 - `ALLOWED_ORIGINS` 要加上網頁正式網域。
 - 限流計數存在記憶體，只適用單一實例；要水平擴充需改成共用儲存（例如 Redis）。
+- 每個 `/transcribe` 只呼叫 OpenAI 一次（不重試）、單次逾時 25 秒，重試交給前端（前端每個請求 30 秒逾時）。反向代理的請求逾時請設在 30 秒以上，否則代理會比本程式先放棄。
 - 要換轉寫服務（Groq、Azure…）時，實作 `src/transcriber/types.ts` 的 `Transcriber` 介面並在 `src/server.ts` 換掉即可。
 ````
 
@@ -1968,6 +2027,8 @@ git commit -m "chore(api): add Dockerfile, dockerignore and README"
 
 **Files:** 無新增；只執行檢查。若發現問題，修正後以 `fix(api): ...` 另行 commit。
 
+執行本 Task 時，同一個工作目錄內不得有其他計畫在跑（見「執行方式」）；否則別的計畫的 `npm install` 與未 commit 變動會讓 Step 3、Step 5 失敗。
+
 - [ ] **Step 1: 後端完整測試**
 
 Run: `npm test -w @oc/api`
@@ -1995,6 +2056,7 @@ Run:
 grep -n "export function loadConfig(env: Record<string, string | undefined>): AppConfig" apps/api/src/config.ts
 grep -n "transcribe(input: TranscribeInput): Promise<string>" apps/api/src/transcriber/types.ts
 grep -n "export function createOpenAITranscriber(apiKey: string, client?: OpenAI): Transcriber" apps/api/src/transcriber/openaiTranscriber.ts
+grep -nE "OPENAI_TIMEOUT_MS = 25_000|OPENAI_MAX_RETRIES = 0" apps/api/src/transcriber/openaiTranscriber.ts
 grep -n "export function toTraditional(text: string): string" apps/api/src/text/toTraditional.ts
 grep -n "export function bearerAuth(accessKeys: string\[\])" apps/api/src/middleware/auth.ts
 grep -n "export function rateLimit({ limit, windowMs, now = Date.now }: RateLimitOptions)" apps/api/src/middleware/rateLimit.ts
@@ -2004,16 +2066,16 @@ grep -nE "OPENAI_API_KEY|ACCESS_KEYS|ALLOWED_ORIGINS|PORT" apps/api/.env.example
 grep -nF "opencc-js@^1.4" docs/superpowers/plans/2026-10-21-00-overview.md
 test ! -e apps/api/src/types/opencc-js.d.ts && echo "no opencc-js d.ts (package ships its own types)"
 ```
-Expected: 每個 `grep` 都至少有一行匹配；`app.(notFound|onError)` 列出兩行；`.env.example` 那一個列出四個變數；總覽那一個至少列出 §4 的 `toTraditional` 條目與 §6 第 6 點；最後一行印出 `no opencc-js d.ts (package ships its own types)`。
+Expected: 每個 `grep` 都至少有一行匹配；`OPENAI_TIMEOUT_MS|OPENAI_MAX_RETRIES` 列出兩行（給 M3b 的時間保證）；`app.(notFound|onError)` 列出兩行；`.env.example` 那一個列出四個變數；總覽那一個至少列出 §4 的 `toTraditional` 條目與 §6 第 6 點；最後一行印出 `no opencc-js d.ts (package ships its own types)`。
 
 - [ ] **Step 5: 工作目錄乾淨、沒有秘密進版控**
 
 Run:
 ```bash
-git status --short
+git status --short -- . ':(exclude)docs/superpowers/plans'
 git ls-files apps/api | grep -E "(^|/)\.env(\.[^/]+)?$" | grep -v "\.env\.example$" || echo "no .env tracked"
 ```
-Expected: `git status --short` 無輸出；第二個指令印出 `no .env tracked`（`.env.example` 以外的 `.env`、`.env.*` 都沒有進版控）。
+Expected: 第一個指令無輸出（計畫檔因勾選 checkbox 而變動是允許的，故排除 `docs/superpowers/plans`）；第二個指令印出 `no .env tracked`（`.env.example` 以外的 `.env`、`.env.*` 都沒有進版控）。
 
 - [ ] **Step 6: Docker（若 Task 11 已驗證可跳過，但需在回報中註明）**
 
@@ -2034,3 +2096,55 @@ Expected: exit code 0。
    - [ ] 結果為 `60 502` 與 `1 429`。
    - [ ] 立刻再執行 `curl -s -D - -o /dev/null -X POST http://localhost:8787/transcribe -H "Authorization: Bearer dev-key" -F seq=1 -F "audio=@apps/api/.env.example" | grep -i retry-after`，看到 `Retry-After: <1–60 的整數>`。
 5. 停止伺服器（Ctrl+C），確認看到 `SIGINT received, closing server`；把 `.env` 的金鑰改回需要的值。
+
+- [ ] **Step 8:（僅 worktree 模式；循序模式略過）rebase、重新產生 lockfile、合併回主分支**
+
+以下指令都在 `D:\git\open-copilot-m3a` 執行（Claude Code 請在每個指令前加 `cd /d/git/open-copilot-m3a &&`）。
+
+1. 把勾選 checkbox 的進度 commit 起來（否則移除 worktree 時會遺失）：
+```bash
+git add docs/superpowers/plans && git diff --cached --quiet || git commit -m "docs: record M3a plan progress"
+```
+Expected: 有變動時印出 commit 摘要；沒有變動時無輸出。
+
+2. rebase 到主工作目錄目前的分支：
+```bash
+BASE=$(git -C ../open-copilot branch --show-current) && echo "base: $BASE" && git rebase "$BASE"
+```
+Expected: 先印出 `base: main`（或 `base: master`，依 `git init` 的預設分支），再印出 `Successfully rebased and updated refs/heads/feat/m3a-transcribe-api.`。
+若停在 `CONFLICT (content): Merge conflict in package-lock.json`（發生在 Task 1 的 commit）：以主分支的 lockfile 為底，讓 npm 加回 `@oc/api` 的依賴後繼續（rebase 時 `--ours` 指主分支那一側）：
+```bash
+git checkout --ours package-lock.json && npm install && git add package-lock.json && GIT_EDITOR=true git rebase --continue
+```
+Expected: 最後印出 `Successfully rebased and updated refs/heads/feat/m3a-transcribe-api.`。若衝突出現在 `package-lock.json` 以外的檔案，執行 `git rebase --abort` 並停下來回報。
+
+3. 不論是否發生衝突，都用 `npm install` 重新產生 lockfile（git 可能把兩邊的 lockfile 文字合併成功，但內容不一致）：
+```bash
+npm install && git status --short package-lock.json
+```
+Expected: `npm install` 成功；`git status` 無輸出。若印出 ` M package-lock.json`，commit 它：
+```bash
+git add package-lock.json && git commit -m "chore: regenerate package-lock.json after rebasing M3a"
+```
+
+4. 在 rebase 後的內容上重跑全 repo 驗證：
+```bash
+npm test && npm run typecheck && git status --short -- . ':(exclude)docs/superpowers/plans'
+```
+Expected: exit code 0；`npm test` 輸出中 `@oc/api` 區段為 `Tests  49 passed (49)`，沒有任何工作區出現 `failed`；最後的 `git status` 無輸出。
+
+5. 合併回主分支。此時主工作目錄 `D:\git\open-copilot` 內不得有計畫正在執行（等它完成，或停在兩個 Task 之間且已 commit）：
+```bash
+git -C ../open-copilot status --short -- . ':(exclude)docs/superpowers/plans'
+```
+Expected: 無輸出。有輸出就等那份計畫 commit 後再繼續。
+```bash
+git -C ../open-copilot merge --ff-only feat/m3a-transcribe-api && (cd ../open-copilot && npm install) && git -C ../open-copilot status --short package-lock.json
+```
+Expected: 印出 `Fast-forward`，`npm install` 成功，最後的 `git status` 無輸出。若印出 `fatal: Not possible to fast-forward, aborting.`（主分支在 rebase 之後又有新 commit），回到第 2 點重做。
+
+6. 移除 worktree 與分支：
+```bash
+cd ../open-copilot && git worktree remove ../open-copilot-m3a && git branch -d feat/m3a-transcribe-api && git worktree list
+```
+Expected: 無錯誤；`git worktree list` 只剩 `D:/git/open-copilot` 一行。若 `git worktree remove` 回報有修改或未追蹤的檔案，用 `git -C ../open-copilot-m3a status --short` 查看並停下來回報，不要加 `--force`；若 Windows 因檔案被佔用而刪除失敗，關閉仍開著該目錄的終端機或編輯器後重試。之後的指令回到 `D:\git\open-copilot` 執行。

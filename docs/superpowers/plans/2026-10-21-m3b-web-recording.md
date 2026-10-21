@@ -16,7 +16,7 @@
 - M1（`2026-10-21-m1-web-editor.md`）與 M2（`2026-10-21-m2-export-copy.md`）已全部完成並 commit；本計畫的「修改」步驟以這兩份計畫產出的檔案內容為準。
 - M3a（`2026-10-21-m3a-transcribe-api.md`）已完成。本計畫的程式碼不 import `apps/api`（自動化測試全部用假的 fetch／`page.route`），但 Verification 的人工檢查會在本機啟動 M3a 的後端。
 - 本計畫不新增任何套件（執行期或開發期），只用 M1／M2 已安裝的依賴。
-- 本計畫的程式碼已在本機以 M1＋M2 計畫的實際產出為基礎完整跑過：每個 Task 的「先失敗、後通過」、三個 workspace 的 typecheck、`vite build`、Playwright e2e（`--repeat-each=3`）。版本與 M2 相同：@tiptap/* 3.32.0、vitest 3.2.7、jsdom 26.1.0、fake-indexeddb 6.2.6、lucide-react 1.61.0、@playwright/test 1.64.1。審閱後修訂的部分（`pendingQueue.removeByNote` 與 `NotesApp` 刪除筆記時呼叫它、`start()` 在權限詢問後重新確認筆記、`retryGap` 綁定點擊當下的 editor、e2e 停止前多等 1.5 秒）尚未重新實跑，相關測試數字是依新增的測試推算；執行時若數字不符，以實際輸出為準並回報。
+- 本計畫的程式碼已在本機以 M1＋M2 計畫的實際產出為基礎完整跑過：每個 Task 的「先失敗、後通過」、三個 workspace 的 typecheck、`vite build`、Playwright e2e（`--repeat-each=3`）。版本與 M2 相同：@tiptap/* 3.32.0、vitest 3.2.7、jsdom 26.1.0、fake-indexeddb 6.2.6、lucide-react 1.61.0、@playwright/test 1.64.1。審閱後修訂的部分（`pendingQueue.removeByNote` 與 `NotesApp` 刪除筆記時呼叫它、`start()` 在權限詢問後重新確認筆記、`retryGap` 綁定點擊當下的 editor、e2e 停止前多等 1.5 秒、`transcribeSegment` 上傳前檢查 `MAX_AUDIO_BYTES`）尚未重新實跑，相關測試數字是依新增的測試推算；執行時若數字不符，以實際輸出為準並回報。
 
 - [ ] **前置步驟 1：確認 M1、M2、M3a 已完成**
 
@@ -58,7 +58,7 @@ Expected: 沒有輸出。
 | `start()` 與權限詢問 | 瀏覽器的麥克風權限泡泡不會擋住頁面，詢問期間階段仍是 `idle`、筆記清單可用。`getUserMedia` 回來後重新讀一次選項：`noteId` 或 `editor` 已換掉、editor 已銷毀、或設定已不完整時，立刻停止剛拿到的 track、維持 `idle`、不顯示訊息（使用者已在別篇筆記，再按一次「錄製」即可）。`ApiClient` 用這時讀到的設定建立。 |
 | `useRecorder` 回傳 | 契約欄位之外多 `dismissMessages()`（錯誤／提示列的關閉鈕）。`state` 由內部階段推導：未設定時 `needsSetup`，錄音中 `recording`，按停止後到所有上傳結束為 `stopping`。設定值改變時自動清掉舊的錯誤訊息。 |
 | `retryGap` 與切換筆記 | 重送期間階段仍是 `idle`，筆記清單可用，而一次重送最久可能超過 2 分鐘（1s→2s→4s 加上每次最多 30 秒逾時）。所以 `retryGap` 在**點擊當下**取 editor，回應回來後只在 `replaceGap` 真的取代了標記時才刪除記憶體與 IndexedDB 中的音訊。`replaceGap` 回傳 `false` 時一律保留音訊：editor 已銷毀（切到別篇或刪除了筆記）→ 顯示 `retryFailed`，回到原筆記再點一次即可；editor 還在但標記已被使用者刪除 → 不顯示訊息（復原可讓標記回來，音訊在該筆記被刪除時才清掉）。 |
-| 錯誤分類 | 重試後仍失敗的網路錯誤（含逾時）、5xx、429、其他 4xx 與格式錯誤 → 未轉寫標記；401 → 停止錄音、`error = '存取金鑰錯誤，請重新設定'`、`onUnauthorized()`，**該段音訊也存成未轉寫標記**（換好金鑰後點擊即可補上，不會遺失）；400、413 → `console.warn` 後略過；空字串 → 略過。每種情況都會推進順序。 |
+| 錯誤分類 | 重試後仍失敗的網路錯誤（含逾時）、5xx、429、其他 4xx 與格式錯誤 → 未轉寫標記；401 → 停止錄音、`error = '存取金鑰錯誤，請重新設定'`、`onUnauthorized()`，**該段音訊也存成未轉寫標記**（換好金鑰後點擊即可補上，不會遺失）；400、413 → `console.warn` 後略過；空字串 → 略過。每種情況都會推進順序。上傳前先比對 `@oc/shared` 的 `MAX_AUDIO_BYTES`（與 M3a 的 413 門檻同一個常數）：`blob.size > MAX_AUDIO_BYTES` 的片段不上傳、不重試，走與 413 相同的 `console.warn` 後略過（不存成標記，因為重送也只會再得到 413）；剛好等於上限的片段照常上傳。 |
 | 其他訊息 | `RECORDER_MESSAGES`：`startFailed = '無法開始錄音，請再試一次'`（`MediaRecorder` 無法啟動）、`retryFailed = '重新轉寫失敗，請稍後再試'`、`audioMissing = '找不到這段錄音，無法重新轉寫'`（記憶體與 IndexedDB 都沒有該段音訊）。 |
 | 未轉寫標記 | Tiptap Node `TranscriptGap`（`editor/transcriptGap.ts`），`name` 直接用 M2 的 `TRANSCRIPT_GAP_TYPE`。`getHTML()` 與契約逐字相同：`<span class="oc-gap" data-transcript-gap="{gapId}">⚠ 第 {seq} 段未轉寫・重試</span>`；`seq` 不另寫成 HTML 屬性，解析 HTML 時從標籤文字讀回。`renderText` 回傳 `[未轉寫片段]`，與所有匯出器一致。重試入口：`NotesApp` 的 `.oc-document` 以 React `onClick` 事件委派找 `[data-transcript-gap]`，不需要 ProseMirror plugin。 |
 | 插入點 | 按下「錄製」時的 `editor.state.selection.to`；若不在文字區塊內（例如全選），移到最近的文字位置。轉寫文字一律不帶 mark（游標在粗體裡也插入純文字），也不移動使用者的游標。 |
@@ -2651,7 +2651,7 @@ git commit -m "feat(core): keep untranscribed audio in the pendingSegments store
 - Create: `packages/core/src/recording/useRecorder.ts`
 - Test: `packages/core/src/recording/useRecorder.test.ts`
 
-本 Task 先完成成功路徑：未設定時為 `needsSetup`、取得麥克風、每段上傳（含重試）、依 `seq` 插入、空字串略過、prompt 為已插入文字的最後 200 字、停止時等所有上傳結束並釋放麥克風、麥克風被拒、權限詢問期間切換筆記則放棄開始、卸載時釋放麥克風。重試後仍失敗的片段暫時只記錄錯誤並略過（不卡住後面的片段）；Task 14 再把它改成未轉寫標記並加上重送、401、413 與中斷提示。選項型別（`db`、`onUnauthorized`、`deps.newGapId`）在本 Task 就定案，Task 14 才開始使用它們，測試輔助因此兩個 Task 共用、不必修改。
+本 Task 先完成成功路徑：未設定時為 `needsSetup`、取得麥克風、每段上傳（含重試）、依 `seq` 插入、空字串略過、prompt 為已插入文字的最後 200 字、停止時等所有上傳結束並釋放麥克風、麥克風被拒、權限詢問期間切換筆記則放棄開始、卸載時釋放麥克風。重試後仍失敗的片段暫時只記錄錯誤並略過（不卡住後面的片段）；Task 14 再把它改成未轉寫標記並加上重送、401、413、上傳前的大小上限檢查與中斷提示。選項型別（`db`、`onUnauthorized`、`deps.newGapId`）在本 Task 就定案，Task 14 才開始使用它們，測試輔助因此兩個 Task 共用、不必修改。
 
 - [ ] **Step 1: 建立 `useRecorder` 的測試輔助（Task 13、14 共用）**
 
@@ -3309,7 +3309,7 @@ git commit -m "feat(core): add useRecorder with ordered transcript insertion"
 
 ---
 
-### Task 14: `useRecorder`（二）：未轉寫標記、重送、401、413、中斷提示
+### Task 14: `useRecorder`（二）：未轉寫標記、重送、401、413、大小上限、中斷提示
 
 **Files:**
 - Modify: `packages/core/src/recording/useRecorder.ts`
@@ -3322,6 +3322,7 @@ git commit -m "feat(core): add useRecorder with ordered transcript insertion"
 `packages/core/src/recording/useRecorder.failures.test.ts`：
 
 ```ts
+import { MAX_AUDIO_BYTES } from '@oc/shared';
 import { act, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/apiClient';
@@ -3540,6 +3541,28 @@ describe('useRecorder: failures', () => {
     expect(warn).toHaveBeenCalledTimes(2);
   });
 
+  it('skips a segment over MAX_AUDIO_BYTES without uploading it, like a 413', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const ctx = await setupRecorder();
+    ctx.transcribe.mockImplementation(async (input) => ({ seq: input.seq, text: `第${input.seq}段` }));
+    const sized = (bytes: number) =>
+      new Blob([new Uint8Array(bytes)], { type: 'audio/webm;codecs=opus' });
+    await act(async () => {
+      await ctx.result.current.start();
+    });
+
+    act(() => {
+      ctx.recorders[0].options.onSegment({ seq: 1, blob: sized(MAX_AUDIO_BYTES + 1) });
+      ctx.recorders[0].options.onSegment({ seq: 2, blob: sized(MAX_AUDIO_BYTES) });
+    });
+
+    await waitFor(() => expect(ctx.editor.getText()).toBe('第2段'));
+    expect(ctx.transcribe.mock.calls.map(([input]) => input.seq)).toEqual([2]);
+    expect(ctx.editor.getHTML()).not.toContain('oc-gap');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(await createPendingQueue(ctx.db).get('gap-1')).toBeUndefined();
+  });
+
   it('after an interruption in the background, shows a notice once the page is visible again', async () => {
     let visibility: DocumentVisibilityState = 'visible';
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
@@ -3581,19 +3604,21 @@ describe('useRecorder: failures', () => {
 - [ ] **Step 2: 執行測試，確認失敗**
 
 Run: `npm test -w @oc/core -- src/recording/useRecorder.failures.test.ts`
-Expected: FAIL，`Tests  11 failed (11)`（stderr 會出現 Task 13 版本的 `Segment 1 could not be transcribed ApiError: …`，屬預期）：
+Expected: FAIL，`Tests  12 failed (12)`（stderr 會出現 Task 13 版本的 `Segment 1 could not be transcribed ApiError: …`，屬預期）：
 - 三個等待標記的測試：`AssertionError: expected '<p>第二段</p>' to be '<p><span class="oc-gap" data-transcri…'`（或 `expected '<p></p>' …`）——失敗片段目前被略過，沒有插入標記。
 - 四個直接呼叫 `retryGap` 的測試（讀 IndexedDB、音訊不見、重送中切換筆記、重送中刪除標記）：`TypeError: ctx.result.current.retryGap is not a function`。
 - 401：`AssertionError: expected 'recording' to be 'idle'`。
 - 413／400：`AssertionError: expected "warn" to be called 2 times, but got 0 times`。
+- 超過 `MAX_AUDIO_BYTES`：`AssertionError: expected '第1段第2段' to be '第2段'`——Task 13 版本沒有大小檢查，超過上限的第 1 段照樣上傳並插入。
 - 中斷提示：`AssertionError: expected null to be '錄音已中斷，已錄的部分會照常轉寫'`。
 - `dismissMessages`：`AssertionError: expected null to be undefined`（Task 13 的 `RECORDER_MESSAGES` 還沒有 `interrupted`）。
 
 - [ ] **Step 3: 實作**
 
-`packages/core/src/recording/useRecorder.ts` 完整內容（相對 Task 13：`SegmentResult` 多了 `gap`；`transcribeSegment` 依狀態碼分流；新增 `keepPending`、`handleUnauthorized`、`handleInterrupted`、`onVisibilityChange`、`retryGap`（綁定點擊當下的 editor，取代成功才刪除音訊）、`dismissMessages`；hook 建立 `pendingQueue`、監聽 `visibilitychange`、設定改變時清除錯誤）：
+`packages/core/src/recording/useRecorder.ts` 完整內容（相對 Task 13：`SegmentResult` 多了 `gap`；`transcribeSegment` 先以 `MAX_AUDIO_BYTES` 擋下過大的片段，再依狀態碼分流；新增 `keepPending`、`handleUnauthorized`、`handleInterrupted`、`onVisibilityChange`、`retryGap`（綁定點擊當下的 editor，取代成功才刪除音訊）、`dismissMessages`；hook 建立 `pendingQueue`、監聽 `visibilitychange`、設定改變時清除錯誤）：
 
 ```ts
+import { MAX_AUDIO_BYTES } from '@oc/shared';
 import type { Editor } from '@tiptap/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, createApiClient, type ApiClient } from '../api/apiClient';
@@ -3879,6 +3904,12 @@ function createRecorderController(env: ControllerEnv) {
     prompt: string,
   ): Promise<SegmentResult> {
     const d = deps();
+    // The server answers 413 for anything bigger (same constant), so do not spend an upload on it.
+    // Same outcome as a 413: warn and skip; no gap, since a retry would be refused again.
+    if (blob.size > MAX_AUDIO_BYTES) {
+      console.warn(`Segment ${seq} is ${blob.size} bytes, over ${MAX_AUDIO_BYTES}, and was skipped`);
+      return { kind: 'skip' };
+    }
     try {
       const response = await withRetry(
         () =>
@@ -4034,17 +4065,18 @@ function tail(text: string, count: number): string {
 - `retryGap` 在點擊當下取 editor，而且只有 `replaceGap` 回傳 `true` 時才刪除音訊。重送期間切到別篇筆記（舊 editor 被銷毀）時保留音訊並顯示「重新轉寫失敗，請稍後再試」，回到原筆記點擊標記即可重送；標記在等待期間被使用者刪掉時同樣保留音訊、不顯示訊息。
 - `start()` 與 Task 13 相同：權限詢問結束後重新確認筆記與 editor 沒換。
 - 401 時 `handleUnauthorized` 只執行一次：顯示錯誤、通知 `onUnauthorized()`、結束錄音；同一 session 之後再收到的 401 片段也都存成標記。
+- 上傳前先比對 `@oc/shared` 的 `MAX_AUDIO_BYTES`（M3a 回 413 的同一個門檻）：超過的片段不上傳、不重試、不存成標記，`console.warn` 後略過，與伺服器回 413 的結果一致，只是省下一次注定失敗的上傳；等於上限的片段照常上傳（測試同時驗證兩側邊界）。正常 4–8 秒的 Opus 片段遠小於 5MB，這是防呆。
 
 - [ ] **Step 4: 執行測試與型別檢查，確認通過**
 
 Run: `npm test -w @oc/core -- src/recording/useRecorder.test.ts src/recording/useRecorder.failures.test.ts && npm run typecheck -w @oc/core`
-Expected: `Test Files  2 passed (2)`、`Tests  20 passed (20)`；typecheck 無錯誤；輸出中沒有 `not wrapped in act(...)`。
+Expected: `Test Files  2 passed (2)`、`Tests  21 passed (21)`；typecheck 無錯誤；輸出中沒有 `not wrapped in act(...)`。
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add packages/core/src/recording/useRecorder.ts packages/core/src/recording/useRecorder.failures.test.ts
-git commit -m "feat(core): keep failed segments as retryable gaps and handle 401/413/interruptions"
+git commit -m "feat(core): keep failed segments as retryable gaps and handle 401/413/oversized audio/interruptions"
 ```
 
 ---
@@ -5203,7 +5235,7 @@ git commit -m "feat(core): wire recording, settings and transcript gaps into the
 
 Run: `npm test`
 Expected:
-- `@oc/core`：`Test Files  46 passed (46)`、`Tests  296 passed (296)`
+- `@oc/core`：`Test Files  46 passed (46)`、`Tests  297 passed (297)`
 - `@oc/shared`：`Test Files  1 passed (1)`、`Tests  3 passed (3)`
 - `@oc/web`：`Test Files  1 passed (1)`、`Tests  1 passed (1)`
 - `@oc/api`（M3a）：`Test Files  9 passed (9)`、`Tests  49 passed (49)`（本計畫未修改，數字以 M3a 計畫為準）
