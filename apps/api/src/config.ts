@@ -1,9 +1,13 @@
+import { GROQ_DEFAULT_LLM_MODEL } from './ai/groqAssistant';
+import type { AiConfig } from './ai/types';
 import type { TranscribeProvider, TranscriberConfig } from './transcriber/createTranscriber';
 import { GROQ_DEFAULT_TRANSCRIBE_MODEL } from './transcriber/groqTranscriber';
 import { TRANSCRIBE_MODEL } from './transcriber/openaiTranscriber';
 
 export interface AppConfig {
   transcriber: TranscriberConfig;
+  /** AI 摘要／待辦事項（Groq LLM）；沒有 GROQ_API_KEY 時為 null，/ai/* 回 503 ai_unavailable。 */
+  ai: AiConfig | null;
   accessKeys: string[];
   allowedOrigins: string[];
   port: number;
@@ -111,8 +115,19 @@ function loadTranscriberConfig(env: Record<string, string | undefined>): Transcr
   return { provider, apiKey: openaiKey, model: TRANSCRIBE_MODEL };
 }
 
+/**
+ * AI 一律走 Groq，與 TRANSCRIBE_PROVIDER 無關：有 GROQ_API_KEY 就啟用，模型預設 openai/gpt-oss-120b，
+ * 可用 GROQ_LLM_MODEL 覆寫。沒有 Groq 金鑰時回 null，伺服器照常啟動，只是 /ai/* 回 503。
+ */
+function loadAiConfig(env: Record<string, string | undefined>): AiConfig | null {
+  const groqKey = readValue(env, 'GROQ_API_KEY');
+  if (!groqKey) return null;
+  return { apiKey: groqKey, model: readValue(env, 'GROQ_LLM_MODEL') ?? GROQ_DEFAULT_LLM_MODEL };
+}
+
 export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const transcriber = loadTranscriberConfig(env);
+  const ai = loadAiConfig(env);
 
   const accessKeys = splitList(env['ACCESS_KEYS']);
   if (accessKeys.length === 0) {
@@ -137,7 +152,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     throw new Error(`PORT must be an integer between 1 and 65535, got "${rawPort}"`);
   }
 
-  return { transcriber, accessKeys, allowedOrigins, port };
+  return { transcriber, ai, accessKeys, allowedOrigins, port };
 }
 
 /**

@@ -59,6 +59,7 @@ describe('loadConfig', () => {
     const config = loadConfig(base);
     expect(config).toEqual({
       transcriber: { provider: 'groq', apiKey: 'gsk-test', model: 'whisper-large-v3-turbo' },
+      ai: { apiKey: 'gsk-test', model: 'openai/gpt-oss-120b' },
       accessKeys: ['key-a'],
       allowedOrigins: [
         'http://localhost:5173',
@@ -103,6 +104,7 @@ describe('loadConfig', () => {
       TRANSCRIBE_PROVIDER: '',
       GROQ_API_KEY: '',
       GROQ_TRANSCRIBE_MODEL: '',
+      GROQ_LLM_MODEL: '',
       OPENAI_API_KEY: '',
       ACCESS_KEYS: '',
     });
@@ -194,6 +196,36 @@ describe('transcription provider', () => {
       GROQ_TRANSCRIBE_MODEL: 'whisper-large-v3',
     });
     expect(config.transcriber.model).toBe('gpt-4o-mini-transcribe');
+  });
+});
+
+describe('AI config', () => {
+  it('enables AI with the default Groq LLM when GROQ_API_KEY is set', () => {
+    expect(loadConfig(base).ai).toEqual({ apiKey: 'gsk-test', model: 'openai/gpt-oss-120b' });
+  });
+
+  it('lets GROQ_LLM_MODEL override the model, ignoring blanks', () => {
+    expect(loadConfig({ ...base, GROQ_LLM_MODEL: ' llama-3.3-70b-versatile ' }).ai?.model).toBe(
+      'llama-3.3-70b-versatile',
+    );
+    expect(loadConfig({ ...base, GROQ_LLM_MODEL: '   ' }).ai?.model).toBe('openai/gpt-oss-120b');
+  });
+
+  it('disables AI when there is no Groq key, without refusing to start', () => {
+    const config = loadConfig({
+      ACCESS_KEYS: 'key-a',
+      OPENAI_API_KEY: 'sk-test',
+      GROQ_API_KEY: '  ',
+      GROQ_LLM_MODEL: 'llama-3.3-70b-versatile',
+    });
+    expect(config.ai).toBeNull();
+    expect(config.transcriber.provider).toBe('openai');
+  });
+
+  it('keeps AI on Groq even when transcription uses OpenAI', () => {
+    const config = loadConfig({ ...base, OPENAI_API_KEY: 'sk-test', TRANSCRIBE_PROVIDER: 'openai' });
+    expect(config.transcriber.provider).toBe('openai');
+    expect(config.ai).toEqual({ apiKey: 'gsk-test', model: 'openai/gpt-oss-120b' });
   });
 });
 
