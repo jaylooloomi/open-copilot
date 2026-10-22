@@ -41,7 +41,13 @@ export function createExtensions(): Extensions {
     Placeholder.configure({ placeholder: EDITOR_PLACEHOLDER }),
     // M11: AI 待辦事項 are inserted as a task list. Nested, so a list pasted into an item survives.
     TaskList,
-    TaskItem.configure({ nested: true }),
+    // zh-TW checkbox labels for screen readers (Tiptap's default label is English).
+    TaskItem.configure({
+      nested: true,
+      a11y: {
+        checkboxLabel: (node, checked) => `${checked ? '已完成' : '未完成'}待辦：${node.textContent || '空白項目'}`,
+      },
+    }),
     TranscriptGap,
     HistoryKeys,
   ];

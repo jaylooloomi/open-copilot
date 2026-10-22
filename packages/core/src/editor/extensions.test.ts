@@ -129,7 +129,23 @@ describe('createExtensions task lists', () => {
     e.chain().setTextSelection(2).toggleTaskList().run();
     expect(e.isActive('taskList')).toBe(true);
     const doc: JSONContent = e.getJSON();
-    expect(doc.content?.[0]?.content?.[0]?.attrs?.checked).toBe(false);
+    const item = doc.content?.[0]?.content?.[0];
+    expect(item?.attrs?.checked).toBe(false);
+    expect(item?.content?.[0]?.content?.[0]?.text).toBe('準備');
+    expect(e.getText().trim()).toBe('準備');
+  });
+
+  it('labels each checkbox in zh-TW for screen readers', () => {
+    const e = makeEditor(
+      '<ul data-type="taskList">' +
+        '<li data-type="taskItem" data-checked="true"><p>寄出報價單</p></li>' +
+        '<li data-type="taskItem" data-checked="false"><p></p></li>' +
+        '</ul>',
+    );
+    const labels = [...e.view.dom.querySelectorAll('input[type="checkbox"]')].map((box) =>
+      box.getAttribute('aria-label'),
+    );
+    expect(labels).toEqual(['已完成待辦：寄出報價單', '未完成待辦：空白項目']);
   });
 
   it('lets a task item hold a nested task list', () => {
