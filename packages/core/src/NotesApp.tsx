@@ -117,15 +117,20 @@ export function NotesApp() {
       setStorageError(undefined);
       // Once the note is gone its ⚠ markers can never be retried, so drop their audio as well
       // (only after the note itself was deleted; a failed delete keeps both).
-      deleteNote(id).then(
-        () =>
-          createPendingQueue(recorderDb)
-            .removeByNote(id)
-            .catch((error: unknown) =>
-              console.error('Failed to drop the untranscribed audio of a deleted note', error),
-            ),
-        reportFailure('刪除筆記失敗，請再試一次。', 'Failed to delete note'),
-      );
+      deleteNote(id)
+        .then(
+          () =>
+            createPendingQueue(recorderDb)
+              .removeByNote(id)
+              .catch((error: unknown) =>
+                console.error('Failed to drop the untranscribed audio of a deleted note', error),
+              ),
+          reportFailure('刪除筆記失敗，請再試一次。', 'Failed to delete note'),
+        )
+        // Catches a synchronous throw while building the queue, which the .catch above cannot.
+        .catch((error: unknown) =>
+          console.error('Failed to drop the untranscribed audio of a deleted note', error),
+        );
     }
   };
 
