@@ -106,4 +106,17 @@ describe('createFakeJsonUpstream', () => {
     ).rejects.toThrow(/only handles JSON/);
     expect(upstream.calls).toHaveLength(0);
   });
+
+  it('fails with a clear error for a JSON request whose body is not valid JSON', async () => {
+    const upstream = createFakeJsonUpstream(() => chatCompletionResponse('ok'));
+
+    await expect(
+      upstream.fetch('https://upstream.test/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{not json',
+      }),
+    ).rejects.toThrow(/createFakeJsonUpstream got an invalid JSON body/);
+    expect(upstream.calls).toHaveLength(0);
+  });
 });

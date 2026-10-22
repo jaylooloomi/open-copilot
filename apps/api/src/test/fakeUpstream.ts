@@ -15,7 +15,36 @@ export interface UpstreamCall {
  * 不要用 `fetch` 的呼叫次數。
  */
 export function createFakeUpstream(respond: (call: UpstreamCall) => Response) {
-  const calls: UpstreamCall[] = [];
+  return makeFakeFetch<UpstreamCall>(
+    'multipart/form-data',
+    'createFakeUpstream only handles multipart requests',
+    async (request) => {
+      const form = await request.formData();
+      const fields: Record<string, string> = {};
+      for (const [name, value] of form.entries()) {
+        fields[name] = typeof value === 'string' ? value : `file:${value.name}`;
+      }
+      return {
+        url: request.url,
+        authorization: request.headers.get('authorization'),
+        fields,
+      };
+    },
+    respond,
+  );
+}
+
+/**
+ * 兩個假上游共用的部分：signal 已中止時以中止原因拒絕、檢查 content-type、
+ * 記錄 `calls`、掛上全域 Response。只有解析請求的方式不同（parse）。
+ */
+function makeFakeFetch<Call>(
+  contentTypePrefix: string,
+  wrongTypeMessage: string,
+  parse: (request: Request) => Promise<Call>,
+  respond: (call: Call) => Response,
+) {
+  const calls: Call[] = [];
   // OpenAI SDK 第一次看到新的 fetch 函式時，若它沒有 `Response` 屬性，會先用它送一次
   // `fetch('data:,')` 探測 FormData 支援（openai/internal/uploads.js 的 supportsFormData）。
   // 掛上全域 Response 讓 SDK 跳過這次探測，fetch 的呼叫次數才等於真正的上游請求數。
@@ -24,19 +53,10 @@ export function createFakeUpstream(respond: (call: UpstreamCall) => Response) {
     // 像真的 fetch 一樣：signal 已中止就以中止原因拒絕，不記錄、不回應。
     if (request.signal.aborted) throw request.signal.reason;
     const contentType = request.headers.get('content-type') ?? '';
-    if (!contentType.startsWith('multipart/form-data')) {
-      throw new Error(`createFakeUpstream only handles multipart requests, got "${contentType}"`);
+    if (!contentType.startsWith(contentTypePrefix)) {
+      throw new Error(`${wrongTypeMessage}, got "${contentType}"`);
     }
-    const form = await request.formData();
-    const fields: Record<string, string> = {};
-    for (const [name, value] of form.entries()) {
-      fields[name] = typeof value === 'string' ? value : `file:${value.name}`;
-    }
-    const call: UpstreamCall = {
-      url: request.url,
-      authorization: request.headers.get('authorization'),
-      fields,
-    };
+    const call = await parse(request);
     calls.push(call);
     return respond(call);
   }), { Response });
@@ -65,28 +85,30 @@ export interface JsonUpstreamCall {
 /**
  * 假的上游 fetch，專門處理 JSON 請求（例如 chat completions），注入真正的 OpenAI SDK client。
  * 和 createFakeUpstream 一樣：signal 已中止時以中止原因拒絕；非 JSON 請求直接丟出清楚的錯誤；
+ * body 不是合法 JSON 時也丟出清楚的錯誤；
  * `calls` 只記錄真正送到上游的請求。
  */
 export function createFakeJsonUpstream(respond: (call: JsonUpstreamCall) => Response) {
-  const calls: JsonUpstreamCall[] = [];
-  // 掛上全域 Response 的理由同 createFakeUpstream：讓 SDK 跳過 FormData 探測。
-  const fetch = Object.assign(vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-    const request = new Request(input, init);
-    if (request.signal.aborted) throw request.signal.reason;
-    const contentType = request.headers.get('content-type') ?? '';
-    if (!contentType.startsWith('application/json')) {
-      throw new Error(`createFakeJsonUpstream only handles JSON requests, got "${contentType}"`);
-    }
-    const call: JsonUpstreamCall = {
-      url: request.url,
-      method: request.method,
-      authorization: request.headers.get('authorization'),
-      body: await request.json(),
-    };
-    calls.push(call);
-    return respond(call);
-  }), { Response });
-  return { fetch, calls };
+  return makeFakeFetch<JsonUpstreamCall>(
+    'application/json',
+    'createFakeJsonUpstream only handles JSON requests',
+    async (request) => {
+      const text = await request.text();
+      let body: unknown;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        throw new Error(`createFakeJsonUpstream got an invalid JSON body: ${JSON.stringify(text)}`);
+      }
+      return {
+        url: request.url,
+        method: request.method,
+        authorization: request.headers.get('authorization'),
+        body,
+      };
+    },
+    respond,
+  );
 }
 
 /** 一個成功的 chat completion 回應，只有一個 choice；content 可為 null（模型沒有輸出）。 */
