@@ -18,7 +18,8 @@ function startServer(env: Record<string, string>) {
     cwd: apiDir,
     env: { ...baseEnv, ...env },
     encoding: 'utf8',
-    timeout: 30_000,
+    // 比 it() 的 30 秒短，子程序卡住時才會看到 status/stderr 的斷言失敗而非泛用逾時。
+    timeout: 25_000,
   });
 }
 

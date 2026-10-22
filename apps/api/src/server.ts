@@ -1,3 +1,4 @@
+import { writeSync } from 'node:fs';
 import { serve } from '@hono/node-server';
 import { createApp } from './app';
 import { accessKeyWarning, loadConfig, type AppConfig } from './config';
@@ -9,7 +10,9 @@ function loadConfigOrExit(): AppConfig {
   try {
     return loadConfig(process.env);
   } catch (err) {
-    console.error(`[config] ${err instanceof Error ? err.message : String(err)}`);
+    // 用同步寫入：stderr 是管線時 console.error 可能是非同步，process.exit 會截斷訊息。
+    writeSync(2, `[config] ${err instanceof Error ? err.message : String(err)}
+`);
     process.exit(1);
   }
 }
