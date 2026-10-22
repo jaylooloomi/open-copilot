@@ -18,6 +18,8 @@ export function parseAiRequest(raw: unknown): AiRequest | AiRequestError {
   const { title, text } = raw as Record<string, unknown>;
   if (typeof title !== 'string' || typeof text !== 'string') return 'bad_request';
   if (text.trim() === '') return 'bad_request';
+  // 一個 code point 最多佔 2 個 UTF-16 單位：length 超過上限兩倍時必定超標，免得為巨大 body 建陣列。
+  if (text.length > AI_MAX_TEXT_CHARS * 2) return 'payload_too_large';
   if (countChars(text) > AI_MAX_TEXT_CHARS) return 'payload_too_large';
   return { title, text };
 }

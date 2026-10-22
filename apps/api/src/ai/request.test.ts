@@ -1,5 +1,5 @@
 import { AI_MAX_TEXT_CHARS } from '@oc/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { countChars, parseAiRequest } from './request';
 
 describe('parseAiRequest', () => {
@@ -36,9 +36,8 @@ describe('parseAiRequest', () => {
   });
 
   it('accepts exactly AI_MAX_TEXT_CHARS characters', () => {
-    expect(parseAiRequest({ title: '', text: '字'.repeat(AI_MAX_TEXT_CHARS) })).not.toBeTypeOf(
-      'string',
-    );
+    const text = '字'.repeat(AI_MAX_TEXT_CHARS);
+    expect(parseAiRequest({ title: '', text })).toEqual({ title: '', text });
   });
 
   it('returns payload_too_large one character over AI_MAX_TEXT_CHARS', () => {
@@ -48,9 +47,19 @@ describe('parseAiRequest', () => {
   });
 
   it('counts an emoji as one character, not two UTF-16 units', () => {
-    expect(parseAiRequest({ title: '', text: '😀'.repeat(AI_MAX_TEXT_CHARS) })).not.toBeTypeOf(
-      'string',
-    );
+    const text = '😀'.repeat(AI_MAX_TEXT_CHARS);
+    expect(parseAiRequest({ title: '', text })).toEqual({ title: '', text });
+  });
+
+  it('returns payload_too_large for a text far beyond the limit without counting it', () => {
+    const text = 'a'.repeat(AI_MAX_TEXT_CHARS * 2 + 1);
+    const from = vi.spyOn(Array, 'from');
+    try {
+      expect(parseAiRequest({ title: '', text })).toBe('payload_too_large');
+      expect(from).not.toHaveBeenCalled();
+    } finally {
+      from.mockRestore();
+    }
   });
 });
 
