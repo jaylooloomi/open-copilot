@@ -1,13 +1,14 @@
 import type { Note } from '@oc/shared';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createBackup, serializeBackup } from './backup/backupFormat';
 import { NotesApp } from './NotesApp';
 import { openAppDb } from './platform/db';
 import { PlatformProvider } from './platform/PlatformContext';
 import { createPendingQueue } from './recording/pendingQueue';
-import { createFakeStream, FakeMediaRecorder } from './test/media';
+import { RECORDER_MESSAGES } from './recording/useRecorder';
+import { createFakeAudioContext, createFakeStream, FakeMediaRecorder } from './test/media';
 import { createTestPlatform } from './test/memoryStorage';
 
 const SETTINGS = { apiBaseUrl: 'https://api.test', accessKey: 'key-1' };
@@ -315,5 +316,90 @@ describe('NotesApp recording', () => {
     await waitFor(() => expect(storage.remove).toHaveBeenCalledWith('with-gap'));
     await waitFor(async () => expect(await queue.get('gap-of-deleted-note')).toBeUndefined());
     expect(await queue.get('gap-of-other-note')).toBeDefined();
+  });
+});
+
+/** A fake AudioContext behind `new AudioContext()`, so SegmentRecorder gets real readings. */
+function installAudioContext(level: number) {
+  const audio = createFakeAudioContext();
+  audio.setLevel(level);
+  vi.stubGlobal('AudioContext', function FakeAudioContext() {
+    return audio.context;
+  });
+  return audio;
+}
+
+describe('NotesApp recording feedback', () => {
+  it('shows the timer and level meter while recording, the no-sound hint after 10 quiet seconds, and drops them after stop', async () => {
+    // Only Date is faked: the recorder's 50ms polling and the timer's 250ms ticks run for real,
+    // reading the faked clock, so 10 seconds can pass at once. SegmentRecorder throttles onLevel
+    // on Date.now() (levelMs = 100), so the faked clock must move before every new reading:
+    // while it stands still, polls after the first one are skipped.
+    vi.useFakeTimers({ now: 0, toFake: ['Date'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    installMicrophone();
+    const audio = installAudioContext(0.5);
+    installBackend((seq) => json({ seq, text: '' }));
+    const { user } = await renderApp();
+
+    await user.click(button('錄製'));
+    expect(await screen.findByRole('button', { name: '停止' })).toBeEnabled();
+    const timer = screen.getByRole('timer', { name: '錄音時間' });
+    expect(timer).toHaveTextContent('00:00');
+    await waitFor(() =>
+      expect(document.querySelector('.oc-level-meter')).toHaveAttribute('data-level', '5'),
+    );
+    expect(screen.queryByText(RECORDER_MESSAGES.noSound)).not.toBeInTheDocument();
+
+    audio.setLevel(0);
+    vi.setSystemTime(10_500);
+    const hint = await screen.findByText(RECORDER_MESSAGES.noSound);
+    expect(hint).toHaveAttribute('role', 'status');
+    await waitFor(() => expect(timer).toHaveTextContent('00:10'));
+    expect(document.querySelector('.oc-level-meter')).toHaveAttribute('data-level', '0');
+
+    audio.setLevel(0.5);
+    // Move the clock past levelMs so the next poll reports the loud reading.
+    vi.setSystemTime(10_700);
+    await waitFor(() =>
+      expect(document.querySelector('.oc-level-meter')).toHaveAttribute('data-level', '5'),
+    );
+    await waitFor(() => expect(screen.queryByText(RECORDER_MESSAGES.noSound)).not.toBeInTheDocument());
+
+    await user.click(button('停止'));
+    expect(await screen.findByRole('button', { name: '錄製' })).toBeEnabled();
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument();
+    expect(document.querySelector('.oc-level-meter')).toBeNull();
+    expect(screen.queryByText(/轉寫中/)).not.toBeInTheDocument();
+  });
+
+  it('shows 轉寫中 N 段 while a segment waits for its transcript', async () => {
+    installMicrophone();
+    // /transcribe waits until the test answers it.
+    let answer!: (response: Response) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).endsWith('/health')
+          ? json({ ok: true })
+          : new Promise<Response>((resolve) => {
+              answer = resolve;
+            }),
+      ),
+    );
+    const { user } = await renderApp();
+
+    await user.click(button('錄製'));
+    await user.click(await screen.findByRole('button', { name: '停止' }));
+
+    expect(await screen.findByText('轉寫中 1 段')).toBeInTheDocument();
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument();
+
+    answer(json({ seq: 1, text: '你好世界' }));
+    expect(await screen.findByRole('button', { name: '錄製' })).toBeEnabled();
+    expect(screen.queryByText(/轉寫中/)).not.toBeInTheDocument();
+    expect(body()).toHaveTextContent('你好世界');
   });
 });

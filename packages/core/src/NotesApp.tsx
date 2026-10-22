@@ -19,7 +19,7 @@ import { ImportNotesError, useNotes, type ImportNotesResult } from './notes/useN
 import { openAppDb } from './platform/db';
 import { usePlatform } from './platform/PlatformContext';
 import { collectGapIds } from './recording/gapRefs';
-import { useRecorder } from './recording/useRecorder';
+import { RECORDER_MESSAGES, useRecorder } from './recording/useRecorder';
 import { useSettings } from './settings/useSettings';
 import { useNoteDrawer } from './useNoteDrawer';
 import './styles/app.css';
@@ -316,9 +316,18 @@ export function NotesApp() {
             onRecord={onRecord}
             recordDisabled={backup.busy || recordStarting}
             onOpenSettings={() => setSettingsOpen(true)}
+            startedAt={recorder.startedAt}
+            levels={recorder.levels}
+            transcribing={recorder.transcribing}
           />
         </header>
         <Banner backupDue={backup.backupDue} backupDisabled={listLocked} onBackup={startBackup} />
+        {recorder.noSound && (
+          // Too long for the action bar on a phone, so it gets its own line under the banner.
+          <p className="oc-no-sound" role="status">
+            {RECORDER_MESSAGES.noSound}
+          </p>
+        )}
         {(recorder.error || recorder.notice) && (
           <div className="oc-recorder-alert" role="alert">
             <div className="oc-recorder-alert-text">
