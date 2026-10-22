@@ -36,6 +36,8 @@ export class SegmentRecorder {
   private readonly policy: SegmentPolicy;
   private readonly now: () => number;
   private current: Segment | null = null;
+  /** Segments already stopped by a cut whose `stop` event has not been handled yet. */
+  private readonly pending = new Set<Promise<void>>();
   private nextSeq = 1;
   private timer: ReturnType<typeof setInterval> | undefined;
   private audioContext: AudioContext | null = null;
@@ -83,8 +85,9 @@ export class SegmentRecorder {
     this.current = null;
     if (last) {
       if (last.recorder.state !== 'inactive') last.recorder.stop();
-      await last.done;
+      this.track(last.done);
     }
+    while (this.pending.size > 0) await Promise.all(this.pending);
     await this.audioContext?.close().catch(() => undefined);
   }
 
@@ -97,8 +100,22 @@ export class SegmentRecorder {
     const previous = this.current;
     if (!previous) return;
     if (previous.recorder.state !== 'inactive') previous.recorder.stop();
-    this.current = this.beginSegment();
+    this.track(previous.done);
+    this.current = null;
+    try {
+      this.current = this.beginSegment();
+    } catch {
+      // The stream can no longer be recorded (e.g. it went inactive before `ended` was handled).
+      this.options.onInterrupted();
+      void this.stop();
+      return;
+    }
     this.policy.start(this.now());
+  }
+
+  private track(done: Promise<void>): void {
+    this.pending.add(done);
+    void done.then(() => this.pending.delete(done));
   }
 
   private beginSegment(): Segment {
@@ -148,7 +165,8 @@ export class SegmentRecorder {
   }
 
   private readRms(): number {
-    if (!this.analyser) return 1;
+    // A suspended context reads zeros; counting them as speech keeps cuts at maxMs, not every pause.
+    if (!this.analyser || this.audioContext?.state !== 'running') return 1;
     this.analyser.getFloatTimeDomainData(this.samples);
     return computeRms(this.samples);
   }

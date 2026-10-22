@@ -99,11 +99,67 @@ describe('SegmentRecorder', () => {
     expect(recorders()).toHaveLength(2);
   });
 
-  it('stop() can be called twice', async () => {
+  it('stop() can be called twice and returns the same promise', async () => {
     const { recorder, segments } = setup();
     recorder.start();
-    await Promise.all([recorder.stop(), recorder.stop()]);
+    const first = recorder.stop();
+    expect(recorder.stop()).toBe(first);
+    await first;
     expect(segments.map((s) => s.seq)).toEqual([1]);
+  });
+
+  it('stop() right after a cut waits for the segment the cut stopped', async () => {
+    const { recorder, segments, audio } = setup();
+    recorder.start();
+    recorders()[0].stopDelayMs = 100;
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(recorders()).toHaveLength(2);
+
+    let resolved = false;
+    const stopped = recorder.stop().then(() => {
+      resolved = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(resolved).toBe(false);
+    expect(audio.close).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(100);
+    await stopped;
+    expect(segments).toHaveLength(2);
+    expect(audio.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an interruption when a new MediaRecorder cannot be started at a cut', async () => {
+    const { recorder, segments, onInterrupted, audio } = setup();
+    recorder.start();
+    vi.stubGlobal(
+      'MediaRecorder',
+      class extends FakeMediaRecorder {
+        constructor(stream: MediaStream) {
+          super(stream);
+          throw new Error('stream inactive');
+        }
+      },
+    );
+    await vi.advanceTimersByTimeAsync(8000);
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(onInterrupted).toHaveBeenCalledTimes(1);
+    expect(segments.map((s) => s.seq)).toEqual([1]);
+    expect(audio.close).toHaveBeenCalledTimes(1);
+    await recorder.stop();
+  });
+
+  it('counts readings as speech while the audio context is not running', async () => {
+    const { recorder, audio } = setup();
+    (audio.context as unknown as { state: string }).state = 'suspended';
+    audio.setLevel(0);
+    recorder.start();
+    await vi.advanceTimersByTimeAsync(7950);
+    expect(recorders()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(recorders()).toHaveLength(2);
+    await recorder.stop();
   });
 
   it('skips a segment without data and keeps the numbers gapless', async () => {
@@ -117,14 +173,17 @@ describe('SegmentRecorder', () => {
   });
 
   it('reports an ended track as an interruption and delivers what was recorded', async () => {
-    const { recorder, segments, onInterrupted, end } = setup();
+    const { recorder, segments, onInterrupted, end, audio } = setup();
     recorder.start();
     await vi.advanceTimersByTimeAsync(2000);
 
     end();
     await vi.advanceTimersByTimeAsync(0);
+    end();
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(onInterrupted).toHaveBeenCalledTimes(1);
+    expect(audio.close).toHaveBeenCalledTimes(1);
     expect(segments.map((s) => s.seq)).toEqual([1]);
     await vi.advanceTimersByTimeAsync(20_000);
     expect(recorders()).toHaveLength(1);

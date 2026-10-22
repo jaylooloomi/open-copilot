@@ -19,6 +19,8 @@ export class FakeMediaRecorder extends EventTarget {
 
   /** What the next stop() delivers; '' simulates a segment without any data. */
   data = 'audio';
+  /** Delay before `dataavailable`/`stop` fire after stop(); 0 fires them in a microtask. */
+  stopDelayMs = 0;
   state: RecordingState = 'inactive';
   readonly mimeType: string;
   startArgs: unknown[] = [];
@@ -41,10 +43,12 @@ export class FakeMediaRecorder extends EventTarget {
     if (this.state === 'inactive') return;
     this.state = 'inactive';
     const blob = new Blob(this.data ? [this.data] : [], { type: this.mimeType });
-    queueMicrotask(() => {
+    const fire = () => {
       this.dispatchEvent(Object.assign(new Event('dataavailable'), { data: blob }));
       this.dispatchEvent(new Event('stop'));
-    });
+    };
+    if (this.stopDelayMs > 0) setTimeout(fire, this.stopDelayMs);
+    else queueMicrotask(fire);
   }
 }
 
