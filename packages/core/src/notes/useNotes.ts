@@ -114,20 +114,22 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
 
   const deleteNote = useCallback(
     async (id: string) => {
+      // Take the note out of memory before any await: once it is gone, updateActive
+      // cannot target it, so no later save can write the deleted note back.
       if (pendingRef.current?.id === id) {
         saver.cancel();
         pendingRef.current = undefined;
       }
-      await storage.remove(id);
       const remaining = notesRef.current.filter((n) => n.id !== id);
-      if (remaining.length === 0) {
+      const nextActiveId = activeIdRef.current === id ? remaining[0]?.id : activeIdRef.current;
+      commit(remaining, nextActiveId);
+      await storage.remove(id);
+      // Deleted the last note: replace it unless a note was created meanwhile.
+      if (notesRef.current.length === 0) {
         const fresh = makeNote(now());
         await storage.put(fresh);
-        commit([fresh], fresh.id);
-        return;
+        commit(sortByUpdatedDesc([fresh, ...notesRef.current]), activeIdRef.current ?? fresh.id);
       }
-      const nextActiveId = activeIdRef.current === id ? remaining[0].id : activeIdRef.current;
-      commit(remaining, nextActiveId);
     },
     [storage, now, saver, commit],
   );

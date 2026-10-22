@@ -12,9 +12,18 @@ const note = (id: string, updatedAt: number, title = id): Note => ({
   updatedAt,
 });
 
+/** A promise plus its resolver, for holding a storage call open mid-operation. */
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
 /** Renders useNotes with a manual clock, waits for the initial load, then fakes timers. */
 async function setup(initial: Note[] = []) {
-  const { storage } = createMemoryStorage(initial);
+  const { storage, notes } = createMemoryStorage(initial);
   let clock = 10_000;
   const now = () => clock;
   const tick = (ms = 1) => {
@@ -25,7 +34,7 @@ async function setup(initial: Note[] = []) {
   vi.useFakeTimers();
   storage.put.mockClear();
   storage.remove.mockClear();
-  return { storage, tick, ...hook };
+  return { storage, notes, tick, ...hook };
 }
 
 afterEach(() => {
@@ -146,6 +155,70 @@ describe('useNotes', () => {
     });
     act(() => vi.advanceTimersByTime(1000));
     expect(storage.put).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'gone' }));
+  });
+
+  it('an edit made while a delete is in flight never writes the deleted note back', async () => {
+    const { result, storage, notes } = await setup([note('a', 1), note('b', 2)]);
+    const removed = deferred();
+    storage.remove.mockImplementationOnce(async (id: string) => {
+      await removed.promise;
+      notes.delete(id);
+    });
+
+    let deleting!: Promise<void>;
+    act(() => {
+      deleting = result.current.deleteNote('b');
+    });
+    act(() => result.current.updateActive({ title: 'late edit' }));
+    await act(async () => {
+      removed.resolve();
+      await deleting;
+    });
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(storage.put).not.toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }));
+    expect([...notes.keys()]).toEqual(['a']);
+    // The edit lands on the note that became active when 'b' left the list.
+    expect(notes.get('a')?.title).toBe('late edit');
+    expect(result.current.notes.map((n) => n.id)).toEqual(['a']);
+  });
+
+  it('edits made while deleting the last note never write it back', async () => {
+    const { result, storage, notes } = await setup([note('a', 1)]);
+    const removed = deferred();
+    const putStarted = deferred();
+    const saved = deferred();
+    storage.remove.mockImplementationOnce(async (id: string) => {
+      await removed.promise;
+      notes.delete(id);
+    });
+    storage.put.mockImplementationOnce(async (n: Note) => {
+      putStarted.resolve();
+      await saved.promise;
+      notes.set(n.id, structuredClone(n));
+    });
+
+    let deleting!: Promise<void>;
+    act(() => {
+      deleting = result.current.deleteNote('a');
+    });
+    act(() => result.current.updateActive({ title: 'typed during remove' }));
+    await act(async () => {
+      removed.resolve();
+      await putStarted.promise;
+    });
+    act(() => result.current.updateActive({ title: 'typed during save' }));
+    await act(async () => {
+      saved.resolve();
+      await deleting;
+    });
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(storage.put).not.toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }));
+    const fresh = result.current.activeNote;
+    expect(fresh).toMatchObject({ title: '' });
+    expect(result.current.notes).toEqual([fresh]);
+    expect([...notes.values()]).toEqual([fresh]);
   });
 
   it('flushes the pending save on unmount', async () => {
