@@ -1,0 +1,71 @@
+import type OpenAI from 'openai';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  OPENAI_MAX_RETRIES,
+  OPENAI_TIMEOUT_MS,
+  PROMPT_PREFIX,
+  TRANSCRIBE_MODEL,
+  buildPrompt,
+  createOpenAIClient,
+  createOpenAITranscriber,
+} from './openaiTranscriber';
+
+function createFakeClient(create: (...args: unknown[]) => Promise<unknown>) {
+  const spy = vi.fn(create);
+  const client = { audio: { transcriptions: { create: spy } } } as unknown as OpenAI;
+  return { client, create: spy };
+}
+
+const file = new File([new Uint8Array([1, 2, 3])], 'segment-1.webm', { type: 'audio/webm' });
+
+describe('buildPrompt', () => {
+  it('prefixes the traditional Chinese guide text', () => {
+    expect(buildPrompt('上一段的內容')).toBe('以下是繁體中文的語音內容。上一段的內容');
+  });
+
+  it('returns only the prefix for blank input', () => {
+    expect(buildPrompt('   ')).toBe(PROMPT_PREFIX);
+    expect(buildPrompt('')).toBe(PROMPT_PREFIX);
+  });
+});
+
+describe('createOpenAITranscriber', () => {
+  it('calls gpt-4o-mini-transcribe with zh language and prefixed prompt', async () => {
+    const { client, create } = createFakeClient(async () => ({ text: '大家好' }));
+    const transcriber = createOpenAITranscriber('sk-test', client);
+
+    const text = await transcriber.transcribe({ file, prompt: '前文' });
+
+    expect(text).toBe('大家好');
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith({
+      file,
+      model: TRANSCRIBE_MODEL,
+      language: 'zh',
+      prompt: '以下是繁體中文的語音內容。前文',
+      response_format: 'json',
+    });
+    expect(TRANSCRIBE_MODEL).toBe('gpt-4o-mini-transcribe');
+  });
+
+  it('propagates client errors', async () => {
+    const { client } = createFakeClient(async () => {
+      throw new Error('upstream down');
+    });
+    const transcriber = createOpenAITranscriber('sk-test', client);
+
+    await expect(transcriber.transcribe({ file, prompt: '' })).rejects.toThrow('upstream down');
+  });
+
+  it('builds a single-attempt real client that answers before the 30 s frontend timeout (no network call)', () => {
+    const client = createOpenAIClient('sk-test');
+    expect(client.timeout).toBe(OPENAI_TIMEOUT_MS);
+    expect(client.maxRetries).toBe(OPENAI_MAX_RETRIES);
+    // M3b retries with withRetry and aborts each request after REQUEST_TIMEOUT_MS = 30_000 (upload included).
+    expect(OPENAI_MAX_RETRIES).toBe(0);
+    expect(OPENAI_TIMEOUT_MS).toBeLessThanOrEqual(25_000);
+
+    const transcriber = createOpenAITranscriber('sk-test');
+    expect(typeof transcriber.transcribe).toBe('function');
+  });
+});
