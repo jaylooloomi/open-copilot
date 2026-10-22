@@ -49,6 +49,15 @@ describe('insertSummaryAtStart', () => {
     expect(texts(e)).toEqual([['paragraph', '原文']]);
   });
 
+  it('replaces the single empty paragraph of a blank note', () => {
+    const e = makeEditor('<p></p>');
+    expect(insertSummaryAtStart(e, '摘要一\n摘要二')).toBe(true);
+    expect(texts(e)).toEqual([
+      ['paragraph', '摘要一'],
+      ['paragraph', '摘要二'],
+    ]);
+  });
+
   it('inserts nothing for a blank summary', () => {
     const e = makeEditor('<p>原文</p>');
     expect(insertSummaryAtStart(e, ' \n ')).toBe(false);
@@ -84,6 +93,16 @@ describe('insertTodosAtEnd', () => {
       'heading',
       'taskList',
       'paragraph',
+    ]);
+  });
+
+  it('can be undone in one step', () => {
+    const e = makeEditor('<p>原文</p><p></p>');
+    insertTodosAtEnd(e, [{ text: '寄出報價單', checked: false }]);
+    e.commands.undo();
+    expect(texts(e)).toEqual([
+      ['paragraph', '原文'],
+      ['paragraph', ''],
     ]);
   });
 

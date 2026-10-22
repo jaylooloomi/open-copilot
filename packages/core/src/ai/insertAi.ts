@@ -20,11 +20,18 @@ export function summaryLines(summary: string): string[] {
     .filter((line) => line !== '');
 }
 
-/** Inserts the summary at the very start of the note (one undo step); false when nothing was inserted. */
+/**
+ * Inserts the summary at the very start of the note (one undo step); false when nothing was inserted.
+ * A blank note (one empty paragraph) is replaced rather than left below the summary.
+ */
 export function insertSummaryAtStart(editor: Editor, summary: string): boolean {
   const lines = summaryLines(summary);
   if (lines.length === 0 || editor.isDestroyed) return false;
-  return editor.chain().insertContentAt(0, lines.map(paragraph)).run();
+  const { doc } = editor.state;
+  const only = doc.childCount === 1 ? doc.firstChild : null;
+  const blank = only !== null && only.type.name === 'paragraph' && only.content.size === 0;
+  const range = blank ? { from: 0, to: doc.content.size } : 0;
+  return editor.chain().insertContentAt(range, lines.map(paragraph)).run();
 }
 
 /**
