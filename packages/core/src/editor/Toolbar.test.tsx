@@ -1,8 +1,10 @@
-import type { JSONContent } from '@oc/shared';
+import type { JSONContent, Note } from '@oc/shared';
 import type { Editor as TiptapEditor } from '@tiptap/react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import { PlatformProvider } from '../platform/PlatformContext';
+import { createTestPlatform } from '../test/memoryStorage';
 import { Editor } from './Editor';
 import { Toolbar } from './Toolbar';
 import { useNoteEditor } from './useNoteEditor';
@@ -11,6 +13,7 @@ const HELLO_DOC: JSONContent = {
   type: 'doc',
   content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello world' }] }],
 };
+const NOTE: Note = { id: 'n1', title: '測試', content: HELLO_DOC, createdAt: 1, updatedAt: 1 };
 
 function Harness({
   editorRef,
@@ -19,11 +22,11 @@ function Harness({
   editorRef: { current: TiptapEditor | null };
   content: JSONContent;
 }) {
-  const editor = useNoteEditor({ noteId: 'n1', content, onChange: () => undefined });
+  const editor = useNoteEditor({ noteId: NOTE.id, content, onChange: () => undefined });
   editorRef.current = editor;
   return (
     <>
-      <Toolbar editor={editor} />
+      <Toolbar editor={editor} note={NOTE} />
       <Editor editor={editor} />
     </>
   );
@@ -31,7 +34,12 @@ function Harness({
 
 function setup(content: JSONContent = HELLO_DOC, selection = { from: 1, to: 12 }) {
   const editorRef = { current: null as TiptapEditor | null };
-  render(<Harness editorRef={editorRef} content={content} />);
+  const { platform } = createTestPlatform();
+  render(
+    <PlatformProvider platform={platform}>
+      <Harness editorRef={editorRef} content={content} />
+    </PlatformProvider>,
+  );
   const editor = editorRef.current as TiptapEditor;
   // By default select "Hello world" (positions 1..12 inside the first paragraph).
   act(() => {
@@ -56,9 +64,9 @@ const pressedAligns = () =>
   ['靠左', '置中', '靠右'].filter((name) => button(name).getAttribute('aria-pressed') === 'true');
 
 describe('Toolbar', () => {
-  it('renders every M1 control and no copy/export buttons', () => {
+  it('renders every formatting control, then 複製 and 匯出 at the end', () => {
     setup();
-    expect(screen.getByRole('toolbar', { name: '格式工具列' })).toBeInTheDocument();
+    const toolbar = screen.getByRole('toolbar', { name: '格式工具列' });
     for (const name of [
       '復原', '重做', '粗體', '斜體', '底線', '字色', '螢光筆',
       '靠左', '置中', '靠右', '項目清單', '編號清單',
@@ -66,7 +74,8 @@ describe('Toolbar', () => {
       expect(button(name)).toBeInTheDocument();
     }
     expect(screen.getByRole('combobox', { name: '段落樣式' })).toHaveValue('paragraph');
-    expect(screen.queryByRole('button', { name: /複製|匯出/ })).not.toBeInTheDocument();
+    const buttons = within(toolbar).getAllByRole('button');
+    expect(buttons.slice(-2).map((b) => b.textContent)).toEqual(['複製', '匯出']);
   });
 
   it('toggles bold, italic and underline and reflects the state', async () => {

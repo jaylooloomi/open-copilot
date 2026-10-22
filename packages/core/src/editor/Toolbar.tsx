@@ -1,3 +1,4 @@
+import type { Note } from '@oc/shared';
 import { useEditorState, type Editor as TiptapEditor } from '@tiptap/react';
 import {
   Baseline,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useRef, type ReactNode } from 'react';
 import { ColorPalette } from './ColorPalette';
+import { NoteActions } from './NoteActions';
 import { HIGHLIGHT_COLORS, TEXT_COLORS } from './palettes';
 
 type BlockStyle = 'paragraph' | 'h1' | 'h2' | 'h3';
@@ -82,7 +84,7 @@ function ToolButton(props: {
   );
 }
 
-export function Toolbar({ editor }: { editor: TiptapEditor }) {
+export function Toolbar({ editor, note }: { editor: TiptapEditor; note: Note }) {
   const state = useEditorState({
     editor,
     // Read the prop, not the snapshot: after useEditor recreates the editor (note switch),
@@ -214,6 +216,8 @@ export function Toolbar({ editor }: { editor: TiptapEditor }) {
           <ListOrdered size={ICON_SIZE} />
         </ToolButton>
       </div>
+
+      <NoteActions note={note} />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NotesApp } from './NotesApp';
 import { PlatformProvider } from './platform/PlatformContext';
+import { readBlobText } from './test/blob';
 import { createTestPlatform } from './test/memoryStorage';
 
 const doc = (text: string): JSONContent => ({
@@ -336,5 +337,20 @@ describe('NotesApp', () => {
     expect(document.querySelector('.oc-app')).toHaveAttribute('data-drawer-open', 'false');
     expect(screen.getByRole('main')).not.toHaveAttribute('inert');
     expect(listeners.size).toBe(0);
+  });
+
+  it('exports the active note, with its latest title, as Markdown', async () => {
+    const { user, fileSaver } = await renderApp([note('a', 'A', 'Alpha', 1)]);
+    await user.clear(titleInput());
+    await user.type(titleInput(), '週會');
+
+    await user.click(screen.getByRole('button', { name: '匯出' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Markdown' }));
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已匯出 Markdown'));
+    expect(fileSaver.save).toHaveBeenCalledTimes(1);
+    const [filename, blob] = fileSaver.save.mock.calls[0];
+    expect(filename).toBe('週會.md');
+    expect(await readBlobText(blob)).toBe('# 週會\n\nAlpha\n');
   });
 });

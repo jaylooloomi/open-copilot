@@ -196,7 +196,8 @@ button {
   border-right: 1px solid var(--oc-border);
 }
 
-.oc-tool-group:last-child {
+.oc-tool-group:last-child,
+.oc-tool-group:has(+ .oc-note-actions) {
   border-right: none;
 }
 
@@ -306,6 +307,80 @@ button {
   background: var(--oc-bg);
   font-size: 13px;
   cursor: pointer;
+}
+
+/* ---------- copy / export (right end of the toolbar) ---------- */
+.oc-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.oc-action-status {
+  color: var(--oc-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.oc-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--oc-border);
+  border-radius: 999px;
+  background: var(--oc-bg);
+  color: var(--oc-text);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.oc-action-btn:hover,
+.oc-action-btn[aria-expanded='true'] {
+  border-color: var(--oc-primary);
+  color: var(--oc-primary);
+}
+
+.oc-export {
+  position: relative;
+}
+
+.oc-export-menu {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 6px;
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius);
+  background: var(--oc-bg);
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
+}
+
+.oc-export-item {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--oc-text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.oc-export-item:hover,
+.oc-export-item:focus {
+  background: var(--oc-active-bg);
+  color: var(--oc-primary);
+  outline: none;
 }
 
 /* ---------- document ---------- */

@@ -145,7 +145,7 @@ export function NotesApp() {
           <ActionBar />
         </header>
         <Banner />
-        <Toolbar editor={editor} />
+        <Toolbar editor={editor} note={activeNote} />
         <div className="oc-document">
           <TitleInput
             inputRef={titleRef}
