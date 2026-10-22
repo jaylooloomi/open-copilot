@@ -50,6 +50,22 @@ describe('toMarkdown', () => {
     );
   });
 
+  it('clamps heading levels to ##–###### and falls back to ## for a missing level', () => {
+    const noLevel: JSONContent = { type: 'heading', content: [text('無')] };
+    expect(toMarkdown(note('', h(6, 'x'), h(9, 'y'), h(0, 'z'), noLevel))).toBe(
+      '###### x\n\n###### y\n\n## z\n\n## 無\n',
+    );
+  });
+
+  it('turns a hard break in a heading into a space', () => {
+    const heading: JSONContent = {
+      type: 'heading',
+      attrs: { level: 1 },
+      content: [text('第一行'), { type: 'hardBreak' }, text('第二行')],
+    };
+    expect(toMarkdown(note('', heading))).toBe('## 第一行 第二行\n');
+  });
+
   it('escapes a run of # at the end of the title or a heading', () => {
     expect(toMarkdown(note('Issue #', h(1, '#'), h(2, 'C#'), h(3, 'a ##')))).toBe(
       '# Issue \\#\n\n## \\#\n\n### C#\n\n#### a \\##\n',
