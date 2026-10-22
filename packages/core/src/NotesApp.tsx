@@ -2,7 +2,9 @@ import { EMPTY_DOC } from '@oc/shared';
 import { Menu, X } from 'lucide-react';
 import { NodeSelection, Selection } from '@tiptap/pm/state';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useBackup } from './backup/useBackup';
 import { ActionBar } from './components/ActionBar';
+import { BackupControls } from './components/BackupControls';
 import { Banner } from './components/Banner';
 import { NoteList } from './components/NoteList';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -43,7 +45,7 @@ function getRecorderDb(): ReturnType<typeof openAppDb> {
 }
 
 export function NotesApp() {
-  const { storage } = usePlatform();
+  const { storage, fileSaver } = usePlatform();
   const {
     notes,
     activeNote,
@@ -56,6 +58,7 @@ export function NotesApp() {
     selectNote,
     deleteNote,
     updateNote,
+    importNotes,
   } = useNotes(storage);
   const {
     open: drawerOpen,
@@ -70,10 +73,13 @@ export function NotesApp() {
   const { settings, saveSettings } = useSettings();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [recorderDb] = useState(getRecorderDb);
+  // Bumped when an import replaces the open note, so the editor reloads it.
+  const [editorRevision, setEditorRevision] = useState(0);
 
   // Called unconditionally (rules of hooks); recreated whenever the active note changes.
   const editor = useNoteEditor({
     noteId: activeNote?.id,
+    revision: editorRevision,
     content: activeNote?.content ?? EMPTY_DOC,
     // Routed by the note the editor belongs to, so an edit typed while the active note is
     // changing cannot land on another note.
@@ -86,6 +92,21 @@ export function NotesApp() {
     settings,
     db: recorderDb,
     onUnauthorized: () => setSettingsOpen(true),
+  });
+
+  const backup = useBackup({
+    notes,
+    fileSaver,
+    importNotes: async (incoming) => {
+      const result = await importNotes(incoming);
+      // The editor keeps the content it was created with; recreate it from the imported version.
+      if (result.replacedActive) setEditorRevision((revision) => revision + 1);
+      return result;
+    },
+    onError: (message, error) => {
+      console.error('Backup or import failed', error);
+      setStorageError(message);
+    },
   });
 
   // Once the notes are loaded from storage, drop the kept audio of markers no saved note has any
@@ -125,6 +146,7 @@ export function NotesApp() {
 
   const closeDrawer = () => setDrawerOpen(false);
   const recording = recorder.state === 'recording' || recorder.state === 'stopping';
+  const backupDisabled = recording || backup.busy;
 
   // A failed create rejects without adding the note; deleteNote rejects only when the remove
   // failed, after putting the note back. Either way the user has to be told, and the rejection
@@ -132,6 +154,17 @@ export function NotesApp() {
   const reportFailure = (message: string, logMessage: string) => (error: unknown) => {
     console.error(logMessage, error);
     setStorageError(message);
+  };
+
+  // backup() and importFile() report their own failures and never reject.
+  const startBackup = () => {
+    setStorageError(undefined);
+    void backup.backup();
+  };
+
+  const startImport = (file: File) => {
+    setStorageError(undefined);
+    void backup.importFile(file);
   };
 
   const confirmDelete = (id: string) => {
@@ -194,7 +227,9 @@ export function NotesApp() {
         <NoteList
           notes={notes}
           activeId={activeNote.id}
-          disabled={recording}
+          // Also while a backup or import runs: deleting a note that importNotes is still writing
+          // would let the final merge put it back in the list.
+          disabled={recording || backup.busy}
           onSelect={(id) => {
             selectNote(id);
             closeDrawer();
@@ -208,6 +243,14 @@ export function NotesApp() {
             closeDrawer();
           }}
           onDelete={confirmDelete}
+          footer={
+            <BackupControls
+              disabled={backupDisabled}
+              message={backup.message}
+              onBackup={startBackup}
+              onImportFile={startImport}
+            />
+          }
         />
         {drawerOpen && (
           // <main> is inert while the drawer is open, so the menu button cannot close it. Touch
@@ -243,7 +286,7 @@ export function NotesApp() {
             onOpenSettings={() => setSettingsOpen(true)}
           />
         </header>
-        <Banner />
+        <Banner backupDue={backup.backupDue} backupDisabled={backupDisabled} onBackup={startBackup} />
         {(recorder.error || recorder.notice) && (
           <div className="oc-recorder-alert" role="alert">
             <div className="oc-recorder-alert-text">

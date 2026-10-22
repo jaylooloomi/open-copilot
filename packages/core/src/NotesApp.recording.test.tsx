@@ -89,12 +89,16 @@ describe('NotesApp recording', () => {
     expect(mic.getUserMedia).toHaveBeenCalledWith({ audio: true });
     expect(button('新增筆記')).toBeDisabled();
     expect(screen.getByRole('button', { name: /^未命名筆記/ })).toBeDisabled();
+    expect(button('備份')).toBeDisabled();
+    expect(button('匯入')).toBeDisabled();
 
     await user.click(button('停止'));
 
     expect(await screen.findByRole('button', { name: '錄製' })).toBeEnabled();
     expect(body()).toHaveTextContent('你好世界');
     expect(button('新增筆記')).toBeEnabled();
+    expect(button('備份')).toBeEnabled();
+    expect(button('匯入')).toBeEnabled();
     expect(mic.track.stop).toHaveBeenCalled();
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe('https://api.test/transcribe');
