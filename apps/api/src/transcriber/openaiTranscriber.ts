@@ -1,8 +1,11 @@
 import OpenAI from 'openai';
+import { buildPrompt } from './prompt';
 import type { Transcriber } from './types';
 
+// 實作在 prompt.ts，與 Groq 共用；既有程式與測試從這裡匯入，所以重新匯出。
+export { PROMPT_PREFIX, PROMPT_TAIL_CHARS, buildPrompt } from './prompt';
+
 export const TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe';
-export const PROMPT_PREFIX = '以下是繁體中文的語音內容。';
 
 /**
  * 單次 OpenAI 呼叫的逾時。M3b 的 REQUEST_TIMEOUT_MS 是 30 秒（含上傳），
@@ -15,11 +18,6 @@ export const OPENAI_TIMEOUT_MS = 25_000;
  * 一次前端請求會變成多次計費呼叫，最壞耗時也會超過前端逾時。
  */
 export const OPENAI_MAX_RETRIES = 0;
-
-export function buildPrompt(previousText: string): string {
-  const trimmed = previousText.trim();
-  return trimmed ? `${PROMPT_PREFIX}${trimmed}` : PROMPT_PREFIX;
-}
 
 /**
  * 固定的上游位址。SDK 預設會讀主機的 OPENAI_BASE_URL；若主機為別的工具設了它，
