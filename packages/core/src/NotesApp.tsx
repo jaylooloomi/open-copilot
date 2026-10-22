@@ -1,9 +1,14 @@
 import { EMPTY_DOC } from '@oc/shared';
 import { Menu, X } from 'lucide-react';
 import { NodeSelection, Selection } from '@tiptap/pm/state';
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { AI_DISABLED_REASONS, aiDisabledReason, aiNoteText } from './ai/aiMessages';
+import { insertSummaryAtStart, insertTodosAtEnd, type TodoItem } from './ai/insertAi';
+import { useAiAssistant, type AiKind } from './ai/useAiAssistant';
 import { useBackup } from './backup/useBackup';
 import { ActionBar } from './components/ActionBar';
+import { AiPanel } from './components/AiPanel';
+import { AiPrivacyNotice } from './components/AiPrivacyNotice';
 import { BackupControls } from './components/BackupControls';
 import { Banner } from './components/Banner';
 import { NoteList } from './components/NoteList';
@@ -20,6 +25,7 @@ import { openAppDb } from './platform/db';
 import { usePlatform } from './platform/PlatformContext';
 import { collectGapIds } from './recording/gapRefs';
 import { RECORDER_MESSAGES, useRecorder } from './recording/useRecorder';
+import { isConfigured } from './settings/settingsStore';
 import { useSettings } from './settings/useSettings';
 import { useNoteDrawer } from './useNoteDrawer';
 import './styles/app.css';
@@ -123,6 +129,21 @@ export function NotesApp() {
     },
   });
 
+  const ai = useAiAssistant({ settings, onUnauthorized: () => setSettingsOpen(true) });
+  // An AI result belongs to the note it was made from: drop it (and a waiting privacy notice) when
+  // another note, or a version of this one reloaded by an import, is shown, so it can never be
+  // inserted into the wrong note.
+  const { close: closeAi } = ai;
+  const activeNoteId = activeNote?.id;
+  useEffect(() => {
+    closeAi();
+  }, [activeNoteId, editorRevision, closeAi]);
+  // AI 摘要 / 待辦事項 read the note body as plain text. toTxt walks the whole body (up to 60,000
+  // characters), so it reruns only when the body changes, not on every recorder tick or title edit.
+  // It sits above the loading early return (rules of hooks); the text depends on the content alone.
+  const activeContent = activeNote?.content;
+  const aiText = useMemo(() => (activeNote ? aiNoteText(activeNote) : ''), [activeContent]);
+
   // Once the notes are loaded from storage, drop the kept audio of markers no saved note has any
   // more (retried ones, or ones deleted by hand). Once per page load: the list is what is stored.
   const { pruneAudio } = recorder;
@@ -168,6 +189,16 @@ export function NotesApp() {
   // An import that replaces the open note recreates the editor, which a recording (or one still
   // waiting for the microphone) would keep writing into; so neither may run alongside the other.
   const listLocked = recording || recordStarting || backup.busy;
+  // AI 摘要 / 待辦事項 wait while a recording is still adding to the note.
+  const aiBlocked = recording || recordStarting;
+  const aiDisabled = aiDisabledReason({ recording: aiBlocked, configured: isConfigured(settings), text: aiText });
+  const requestAi = (kind: AiKind) => ai.request(kind, { title: activeNote.title, text: aiText });
+  const insertSummary = (summary: string) => {
+    if (insertSummaryAtStart(editor, summary)) ai.close();
+  };
+  const insertTodos = (items: TodoItem[]) => {
+    if (insertTodosAtEnd(editor, items)) ai.close();
+  };
 
   // A failed create rejects without adding the note; deleteNote rejects only when the remove
   // failed, after putting the note back. Either way the user has to be told, and the rejection
@@ -320,6 +351,11 @@ export function NotesApp() {
             levels={recorder.levels}
             transcribing={recorder.transcribing}
             now={recorder.now}
+            ai={{
+              summary: () => requestAi('summary'),
+              todos: () => requestAi('todos'),
+              disabledReason: aiDisabled,
+            }}
           />
         </header>
         <Banner backupDue={backup.backupDue} backupDisabled={listLocked} onBackup={startBackup} />
@@ -368,6 +404,22 @@ export function NotesApp() {
           <Editor editor={editor} />
         </div>
       </main>
+
+      {ai.panel && (
+        <AiPanel
+          key={ai.panel.requestId}
+          state={ai.panel}
+          // Like <main>: hidden from focus while the note drawer is open.
+          inert={drawerOpen}
+          onClose={ai.close}
+          onRetry={ai.retry}
+          onInsertSummary={insertSummary}
+          onInsertTodos={insertTodos}
+          insertDisabledReason={aiBlocked ? AI_DISABLED_REASONS.recording : undefined}
+        />
+      )}
+
+      {ai.privacyPending && <AiPrivacyNotice onAccept={ai.acceptPrivacy} onCancel={ai.cancelPrivacy} />}
 
       {settingsOpen && (
         <SettingsDialog
