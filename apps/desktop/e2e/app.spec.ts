@@ -119,8 +119,12 @@ test.beforeEach(async () => {
 });
 
 test.afterEach(async () => {
-  await app?.close(); // undefined when the launch itself failed
-  rmSync(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  try {
+    await app?.close(); // undefined when the launch itself failed
+  } finally {
+    // Remove the temp profile even when close() rejects (e.g. the app already crashed).
+    rmSync(userDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
 });
 
 test('開啟視窗並從 app://bundle 載入網頁版', async () => {
