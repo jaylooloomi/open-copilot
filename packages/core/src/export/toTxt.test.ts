@@ -129,4 +129,15 @@ describe('toTxt task lists', () => {
       ),
     ).toBe('☐ 準備\n  ☑ 訂場地\n  - 帶投影機');
   });
+
+  it('writes a bare box for an empty item and treats a missing or non-boolean checked as unchecked', () => {
+    const loose = (attrs: Record<string, unknown>): JSONContent => ({
+      type: 'taskItem',
+      attrs,
+      content: [p(text('項目'))],
+    });
+    expect(toTxt(note('', tasks(task(false), task(true), loose({}), loose({ checked: 'true' }))))).toBe(
+      '☐\n☑\n☐ 項目\n☐ 項目',
+    );
+  });
 });
