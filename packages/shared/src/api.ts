@@ -15,7 +15,8 @@ export type ApiErrorCode =
   | 'payload_too_large'
   | 'rate_limited'
   | 'bad_request'
-  | 'upstream_error';
+  | 'upstream_error'
+  | 'ai_unavailable';
 
 export interface ApiErrorBody {
   error: ApiErrorCode;
