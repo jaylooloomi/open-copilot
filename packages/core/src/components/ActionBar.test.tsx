@@ -129,3 +129,50 @@ describe('ActionBar', () => {
     expect(document.querySelector('.oc-rec-status')).toBeNull();
   });
 });
+
+describe('ActionBar AI actions', () => {
+  it('unlocks AI 摘要 and 待辦事項 and keeps AI 助理 and AI 對話 locked', async () => {
+    const summary = vi.fn();
+    const todos = vi.fn();
+    render(<ActionBar recordState="idle" onRecord={vi.fn()} onOpenSettings={vi.fn()} ai={{ summary, todos }} />);
+    const user = userEvent.setup();
+
+    for (const name of ['AI 摘要', '待辦事項']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toBeEnabled();
+      expect(button).not.toHaveAttribute('aria-disabled');
+      expect(button).toHaveClass('oc-ai-btn', 'is-available');
+      expect(button).toHaveAttribute('title', name);
+      expect(button.querySelector('svg')).not.toBeNull();
+    }
+    for (const name of ['AI 助理', 'AI 對話']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute('aria-disabled', 'true');
+      expect(button).toHaveAttribute('title', '即將推出');
+    }
+    const order = Array.from(document.querySelectorAll('.oc-ai-btn')).map((b) => b.textContent);
+    expect(order).toEqual(['AI 摘要', '待辦事項', 'AI 助理', 'AI 對話']);
+
+    await user.click(screen.getByRole('button', { name: 'AI 摘要' }));
+    await user.click(screen.getByRole('button', { name: '待辦事項' }));
+    expect(summary).toHaveBeenCalledTimes(1);
+    expect(todos).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables both with the reason as their title', () => {
+    render(
+      <ActionBar
+        recordState="recording"
+        onRecord={vi.fn()}
+        onOpenSettings={vi.fn()}
+        ai={{ summary: vi.fn(), todos: vi.fn(), disabledReason: '錄音中無法使用 AI 功能' }}
+      />,
+    );
+    for (const name of ['AI 摘要', '待辦事項']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute('title', '錄音中無法使用 AI 功能');
+    }
+  });
+});
