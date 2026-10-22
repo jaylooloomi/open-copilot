@@ -13,12 +13,14 @@ import {
   Underline,
   Undo2,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { ColorPalette } from './ColorPalette';
 import { HIGHLIGHT_COLORS, TEXT_COLORS } from './palettes';
 
 type BlockStyle = 'paragraph' | 'h1' | 'h2' | 'h3';
 type Align = 'left' | 'center' | 'right';
+
+const ALIGNS: readonly Align[] = ['left', 'center', 'right'];
 
 const BLOCK_OPTIONS: { value: BlockStyle; label: string }[] = [
   { value: 'paragraph', label: '正文' },
@@ -38,10 +40,22 @@ function currentBlock(editor: TiptapEditor): BlockStyle {
   return 'paragraph';
 }
 
-function currentAlign(editor: TiptapEditor): Align {
-  if (editor.isActive({ textAlign: 'center' })) return 'center';
-  if (editor.isActive({ textAlign: 'right' })) return 'right';
-  return 'left';
+/**
+ * The alignment shared by every selected block (no attribute means left), or undefined when the
+ * blocks differ or use one the toolbar has no button for: TextAlign also allows 'justify'
+ * (Mod-Shift-J, pasted HTML).
+ */
+function currentAlign(editor: TiptapEditor): Align | undefined {
+  const { from, to } = editor.state.selection;
+  const aligns = new Set<string>();
+  editor.state.doc.nodesBetween(from, to, (node) => {
+    if (!node.isTextblock) return true;
+    aligns.add((node.attrs.textAlign as string | null | undefined) ?? 'left');
+    return false;
+  });
+  if (aligns.size !== 1) return undefined;
+  const [align] = aligns;
+  return ALIGNS.find((candidate) => candidate === align);
 }
 
 function ToolButton(props: {
@@ -90,14 +104,21 @@ export function Toolbar({ editor }: { editor: TiptapEditor }) {
 
   const chain = () => editor.chain().focus();
 
+  // How the 段落樣式 select was last operated. Chromium on Windows fires `change` as soon as an
+  // arrow key moves a closed <select>, so only a pointer pick hands focus back to the editor; a
+  // keyboard user stays on the select and can keep stepping through the styles.
+  const blockInput = useRef<'pointer' | 'keyboard'>('keyboard');
+
   const setBlock = (value: BlockStyle) => {
-    if (value === 'paragraph') chain().setParagraph().run();
-    else chain().setHeading({ level: HEADING_LEVEL[value] }).run();
+    const blockChain = blockInput.current === 'pointer' ? chain() : editor.chain();
+    if (value === 'paragraph') blockChain.setParagraph().run();
+    else blockChain.setHeading({ level: HEADING_LEVEL[value] }).run();
   };
 
   const setAlign = (align: Align) => chain().setTextAlign(align).run();
 
   return (
+    // Known gap: no roving tabindex or arrow-key moves yet; every control is its own Tab stop.
     <div className="oc-toolbar" role="toolbar" aria-label="格式工具列">
       <div className="oc-tool-group">
         <ToolButton label="復原" disabled={!state.canUndo} onClick={() => chain().undo().run()}>
@@ -113,6 +134,12 @@ export function Toolbar({ editor }: { editor: TiptapEditor }) {
           className="oc-block-select"
           aria-label="段落樣式"
           value={state.block}
+          onPointerDown={() => {
+            blockInput.current = 'pointer';
+          }}
+          onKeyDown={() => {
+            blockInput.current = 'keyboard';
+          }}
           onChange={(event) => setBlock(event.target.value as BlockStyle)}
         >
           {BLOCK_OPTIONS.map((option) => (

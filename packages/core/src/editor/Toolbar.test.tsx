@@ -1,20 +1,25 @@
+import type { JSONContent } from '@oc/shared';
 import type { Editor as TiptapEditor } from '@tiptap/react';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { Editor } from './Editor';
 import { Toolbar } from './Toolbar';
 import { useNoteEditor } from './useNoteEditor';
 
-function Harness({ editorRef }: { editorRef: { current: TiptapEditor | null } }) {
-  const editor = useNoteEditor({
-    noteId: 'n1',
-    content: {
-      type: 'doc',
-      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello world' }] }],
-    },
-    onChange: () => undefined,
-  });
+const HELLO_DOC: JSONContent = {
+  type: 'doc',
+  content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello world' }] }],
+};
+
+function Harness({
+  editorRef,
+  content,
+}: {
+  editorRef: { current: TiptapEditor | null };
+  content: JSONContent;
+}) {
+  const editor = useNoteEditor({ noteId: 'n1', content, onChange: () => undefined });
   editorRef.current = editor;
   return (
     <>
@@ -24,18 +29,31 @@ function Harness({ editorRef }: { editorRef: { current: TiptapEditor | null } })
   );
 }
 
-function setup() {
+function setup(content: JSONContent = HELLO_DOC, selection = { from: 1, to: 12 }) {
   const editorRef = { current: null as TiptapEditor | null };
-  render(<Harness editorRef={editorRef} />);
+  render(<Harness editorRef={editorRef} content={content} />);
   const editor = editorRef.current as TiptapEditor;
-  // Select "Hello world" (positions 1..12 inside the first paragraph).
+  // By default select "Hello world" (positions 1..12 inside the first paragraph).
   act(() => {
-    editor.commands.setTextSelection({ from: 1, to: 12 });
+    editor.commands.setTextSelection(selection);
   });
   return { editor, user: userEvent.setup() };
 }
 
 const button = (name: string) => screen.getByRole('button', { name });
+
+const paragraph = (text: string, attrs?: Record<string, unknown>): JSONContent => ({
+  type: 'paragraph',
+  ...(attrs ? { attrs } : {}),
+  content: [{ type: 'text', text }],
+});
+
+/** Resolves after the next animation frame, when Tiptap's `focus()` command moves focus. */
+const nextFrame = () =>
+  act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+const pressedAligns = () =>
+  ['靠左', '置中', '靠右'].filter((name) => button(name).getAttribute('aria-pressed') === 'true');
 
 describe('Toolbar', () => {
   it('renders every M1 control and no copy/export buttons', () => {
@@ -81,6 +99,27 @@ describe('Toolbar', () => {
     await user.selectOptions(select, '正文');
     expect(editor.isActive('paragraph')).toBe(true);
     expect(select).toHaveValue('paragraph');
+    // A pointer pick hands focus back to the editor so the user can keep typing.
+    await waitFor(() => expect(editor.isFocused).toBe(true));
+  });
+
+  it('keeps focus on the block style select when it is changed from the keyboard', async () => {
+    const { editor } = setup();
+    const select = screen.getByRole('combobox', { name: '段落樣式' });
+    act(() => select.focus());
+
+    // Chromium on Windows fires `change` as soon as ArrowDown moves a closed <select>.
+    for (const value of ['h1', 'h2', 'h3']) {
+      fireEvent.keyDown(select, { key: 'ArrowDown' });
+      fireEvent.change(select, { target: { value } });
+      await nextFrame();
+      expect(select).toHaveFocus();
+    }
+
+    expect(editor.isActive('heading', { level: 3 })).toBe(true);
+    // The style lands on the paragraph that was selected before the select took focus.
+    expect(editor.state.doc.firstChild?.textContent).toBe('Hello world');
+    expect(select).toHaveValue('h3');
   });
 
   it('applies and clears text colour from the palette', async () => {
@@ -118,6 +157,79 @@ describe('Toolbar', () => {
 
     await user.click(button('靠左'));
     expect(editor.isActive({ textAlign: 'left' })).toBe(true);
+  });
+
+  it('presses no alignment button for justified text or a mixed-alignment selection', async () => {
+    // Doc positions: "Left" 1..5, "Centred" 7..14, "Justified" 16..25.
+    const { editor, user } = setup(
+      {
+        type: 'doc',
+        content: [
+          paragraph('Left'),
+          paragraph('Centred', { textAlign: 'center' }),
+          paragraph('Justified', { textAlign: 'justify' }),
+        ],
+      },
+      { from: 2, to: 3 },
+    );
+    expect(pressedAligns()).toEqual(['靠左']);
+
+    // TextAlign also allows 'justify' (Mod-Shift-J or pasted HTML); the toolbar has no button for it.
+    act(() => {
+      editor.commands.setTextSelection(18);
+    });
+    expect(pressedAligns()).toEqual([]);
+
+    act(() => {
+      editor.commands.setTextSelection({ from: 2, to: 9 });
+    });
+    expect(pressedAligns()).toEqual([]);
+
+    act(() => {
+      editor.commands.setTextSelection({ from: 8, to: 9 });
+    });
+    expect(pressedAligns()).toEqual(['置中']);
+
+    act(() => {
+      editor.commands.setTextSelection(18);
+    });
+    await user.click(button('靠左'));
+    expect(editor.isActive({ textAlign: 'left' })).toBe(true);
+    expect(pressedAligns()).toEqual(['靠左']);
+  });
+
+  it('reflects the formatting under a selection moved inside the editor', () => {
+    // Doc positions: "Bold" 1..5, " plain" 5..11, "Centred" 13..20.
+    const { editor } = setup(
+      {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              { type: 'text', text: 'Bold', marks: [{ type: 'bold' }] },
+              { type: 'text', text: ' plain' },
+            ],
+          },
+          paragraph('Centred', { textAlign: 'center' }),
+        ],
+      },
+      { from: 7, to: 9 },
+    );
+    expect(button('粗體')).toHaveAttribute('aria-pressed', 'false');
+    expect(pressedAligns()).toEqual(['靠左']);
+
+    act(() => {
+      editor.commands.setTextSelection(3);
+    });
+    expect(button('粗體')).toHaveAttribute('aria-pressed', 'true');
+    expect(pressedAligns()).toEqual(['靠左']);
+
+    act(() => {
+      editor.commands.setTextSelection(16);
+    });
+    expect(button('粗體')).toHaveAttribute('aria-pressed', 'false');
+    expect(pressedAligns()).toEqual(['置中']);
   });
 
   it('toggles bullet and ordered lists', async () => {
