@@ -17,6 +17,7 @@ import {
 } from "./groqAssistant";
 import { AiOutputError } from "./output";
 import {
+  AI_MAX_TITLE_CHARS,
   buildUserMessage,
   SUMMARY_SYSTEM_PROMPT,
   TODOS_SYSTEM_PROMPT,
@@ -65,6 +66,18 @@ describe("prompts", () => {
     );
     expect(buildUserMessage("  ", "內容")).toBe(
       "筆記標題：（無標題）\n\n筆記內容：\n內容",
+    );
+  });
+
+  it("cuts a title longer than AI_MAX_TITLE_CHARS so it cannot bypass the text limit", () => {
+    const long = "😀".repeat(AI_MAX_TITLE_CHARS) + "a".repeat(250_000);
+    const message = buildUserMessage(long, "內容");
+    expect(message).toBe(
+      `筆記標題：${"😀".repeat(AI_MAX_TITLE_CHARS)}…\n\n筆記內容：\n內容`,
+    );
+    const exact = "標".repeat(AI_MAX_TITLE_CHARS);
+    expect(buildUserMessage(exact, "內容")).toBe(
+      `筆記標題：${exact}\n\n筆記內容：\n內容`,
     );
   });
 });

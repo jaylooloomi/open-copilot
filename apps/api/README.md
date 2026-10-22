@@ -146,6 +146,7 @@ docker run --rm -p 8787:8787 --env-file apps/api/.env open-copilot-api
 - 限流計數存在記憶體，只適用單一實例；要水平擴充需改成共用儲存（例如 Redis）。
 - 每個 `/transcribe` 只呼叫轉寫服務一次（不重試）、單次逾時 25 秒，重試交給前端（前端每個請求 30 秒逾時）。用戶端斷線或逾時放棄時，進行中的上游呼叫會一併取消，不會和前端的重試疊在一起。反向代理的請求逾時請設在 30 秒以上，否則代理會比本程式先放棄。
 - 每個 `/ai/*` 只呼叫 Groq 一次、單次逾時 60 秒；反向代理對 `/ai/*` 的請求逾時請設在 60 秒以上。
+- 收到 SIGTERM（`docker stop`、重新部署）後，伺服器最多等 8 秒讓進行中的請求結束，之後強制結束（`src/shutdown.ts` 的 `SHUTDOWN_TIMEOUT_MS`，要在 Docker 的 10 秒 SIGKILL 之前）。`/ai/*` 可能跑到 60 秒，所以部署當下進行中的 AI 請求會被切斷，用戶端收到的是連線中斷而不是 JSON 錯誤。前端必須把 `/ai/*` 的網路錯誤（`fetch` 的 `TypeError`、逾時中止）當成可重試的錯誤：顯示錯誤訊息並恢復按鈕，不能停在載入中。另外，標題只取前 200 字（`src/ai/prompts.ts` 的 `AI_MAX_TITLE_CHARS`，超過時截斷並加「…」）送進模型，避免超長標題繞過 `text` 的字數上限。
 - 筆記內容會送到 Groq 處理；前端在第一次使用 AI 功能時會提示使用者。
 - 要加新的轉寫服務時，實作 `src/transcriber/types.ts` 的 `Transcriber` 介面（把 `signal` 轉給上游呼叫，斷線時才會取消；上游 429 用 `src/transcriber/errors.ts` 的 `toUpstreamError` 轉換），在 `src/transcriber/createTranscriber.ts` 加一個 provider，並擴充 `src/config.ts` 的 `TRANSCRIBE_PROVIDER`。
 - 要換 AI 服務時，實作 `src/ai/types.ts` 的 `NoteAssistant` 介面（同樣轉交 `signal`、用 `toUpstreamError` 轉換 429、輸出不合格式時丟 `src/ai/output.ts` 的 `AiOutputError`），並在 `src/server.ts` 建出它。
