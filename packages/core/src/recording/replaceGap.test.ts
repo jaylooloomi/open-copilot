@@ -38,6 +38,18 @@ describe('replaceGap', () => {
     expect(e.getHTML()).toBe('<p>前後</p>');
   });
 
+  it('keeps the formatting the gap carried', () => {
+    const e = makeEditor(text('前'), { ...gap('g1', 1), marks: [{ type: 'bold' }] }, text('後'));
+    expect(replaceGap(e, 'g1', '重試')).toBe(true);
+    expect(e.getHTML()).toBe('<p>前<strong>重試</strong>後</p>');
+  });
+
+  it('turns line breaks in the transcript into spaces', () => {
+    const e = makeEditor(text('前'), gap('g1', 1), text('後'));
+    expect(replaceGap(e, 'g1', '第一行\r\n第二行\n\n第三行')).toBe(true);
+    expect(e.getText()).toBe('前第一行 第二行 第三行後');
+  });
+
   it('returns false when the gap is not in the document', () => {
     const e = makeEditor(text('前'), gap('g1', 1));
     expect(replaceGap(e, 'missing', '文字')).toBe(false);

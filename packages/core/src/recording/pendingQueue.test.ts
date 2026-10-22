@@ -42,6 +42,14 @@ describe('createPendingQueue', () => {
     expect((await queue.get('g2'))?.seq).toBe(2);
   });
 
+  it('add() replaces an earlier entry with the same gapId', async () => {
+    const queue = createPendingQueue(await newDb());
+    await queue.add(segment('g1', 1));
+    await queue.add({ ...segment('g1', 5), prompt: '新的' });
+
+    expect(await queue.get('g1')).toMatchObject({ gapId: 'g1', seq: 5, prompt: '新的' });
+  });
+
   it('also accepts the promise returned by openAppDb()', async () => {
     const queue = createPendingQueue(newDb());
     await queue.add(segment('g1'));
