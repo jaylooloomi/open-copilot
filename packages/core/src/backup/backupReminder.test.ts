@@ -46,6 +46,15 @@ describe('isBlankNote', () => {
     expect(isBlankNote(note('', paragraphs([{ type: 'text', text: '內容' }])))).toBe(false);
   });
 
+  it('counts body text under a whitespace-only title', () => {
+    expect(isBlankNote(note('   ', paragraphs([{ type: 'text', text: '內容' }])))).toBe(false);
+  });
+
+  it('judges a node without a type by its text and children', () => {
+    expect(isBlankNote(note('', { content: [{ text: '  ' }, { content: [] }] }))).toBe(true);
+    expect(isBlankNote(note('', { content: [{ text: '內容' }] }))).toBe(false);
+  });
+
   it('counts other nodes, such as a transcript gap marker', () => {
     const content: JSONContent = {
       type: 'doc',
@@ -71,6 +80,11 @@ describe('isBackupDue', () => {
   it('reminds only after more than 7 days', () => {
     expect(isBackupDue(written, NOW - BACKUP_REMINDER_MS, NOW)).toBe(false);
     expect(isBackupDue(written, NOW - BACKUP_REMINDER_MS - 1, NOW)).toBe(true);
+  });
+
+  it('reminds when the last backup time lies in the future, for example after a clock change', () => {
+    expect(isBackupDue(written, NOW + 1, NOW)).toBe(true);
+    expect(isBackupDue(written, NOW, NOW)).toBe(false);
   });
 });
 

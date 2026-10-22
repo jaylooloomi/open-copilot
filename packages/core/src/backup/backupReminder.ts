@@ -22,11 +22,12 @@ export function isBlankNote(note: Note): boolean {
 
 /**
  * True when some note has content and the last backup is more than 7 days old, or there has
- * never been one. Blank notes alone never remind.
+ * never been one. Blank notes alone never remind. A backup time in the future (a clock change)
+ * cannot be trusted, so it reminds too.
  */
 export function isBackupDue(notes: readonly Note[], lastBackupAt: number | undefined, now: number): boolean {
   if (notes.every((note) => isBlankNote(note))) return false;
-  return lastBackupAt === undefined || now - lastBackupAt > BACKUP_REMINDER_MS;
+  return lastBackupAt === undefined || lastBackupAt > now || now - lastBackupAt > BACKUP_REMINDER_MS;
 }
 
 /** The last backup time, or undefined when there is none or it cannot be read. */
