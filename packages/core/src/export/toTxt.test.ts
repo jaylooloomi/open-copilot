@@ -98,3 +98,35 @@ describe('toTxt', () => {
     expect(toTxt(doc)).toBe('前[未轉寫片段]後\n嗨 @小明\n引言一\n引言二\n提醒');
   });
 });
+
+const task = (checked: boolean, ...content: JSONContent[]): JSONContent => ({
+  type: 'taskItem',
+  attrs: { checked },
+  content,
+});
+const tasks = (...items: JSONContent[]): JSONContent => ({ type: 'taskList', content: items });
+
+describe('toTxt task lists', () => {
+  it('starts unchecked items with ☐ and checked ones with ☑', () => {
+    expect(
+      toTxt(
+        note(
+          '週會',
+          h(2, '待辦事項'),
+          tasks(task(false, p(text('寄出報價單'))), task(true, p(text('預約會議室')))),
+        ),
+      ),
+    ).toBe('週會\n\n待辦事項\n☐ 寄出報價單\n☑ 預約會議室');
+  });
+
+  it('indents nested lists under the item text', () => {
+    expect(
+      toTxt(
+        note(
+          '',
+          tasks(task(false, p(text('準備')), tasks(task(true, p(text('訂場地')))), ul(item(p(text('帶投影機')))))),
+        ),
+      ),
+    ).toBe('☐ 準備\n  ☑ 訂場地\n  - 帶投影機');
+  });
+});
