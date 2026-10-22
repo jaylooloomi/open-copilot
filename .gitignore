@@ -7,3 +7,4 @@ test-results/
 .env.*
 !.env.example
 apps/web/android/app/build/
+apps/desktop/release/
