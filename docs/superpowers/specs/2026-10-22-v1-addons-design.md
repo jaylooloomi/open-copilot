@@ -26,8 +26,8 @@
   - **Groq**：使用 `openai` SDK，`baseURL: https://api.groq.com/openai/v1`；模型 `whisper-large-v3-turbo`，可用 `GROQ_TRANSCRIBE_MODEL` 覆寫；`language: 'zh'`。
   - **OpenAI**：沿用 v1 的 `gpt-4o-mini-transcribe`。
 - `config.ts` 的 `openaiApiKey` 改成 `{ provider, apiKey, model }`。`Transcriber` 介面維持不變。
-- **prompt 長度上限**：Whisper 系列的 prompt 上限是 224 tokens，所以後端要截斷 prompt，只保留**最後 60 個字**（加上固定前綴；Whisper 用 byte-level BPE，token 數不超過 UTF-8 位元組數，前綴 13 字加 60 字最多 219 位元組，罕用繁體字也不會超過 224 tokens）。前端照樣送最後 200 字，由後端負責截斷，前端不用改。
-- **上游 429**：Groq 回 429 時，後端改回 429 `rate_limited`，並轉傳上游的 `Retry-After`（沒有就帶 `10`）。v1 原本把它當 502，現在讓前端照 429 的規則等待後重送。
+- **prompt 長度上限**：Whisper 系列的 prompt 上限是 224 tokens，所以後端要截斷 prompt，只保留**最後 60 個字**（加上固定前綴；Whisper 用 byte-level BPE，token 數不超過 UTF-8 位元組數，所以整個 prompt 另以 224 個 UTF-8 位元組為上限：前綴 13 字加 60 個一般繁體字是 219 位元組；emoji、CJK 擴充 B 等每字 4 位元組的字會讓尾段少於 60 字）。前端照樣送最後 200 字，由後端負責截斷，前端不用改。
+- **上游 429**：Groq 回 429 時，後端改回 429 `rate_limited`，並轉傳上游的 `Retry-After`（無條件進位成整數秒並限制在 1–300 秒；沒有或看不懂就帶 `10`）。v1 原本把它當 502，現在讓前端照 429 的規則等待後重送。
 - `.env.example` 和 README 加上 `GROQ_API_KEY`、`TRANSCRIBE_PROVIDER`、`GROQ_TRANSCRIBE_MODEL`。
 
 ### 1.2 切段長度

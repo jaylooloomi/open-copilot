@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PROMPT_PREFIX, PROMPT_TAIL_CHARS, buildPrompt } from './prompt';
+import { PROMPT_MAX_BYTES, PROMPT_PREFIX, PROMPT_TAIL_CHARS, buildPrompt } from './prompt';
 
 describe('buildPrompt', () => {
   it('prefixes the traditional Chinese guide text', () => {
@@ -41,7 +41,28 @@ describe('buildPrompt', () => {
 
   it('counts characters, not UTF-16 code units, so astral characters are never split', () => {
     const astral = '\u{20000}'; // 𠀀，UTF-16 是兩個 code unit
-    expect(buildPrompt(astral.repeat(100))).toBe(PROMPT_PREFIX + astral.repeat(60));
+    const tail = buildPrompt(astral.repeat(100)).slice(PROMPT_PREFIX.length);
+    expect(tail.length).toBeGreaterThan(0);
+    expect(tail).toBe(astral.repeat(Array.from(tail).length));
+  });
+
+  it('bounds the prompt by UTF-8 bytes when the tail has 4-byte characters', () => {
+    // 罕用字（CJK Extension B）與 emoji 每字 4 個位元組，60 字會超過 224。
+    expect(PROMPT_MAX_BYTES).toBe(224);
+    const bytes = (s: string) => new TextEncoder().encode(s).length;
+    for (const ch of ['\u{20000}', '😀']) {
+      const result = buildPrompt(ch.repeat(200));
+      expect(bytes(result)).toBeLessThanOrEqual(224);
+      // 前綴 39 位元組，剩下 185 位元組最多放 46 個 4 位元組字。
+      expect(result).toBe(PROMPT_PREFIX + ch.repeat(46));
+    }
+  });
+
+  it('mixes 3-byte and 4-byte characters without exceeding 224 bytes', () => {
+    const mixed = Array.from({ length: 200 }, (_, i) => (i % 2 ? '😀' : '字')).join('');
+    const result = buildPrompt(mixed);
+    expect(new TextEncoder().encode(result).length).toBeLessThanOrEqual(224);
+    expect(mixed.endsWith(result.slice(PROMPT_PREFIX.length))).toBe(true);
   });
 
   it('trims surrounding whitespace before counting', () => {
