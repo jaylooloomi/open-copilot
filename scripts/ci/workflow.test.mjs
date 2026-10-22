@@ -14,6 +14,7 @@ const rootScripts = JSON.parse(readFileSync(new URL('package.json', repoRoot), '
 // apps/web and apps/desktop live on other branches until they are merged,
 // so every step that needs one of them only runs when its package.json exists.
 const WEB_GATE = "hashFiles('apps/web/package.json') != ''";
+const DESKTOP_GATE = "hashFiles('apps/desktop/package.json') != ''";
 
 function job(name) {
   const found = workflow.jobs?.[name];
@@ -120,4 +121,47 @@ test('never runs the real voice test, Android builds or anything that needs secr
   for (const banned of ['e2e:real', 'playwright.real', 'android', 'gradle', 'cap sync', 'secrets.', 'api_key']) {
     assert.ok(!lowered.includes(banned), `ci.yml must not mention "${banned}" in any letter case`);
   }
+});
+
+test('desktop runs on Windows with Node 24, the npm cache and the Electron binary', () => {
+  const desktop = job('desktop');
+  assert.equal(desktop['runs-on'], 'windows-latest');
+  assertNodeSetup(desktop);
+  assert.equal(desktop.env?.ELECTRON_SKIP_BINARY_DOWNLOAD, undefined);
+  assert.equal(workflow.env?.ELECTRON_SKIP_BINARY_DOWNLOAD, undefined);
+});
+
+test('desktop builds web and desktop, downloads Electron, then runs the Electron e2e without packaging', () => {
+  const desktop = job('desktop');
+  assert.deepEqual(commands(desktop), [
+    'npm ci',
+    'npm run build -w @oc/web',
+    'npm run build -w @oc/desktop',
+    'npm exec -w @oc/desktop -- install-electron',
+    'npx playwright test',
+  ]);
+  assert.equal(stepByRun(desktop, 'npx playwright test')['working-directory'], 'apps/desktop');
+  const text = JSON.stringify(desktop);
+  assert.ok(!text.includes('electron-builder') && !text.includes('npm run dist'), 'desktop must not package an installer');
+});
+
+test('desktop only runs the desktop steps when apps/desktop exists', () => {
+  const desktop = job('desktop');
+  for (const command of commands(desktop)) {
+    const expected = command === 'npm ci' ? undefined : DESKTOP_GATE;
+    assert.equal(stepByRun(desktop, command).if, expected, `wrong condition on "${command}"`);
+  }
+  const notice = desktop.steps.find(isNotice);
+  assert.ok(notice, 'skip notice for apps/desktop is missing');
+  assert.equal(notice.if, "hashFiles('apps/desktop/package.json') == ''");
+});
+
+test('desktop uploads the Playwright results for 7 days when the Electron e2e fails', () => {
+  const desktop = job('desktop');
+  assert.equal(stepByRun(desktop, 'npx playwright test').id, 'desktop-e2e');
+  const upload = desktop.steps[usesIndex(desktop, 'actions/upload-artifact')];
+  assert.ok(upload, 'actions/upload-artifact is missing');
+  assert.equal(upload.if, "failure() && steps.desktop-e2e.outcome == 'failure'");
+  assert.match(upload.with.path, /apps\/desktop\/test-results\//);
+  assert.equal(upload.with['retention-days'], 7);
 });

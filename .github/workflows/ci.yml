@@ -75,3 +75,52 @@ jobs:
             apps/web/test-results/
           retention-days: 7
           if-no-files-found: ignore
+
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Note skipped desktop steps
+        if: hashFiles('apps/desktop/package.json') == ''
+        run: echo "::notice::apps/desktop is not on this branch; desktop build and Electron e2e skipped"
+
+      - name: Build web
+        if: hashFiles('apps/desktop/package.json') != ''
+        run: npm run build -w @oc/web
+
+      - name: Build desktop
+        if: hashFiles('apps/desktop/package.json') != ''
+        run: npm run build -w @oc/desktop
+
+      # Electron 45 has no install script: npm ci does not fetch the binary,
+      # so download it here instead of inside the first e2e test's timeout.
+      - name: Download Electron
+        if: hashFiles('apps/desktop/package.json') != ''
+        run: npm exec -w @oc/desktop -- install-electron
+
+      - name: Electron e2e
+        id: desktop-e2e
+        if: hashFiles('apps/desktop/package.json') != ''
+        working-directory: apps/desktop
+        run: npx playwright test
+
+      - name: Upload Playwright results
+        if: failure() && steps.desktop-e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-desktop
+          path: apps/desktop/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
