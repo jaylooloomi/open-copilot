@@ -1,5 +1,6 @@
+import { AI_UPSTREAM_TIMEOUT_MS } from '@oc/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, createApiClient, parseRetryAfter } from './apiClient';
+import { AI_REQUEST_TIMEOUT_MS, ApiError, createApiClient, parseRetryAfter } from './apiClient';
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
@@ -200,5 +201,101 @@ describe('parseRetryAfter', () => {
     expect(parseRetryAfter('Tue, 20 Oct 2026 00:00:00 GMT', now)).toBe(0);
     expect(parseRetryAfter(null, now)).toBeUndefined();
     expect(parseRetryAfter('soon', now)).toBeUndefined();
+  });
+});
+
+const AI_INPUT = { title: '週會', text: '下週三前寄出報價單' };
+
+describe('createApiClient() AI endpoints', () => {
+  it('posts title and text as JSON with the bearer key and returns the summary', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => json({ summary: '決定寄出報價單' }));
+    const client = createApiClient({ baseUrl: 'https://api.test/', accessKey: 'key-1', fetchImpl });
+
+    await expect(client.summarize(AI_INPUT)).resolves.toEqual({ summary: '決定寄出報價單' });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe('https://api.test/ai/summary');
+    expect(calls[0].init.method).toBe('POST');
+    expect(calls[0].init.headers).toEqual({ Authorization: 'Bearer key-1', 'Content-Type': 'application/json' });
+    expect(JSON.parse(String(calls[0].init.body))).toEqual(AI_INPUT);
+  });
+
+  it('returns the todo items from /ai/todos', async () => {
+    const { fetchImpl, calls } = fakeFetch(() => json({ items: ['寄出報價單', '預約會議室'] }));
+    const client = createApiClient({ baseUrl: 'https://api.test', accessKey: 'key-1', fetchImpl });
+
+    await expect(client.todos(AI_INPUT)).resolves.toEqual({ items: ['寄出報價單', '預約會議室'] });
+    expect(calls[0].url).toBe('https://api.test/ai/todos');
+  });
+
+  it('rejects a 503 with the ai_unavailable code', async () => {
+    const { fetchImpl } = fakeFetch(() => json({ error: 'ai_unavailable' }, 503));
+    const client = createApiClient({ baseUrl: 'https://api.test', accessKey: 'k', fetchImpl });
+
+    const error = await errorOf(client.summarize(AI_INPUT));
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.status).toBe(503);
+    expect(error.code).toBe('ai_unavailable');
+  });
+
+  it('reads Retry-After from a 429', async () => {
+    const { fetchImpl } = fakeFetch(() => json({ error: 'rate_limited' }, 429, { 'Retry-After': '7' }));
+    const client = createApiClient({ baseUrl: 'https://api.test', accessKey: 'k', fetchImpl });
+
+    const error = await errorOf(client.todos(AI_INPUT));
+
+    expect(error.status).toBe(429);
+    expect(error.code).toBe('rate_limited');
+    expect(error.retryAfterMs).toBe(7000);
+  });
+
+  it.each([
+    ['summary', { summary: 1 }],
+    ['summary', '<html>ok</html>'],
+    ['todos', { items: 'a' }],
+    ['todos', { items: ['a', 2] }],
+  ] as const)('rejects a malformed %s response', async (kind, body) => {
+    const { fetchImpl } = fakeFetch(() =>
+      typeof body === 'string' ? new Response(body, { status: 200 }) : json(body),
+    );
+    const client = createApiClient({ baseUrl: 'https://api.test', accessKey: 'k', fetchImpl });
+
+    const error = await errorOf(kind === 'summary' ? client.summarize(AI_INPUT) : client.todos(AI_INPUT));
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.status).toBe(200);
+    expect(error.message).toBe(kind === 'summary' ? 'Invalid summary response' : 'Invalid todos response');
+  });
+
+  it('waits for aiTimeoutMs, not timeoutMs, before giving up', async () => {
+    vi.useFakeTimers();
+    const { fetchImpl } = fakeFetch(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.test',
+      accessKey: 'k',
+      fetchImpl,
+      timeoutMs: 5_000,
+      aiTimeoutMs: 20_000,
+    });
+
+    let settled = false;
+    const pending = errorOf(client.summarize(AI_INPUT)).finally(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect((await pending).status).toBe(0);
+  });
+
+  it('defaults the AI deadline to longer than the backend LLM timeout', () => {
+    expect(AI_REQUEST_TIMEOUT_MS).toBeGreaterThan(AI_UPSTREAM_TIMEOUT_MS);
   });
 });

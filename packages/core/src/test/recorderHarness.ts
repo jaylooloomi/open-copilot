@@ -60,7 +60,13 @@ export function createFakeClient() {
         calls.push({ input, resolve: (text) => resolve({ seq: input.seq, text }), reject });
       }),
   );
-  const client: ApiClient = { health: vi.fn(async () => true), transcribe };
+  const client: ApiClient = {
+    health: vi.fn(async () => true),
+    transcribe,
+    // The recorder never calls the AI endpoints.
+    summarize: vi.fn(async () => ({ summary: '' })),
+    todos: vi.fn(async () => ({ items: [] })),
+  };
   return { client, transcribe, calls };
 }
 
