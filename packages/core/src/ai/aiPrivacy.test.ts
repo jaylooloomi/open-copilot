@@ -29,10 +29,13 @@ describe('aiPrivacy', () => {
 
   it('logs instead of throwing when storage cannot be written', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('quota');
     });
     expect(() => aiPrivacy.acknowledge()).not.toThrow();
     expect(error).toHaveBeenCalledWith('Failed to remember the AI privacy notice', expect.any(Error));
+    setItem.mockRestore();
+    expect(localStorage.getItem(AI_PRIVACY_KEY)).toBeNull();
+    expect(aiPrivacy.isAcknowledged()).toBe(false);
   });
 });
