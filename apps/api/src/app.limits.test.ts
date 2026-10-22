@@ -11,6 +11,7 @@ import {
   transcribeForm,
 } from './test/helpers';
 import type { Transcriber } from './transcriber/types';
+import { UpstreamRateLimitError } from './transcriber/errors';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -99,6 +100,42 @@ describe('POST /transcribe upstream failure', () => {
     expect(await res.json()).toEqual({ error: 'upstream_error' });
     expect(consoleError).toHaveBeenCalledWith('[transcribe] upstream error:', '[object Object]');
     expect(consoleError.mock.calls.flat()).not.toContain(rejection);
+  });
+});
+
+describe('POST /transcribe upstream rate limit', () => {
+  it('answers 429 rate_limited and forwards Retry-After when the transcription service is rate limited', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { app } = createTestApp({
+      transcriber: createFakeTranscriber(new UpstreamRateLimitError(7)),
+    });
+
+    const res = await postTranscribe(app, transcribeForm(), {
+      Authorization: `Bearer ${TEST_KEY}`,
+      Origin: ALLOWED_ORIGIN,
+    });
+
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: 'rate_limited' });
+    expect(res.headers.get('Retry-After')).toBe('7');
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ALLOWED_ORIGIN);
+    expect(res.headers.get('Access-Control-Expose-Headers')).toContain('Retry-After');
+    expect(consoleWarn).toHaveBeenCalledWith('[transcribe] upstream rate limited; retry after 7s');
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it('keeps answering 502 for every other upstream error', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { app } = createTestApp({
+      transcriber: createFakeTranscriber(new Error('429 looks like a rate limit but is a plain Error')),
+    });
+
+    const res = await postTranscribe(app, transcribeForm());
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'upstream_error' });
+    expect(res.headers.get('Retry-After')).toBeNull();
   });
 });
 

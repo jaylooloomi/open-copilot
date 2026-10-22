@@ -11,6 +11,7 @@ import { cors } from 'hono/cors';
 import { bearerAuth, type AuthEnv } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
 import { toTraditional } from './text/toTraditional';
+import { UpstreamRateLimitError } from './transcriber/errors';
 import type { Transcriber } from './transcriber/types';
 
 export interface AppDeps {
@@ -86,6 +87,11 @@ export function createApp({ transcriber, accessKeys, allowedOrigins, now = Date.
         if (signal.aborted) {
           // 回應已經沒人收；記一行說明，避免被誤認成上游故障。
           console.warn('[transcribe] client disconnected; upstream call cancelled');
+        } else if (err instanceof UpstreamRateLimitError) {
+          // 轉寫服務（例如 Groq 免費額度）限流：改回 429，前端依 Retry-After 等待後重送。
+          console.warn(`[transcribe] upstream rate limited; retry after ${err.retryAfterSeconds}s`);
+          c.header('Retry-After', String(err.retryAfterSeconds));
+          return c.json({ error: 'rate_limited' } satisfies ApiErrorBody, 429);
         } else {
           // 只記錄錯誤訊息，不記錄金鑰或音訊內容。
           console.error('[transcribe] upstream error:', err instanceof Error ? err.message : String(err));
