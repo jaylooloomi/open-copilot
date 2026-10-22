@@ -13,6 +13,7 @@ export interface ColorPaletteProps {
 export function ColorPalette({ label, icon, colors, current, onPick, onClear }: ColorPaletteProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -20,7 +21,14 @@ export function ColorPalette({ label, icon, colors, current, onPick, onClear }: 
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key !== 'Escape') return;
+      // Keyboard users may have tabbed into the popover; hand focus back to the
+      // toggle before it unmounts. Mouse users keep focus in the editor.
+      const active = document.activeElement;
+      if (active && active !== toggleRef.current && rootRef.current?.contains(active)) {
+        toggleRef.current?.focus();
+      }
+      setOpen(false);
     };
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('keydown', onKeyDown);
@@ -38,6 +46,7 @@ export function ColorPalette({ label, icon, colors, current, onPick, onClear }: 
   return (
     <div className="oc-palette" ref={rootRef}>
       <button
+        ref={toggleRef}
         type="button"
         className="oc-tool"
         aria-label={label}

@@ -72,4 +72,47 @@ describe('ColorPalette', () => {
     await user.click(screen.getByText('outside'));
     expect(screen.queryByRole('group')).not.toBeInTheDocument();
   });
+
+  it('returns focus to the toggle when Escape closes the popover from a swatch', async () => {
+    const { user } = setup();
+    const toggle = screen.getByRole('button', { name: '字色' });
+    await user.tab();
+    expect(toggle).toHaveFocus();
+    await user.keyboard('{Enter}');
+    await user.tab();
+    expect(screen.getByRole('button', { name: '黑色' })).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('group')).not.toBeInTheDocument();
+    expect(toggle).toHaveFocus();
+  });
+
+  it('leaves focus where it was when Escape closes a mouse-opened popover', async () => {
+    const onPick = vi.fn();
+    const onClear = vi.fn();
+    render(
+      <div>
+        <textarea aria-label="editor" />
+        <ColorPalette
+          label="字色"
+          icon={<span>A</span>}
+          colors={TEXT_COLORS}
+          current={undefined}
+          onPick={onPick}
+          onClear={onClear}
+        />
+      </div>,
+    );
+    const user = userEvent.setup();
+    const editor = screen.getByRole('textbox', { name: 'editor' });
+    await user.click(editor);
+    await user.click(screen.getByRole('button', { name: '字色' }));
+    expect(editor).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('group')).not.toBeInTheDocument();
+    expect(editor).toHaveFocus();
+  });
 });
