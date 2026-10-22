@@ -99,4 +99,27 @@ describe('app.css', () => {
     const task = selectorLists(css).filter((s) => s.includes("ul[data-type='taskList'] li"));
     expect(task).toEqual([]);
   });
+
+  it('makes the unlocked AI chips clickable and dims them while disabled', () => {
+    expect(css).toMatch(/\.oc-ai-btn\.is-available\s*\{[^}]*color:\s*var\(--oc-primary\)[^}]*cursor:\s*pointer/);
+    expect(css).toMatch(/\.oc-ai-btn\.is-available:disabled\s*\{[^}]*cursor:\s*not-allowed[^}]*opacity:\s*0\.5/);
+  });
+
+  it('shows the AI panel as a right-hand column, and as a bottom sheet under the drawer on phones', () => {
+    expect(css).toMatch(/\.oc-ai-panel\s*\{[^}]*width:\s*320px[^}]*border-left:\s*1px solid var\(--oc-border\)/);
+    const narrow = css.slice(css.indexOf('@media (max-width: 767.98px)'));
+    // Under the drawer (z-index 40) and its backdrop (30), so the open drawer covers it.
+    expect(narrow).toMatch(/\.oc-ai-panel\s*\{[^}]*position:\s*fixed[^}]*z-index:\s*20/);
+  });
+
+  it('dims a disabled primary button', () => {
+    expect(css).toMatch(/\.oc-primary-btn:disabled\s*\{[^}]*cursor:\s*not-allowed[^}]*opacity:\s*0\.5/);
+  });
+
+  it('keeps a disabled AI panel action from taking the hover colours', () => {
+    // More specific than `.oc-action-btn:hover`, so it wins while the pointer is over it.
+    expect(css).toMatch(
+      /\.oc-ai-panel-actions \.oc-action-btn:disabled\s*\{[^}]*border-color:\s*var\(--oc-border\)[^}]*color:\s*var\(--oc-text\)[^}]*cursor:\s*not-allowed[^}]*opacity:\s*0\.5/,
+    );
+  });
 });

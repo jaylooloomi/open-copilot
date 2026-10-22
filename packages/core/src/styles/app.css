@@ -230,6 +230,27 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* M11: AI 摘要 and 待辦事項 work; AI 助理 and AI 對話 stay locked. */
+.oc-ai-btn.is-available {
+  border-color: rgba(192, 38, 211, 0.4);
+  color: var(--oc-primary);
+  cursor: pointer;
+}
+
+.oc-ai-btn.is-available:hover:not(:disabled) {
+  background: var(--oc-active-bg);
+}
+
+.oc-ai-btn.is-available:focus-visible {
+  outline: 2px solid var(--oc-primary);
+  outline-offset: 2px;
+}
+
+.oc-ai-btn.is-available:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 /* ---------- banner ---------- */
 .oc-banner {
   margin: 12px 16px 0;
@@ -901,6 +922,114 @@ button {
   font-size: 13px;
 }
 
+/* ---------- AI panel ---------- */
+.oc-ai-panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 320px;
+  overflow-y: auto;
+  border-left: 1px solid var(--oc-border);
+  background: var(--oc-surface);
+}
+
+.oc-ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--oc-border);
+}
+
+.oc-ai-panel-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+/* Focused by script when the panel opens; it is not a control, so no ring. */
+.oc-ai-panel-header h2:focus {
+  outline: none;
+}
+
+.oc-ai-panel-body {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.oc-ai-panel-status,
+.oc-ai-panel-error,
+.oc-ai-panel-note {
+  margin: 0;
+}
+
+.oc-ai-panel-status,
+.oc-ai-panel-note {
+  color: var(--oc-muted);
+}
+
+.oc-ai-panel-note {
+  min-height: 1.2em;
+  font-size: 13px;
+}
+
+.oc-ai-panel-error {
+  color: var(--oc-danger);
+}
+
+.oc-ai-summary p {
+  margin: 0 0 6px;
+}
+
+.oc-ai-todos {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.oc-ai-todos label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.oc-ai-todos input {
+  flex: none;
+  margin-top: 0.35em;
+  accent-color: var(--oc-primary);
+}
+
+.oc-ai-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.oc-ai-panel-actions .oc-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 複製 with an empty summary. Outranks `.oc-action-btn:hover`, so hovering it changes nothing. */
+.oc-ai-panel-actions .oc-action-btn:disabled {
+  border-color: var(--oc-border);
+  color: var(--oc-text);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.oc-ai-privacy-body {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
 /* ---------- settings dialog ---------- */
 .oc-dialog-backdrop {
   position: fixed;
@@ -998,6 +1127,11 @@ button {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.oc-primary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 /* ---------- narrow screens: note list becomes a drawer ---------- */
@@ -1139,6 +1273,20 @@ button {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* A bottom sheet on phones. Below the drawer (40) and its backdrop (30): the open drawer covers it. */
+  .oc-ai-panel {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    width: auto;
+    max-height: 60vh;
+    border-top: 1px solid var(--oc-border);
+    border-left: none;
+    box-shadow: 0 -8px 24px rgba(17, 24, 39, 0.15);
   }
 
   .oc-banner {
