@@ -64,11 +64,17 @@ function sanitizeChildren(
     }
     if (child.type === 'text' && !child.text) continue;
     const clean: JSONContent = { ...child };
+    if (child.type === 'heading') clean.attrs = { ...child.attrs, level: headingLevel(child.attrs?.level) };
     if (child.marks) clean.marks = child.marks.filter((mark) => schema.marks[mark.type]);
     if (child.content) clean.content = sanitizeChildren(child.content, schema, type.isTextblock);
     result.push(clean);
   }
   return result;
+}
+
+/** The editor allows heading levels 1-3; a malformed stored level is clamped into that range, as toDocx does. */
+function headingLevel(level: unknown): 1 | 2 | 3 {
+  return Math.min(Math.max(Math.trunc(Number(level)) || 1, 1), 3) as 1 | 2 | 3;
 }
 
 function linesToInline(text: string): JSONContent[] {

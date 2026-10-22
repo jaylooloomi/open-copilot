@@ -40,6 +40,9 @@ body {
 
 button {
   font: inherit;
+  /* Mobile Chromium and Android WebView paint a square blue box on tap that ignores rounded corners;
+     each button's own :hover/:active/:focus-visible styles give the feedback instead. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 .oc-loading {
@@ -1365,6 +1368,31 @@ button {
   .oc-palette-popover {
     top: calc(100% + 4px);
     left: 12px;
+  }
+
+  /* A toast at the bottom of the screen instead of an inline slot: inline, '已複製全文' pushed 複製 and
+     匯出 onto another row for a few seconds and the note jumped down. Under the toolbar it would cover
+     the banner's 立即備份 button. Above the AI bottom sheet; it takes no taps. */
+  .oc-action-status {
+    position: fixed;
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    z-index: 50;
+    padding: 6px 14px;
+    border: 1px solid var(--oc-border);
+    border-radius: 999px;
+    background: var(--oc-bg);
+    color: var(--oc-text);
+    box-shadow: 0 4px 12px rgba(17, 24, 39, 0.16);
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  /* Empty: no visible box, but still rendered, so screen readers keep it as a live region. */
+  .oc-action-status:empty {
+    padding: 0;
+    border: none;
+    box-shadow: none;
   }
 
   .oc-document {

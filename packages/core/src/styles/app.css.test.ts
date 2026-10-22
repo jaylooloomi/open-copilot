@@ -32,6 +32,19 @@ describe('app.css', () => {
     expect(narrowBlock(sample)).not.toContain('.c');
   });
 
+  it('turns off the square tap highlight on every button; :active and :focus-visible styles show the tap', () => {
+    expect(css).toMatch(/(^|\n)button\s*\{[^}]*-webkit-tap-highlight-color:\s*transparent/);
+  });
+
+  it('shows the copy/export status as a bottom toast on narrow screens, so showing it does not reflow the toolbar', () => {
+    const narrow = narrowBlock(css);
+    expect(narrow).toMatch(/\.oc-action-status\s*\{[^}]*position:\s*fixed/);
+    expect(narrow).toMatch(/\.oc-action-status\s*\{[^}]*bottom:/);
+    // Empty, it draws no box but stays rendered (not display: none), so it is still a live region.
+    expect(narrow).toMatch(/\.oc-action-status:empty\s*\{[^}]*border:\s*none/);
+    expect(narrow).not.toMatch(/\.oc-action-status:empty\s*\{[^}]*display:\s*none/);
+  });
+
   it('is loaded', () => {
     expect(css).toContain('.oc-tool-group');
   });

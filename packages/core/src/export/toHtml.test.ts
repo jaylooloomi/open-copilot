@@ -21,6 +21,15 @@ describe('toHtml', () => {
     expect(toHtml(note('A & B <C>', p(text('內文'))))).toBe('<h1>A &amp; B &lt;C&gt;</h1><p>內文</p>');
   });
 
+  it('keeps a malformed or out-of-range heading level below the title <h1> range', () => {
+    const h = (level: unknown): JSONContent => ({ type: 'heading', attrs: { level }, content: [text('t')] });
+    expect(toHtml(note('', h('x')))).toBe('<h1>t</h1>');
+    expect(toHtml(note('', h(0)))).toBe('<h1>t</h1>');
+    expect(toHtml(note('', h(9)))).toBe('<h3>t</h3>');
+    expect(toHtml(note('', h('2')))).toBe('<h2>t</h2>');
+    expect(toHtml(note('', h(2.6)))).toBe('<h2>t</h2>');
+  });
+
   it('returns only the body when the title is blank', () => {
     expect(toHtml(note('  ', p(text('內文'))))).toBe('<p>內文</p>');
     expect(toHtml({ ...note(''), content: EMPTY_DOC })).toBe('<p></p>');
