@@ -48,6 +48,7 @@ function assertNodeSetup(jobDef) {
   const install = jobDef.steps.findIndex((s) => s.run?.trim() === 'npm ci');
   assert.ok(install > setup, 'npm ci must come after actions/setup-node');
   const { with: options } = jobDef.steps[setup];
+  assert.ok(options, 'actions/setup-node needs a with block');
   assert.equal(String(options['node-version']), '24');
   assert.equal(options.cache, 'npm');
 }
@@ -55,6 +56,11 @@ function assertNodeSetup(jobDef) {
 test('runs on a push to any branch and on pull requests', () => {
   assert.deepEqual(workflow.on.push, { branches: ['**'] });
   assert.ok('pull_request' in workflow.on, 'pull_request trigger is missing');
+});
+
+test('cancels superseded runs except on main, so every main commit keeps a result', () => {
+  assert.equal(workflow.concurrency?.group, 'ci-${{ github.ref }}');
+  assert.equal(workflow.concurrency['cancel-in-progress'], "${{ github.ref != 'refs/heads/main' }}");
 });
 
 test('web-api runs on ubuntu with Node 24, the npm cache and no Electron download', () => {
@@ -109,7 +115,9 @@ test('every root npm script the workflow runs exists', () => {
 });
 
 test('never runs the real voice test, Android builds or anything that needs secrets', () => {
-  for (const banned of ['e2e:real', 'playwright.real', 'android', 'gradle', 'cap sync', 'secrets.', 'API_KEY']) {
-    assert.ok(!workflowText.includes(banned), `ci.yml must not mention "${banned}"`);
+  // Case-insensitive, so "Android" or "GRADLE" in a comment is caught too.
+  const lowered = workflowText.toLowerCase();
+  for (const banned of ['e2e:real', 'playwright.real', 'android', 'gradle', 'cap sync', 'secrets.', 'api_key']) {
+    assert.ok(!lowered.includes(banned), `ci.yml must not mention "${banned}" in any letter case`);
   }
 });
