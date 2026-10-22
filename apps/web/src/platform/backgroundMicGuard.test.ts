@@ -125,6 +125,63 @@ describe('installBackgroundMicGuard', () => {
     expect(tracks[0].stop).not.toHaveBeenCalled();
   });
 
+  it('ends a track that arrives while the app is already hidden, after the caller can listen', async () => {
+    const { mediaDevices, getUserMedia, tracks, setVisibility } = setup();
+    let resolve!: () => void;
+    const gate = new Promise<void>((r) => (resolve = r));
+    const real = getUserMedia.getMockImplementation()!;
+    getUserMedia.mockImplementationOnce(async (c) => {
+      await gate; // e.g. the permission dialog is still open
+      return real(c);
+    });
+    const pending = mediaDevices.getUserMedia({ audio: true });
+    setVisibility('hidden');
+    resolve();
+    const stream = await pending;
+    const [track] = tracks;
+    const ended = vi.fn();
+    track.addEventListener('ended', ended);
+    expect(stream.getAudioTracks()[0]).toBe(track);
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(ended).toHaveBeenCalledTimes(1);
+    expect(track.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a track that arrives while hidden alone if the app is visible again first', async () => {
+    const { mediaDevices, getUserMedia, tracks, setVisibility } = setup();
+    let resolve!: () => void;
+    const gate = new Promise<void>((r) => (resolve = r));
+    const real = getUserMedia.getMockImplementation()!;
+    getUserMedia.mockImplementationOnce(async (c) => {
+      await gate;
+      return real(c);
+    });
+    const pending = mediaDevices.getUserMedia({ audio: true });
+    setVisibility('hidden');
+    resolve();
+    await pending;
+    setVisibility('visible');
+
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(tracks[0].stop).not.toHaveBeenCalled();
+  });
+
+  it('installing twice on the same mediaDevices wraps getUserMedia once', async () => {
+    const { mediaDevices, tracks, target } = setup();
+    const wrapped = mediaDevices.getUserMedia;
+    const second = installBackgroundMicGuard({ target, mediaDevices });
+    expect(mediaDevices.getUserMedia).toBe(wrapped);
+    second();
+    expect(mediaDevices.getUserMedia).toBe(wrapped);
+
+    await mediaDevices.getUserMedia({ audio: true });
+    target.dispatchEvent(new Event('pause'));
+    expect(tracks[0].stop).toHaveBeenCalledTimes(1);
+  });
+
   it('does nothing where there is no getUserMedia (jsdom, old WebViews)', () => {
     const { target } = fakeDocument();
     expect(() => {

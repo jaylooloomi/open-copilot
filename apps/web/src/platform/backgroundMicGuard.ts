@@ -17,19 +17,36 @@ export interface BackgroundMicGuardOptions {
  * `ended` event makes SegmentRecorder hand over what was recorded, and useRecorder shows
  * 「錄音已中斷，已錄的部分會照常轉寫」 once the app is in front again.
  *
+ * Meant to be installed once per mediaDevices; a second install is a no-op (its remover does
+ * nothing), so only the first remover restores getUserMedia.
+ *
  * Returns a function that removes the guard.
  */
+const guarded = new WeakSet<MediaDevices>();
+
 export function installBackgroundMicGuard(options: BackgroundMicGuardOptions = {}): () => void {
   const target: VisibilityTarget = options.target ?? document;
   const mediaDevices = options.mediaDevices ?? globalThis.navigator?.mediaDevices;
   if (!mediaDevices?.getUserMedia) return () => undefined;
+  if (guarded.has(mediaDevices)) return () => undefined;
+  guarded.add(mediaDevices);
 
   const original = mediaDevices.getUserMedia;
   const tracks = new Set<MediaStreamTrack>();
 
   mediaDevices.getUserMedia = async (constraints?: MediaStreamConstraints) => {
     const stream = await original.call(mediaDevices, constraints);
+    // Drop tracks the app already stopped so their streams are not held until the next pause.
+    for (const track of tracks) if (track.readyState !== 'live') tracks.delete(track);
     for (const track of stream.getAudioTracks()) tracks.add(track);
+    // The app may have gone to the background while the permission dialog or device open was
+    // pending. End the new track then too, but on a later task, so the caller has attached its
+    // `ended` listener by the time it fires.
+    if (target.visibilityState === 'hidden') {
+      setTimeout(() => {
+        if (target.visibilityState === 'hidden') endTracks();
+      }, 0);
+    }
     return stream;
   };
 
@@ -57,5 +74,6 @@ export function installBackgroundMicGuard(options: BackgroundMicGuardOptions = {
     target.removeEventListener('pause', endTracks);
     mediaDevices.getUserMedia = original;
     tracks.clear();
+    guarded.delete(mediaDevices);
   };
 }
