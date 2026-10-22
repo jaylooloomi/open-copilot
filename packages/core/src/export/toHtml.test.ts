@@ -79,6 +79,9 @@ describe('toHtml', () => {
     );
     expect(html).toBe('<p>嗨 @小明!</p><p>提醒一<br>提醒二</p>');
   });
+  it('drops empty text nodes, which the schema would otherwise reject', () => {
+    expect(toHtml(note('', p(text(''), text('x'))))).toBe('<p>x</p>');
+  });
 });
 
 describe('escapeHtml', () => {

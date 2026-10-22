@@ -4,11 +4,22 @@ import { createExtensions } from '../editor/extensions';
 import { nodeText, TRANSCRIPT_GAP_TEXT, TRANSCRIPT_GAP_TYPE } from './common';
 
 type Schema = ReturnType<typeof getSchema>;
+type Extensions = ReturnType<typeof createExtensions>;
+
+let cached: { extensions: Extensions; schema: Schema } | undefined;
+
+/** Builds the editor extensions and schema once, on first export. */
+function exportSetup(): { extensions: Extensions; schema: Schema } {
+  if (!cached) {
+    const extensions = createExtensions();
+    cached = { extensions, schema: getSchema(extensions) };
+  }
+  return cached;
+}
 
 /** HTML fragment (`<h1>title</h1>` + the editor's own HTML) used by PDF printing and copying. */
 export function toHtml(note: Note): string {
-  const extensions = createExtensions();
-  const schema = getSchema(extensions);
+  const { extensions, schema } = exportSetup();
   const doc: JSONContent = {
     type: 'doc',
     content: sanitizeChildren(note.content.content ?? [], schema, false),
