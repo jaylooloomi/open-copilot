@@ -1,10 +1,17 @@
+import { MAX_AUDIO_BYTES } from '@oc/shared';
 import type { Editor } from '@tiptap/react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createApiClient, type ApiClient } from '../api/apiClient';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ApiError, createApiClient, type ApiClient } from '../api/apiClient';
 import { isConfigured, type Settings } from '../settings/settingsStore';
 import { OrderedBuffer } from './orderedBuffer';
-import type { AppDbHandle } from './pendingQueue';
+import {
+  createPendingQueue,
+  type AppDbHandle,
+  type PendingQueue,
+  type PendingSegment,
+} from './pendingQueue';
 import { extensionFor, pickMimeType } from './pickMimeType';
+import { replaceGap } from './replaceGap';
 import { withRetry } from './retry';
 import { SegmentRecorder, type RecordedSegment, type SegmentRecorderOptions } from './segmentRecorder';
 import { TranscriptInserter } from './transcriptInserter';
@@ -12,8 +19,12 @@ import { TranscriptInserter } from './transcriptInserter';
 export type RecorderState = 'idle' | 'needsSetup' | 'recording' | 'stopping';
 
 export const RECORDER_MESSAGES = {
+  unauthorized: '存取金鑰錯誤，請重新設定',
   micDenied: '無法使用麥克風，請在系統或瀏覽器設定中允許麥克風權限',
   startFailed: '無法開始錄音，請再試一次',
+  interrupted: '錄音已中斷，已錄的部分會照常轉寫',
+  retryFailed: '重新轉寫失敗，請稍後再試',
+  audioMissing: '找不到這段錄音，無法重新轉寫',
 } as const;
 
 /** How much of the text already inserted in this recording is sent as the prompt. */
@@ -68,11 +79,16 @@ export interface UseRecorderResult {
   notice: string | null;
   start(): Promise<void>;
   stop(): Promise<void>;
+  retryGap(gapId: string): Promise<void>;
+  dismissMessages(): void;
 }
 
 type Phase = 'idle' | 'recording' | 'stopping';
 
-type SegmentResult = { kind: 'text'; text: string } | { kind: 'skip' };
+type SegmentResult =
+  | { kind: 'text'; text: string }
+  | { kind: 'gap'; gapId: string; seq: number }
+  | { kind: 'skip' };
 
 interface Session {
   noteId: string;
@@ -85,11 +101,13 @@ interface Session {
   /** Text inserted by this recording so far; its tail is the next prompt. */
   transcript: string;
   uploads: Set<Promise<void>>;
+  unauthorized: boolean;
   finishing: Promise<void> | null;
 }
 
 interface ControllerEnv {
   options(): UseRecorderOptions;
+  queue(): PendingQueue;
   setPhase(phase: Phase): void;
   setError(message: string | null): void;
   setNotice(message: string | null): void;
@@ -98,21 +116,24 @@ interface ControllerEnv {
 /**
  * Records with the microphone, uploads every segment as soon as it is cut (in parallel, with
  * retries) and inserts the transcripts strictly in recording order at the cursor position the
- * recording started from.
+ * recording started from. A segment that still fails becomes a transcriptGap marker whose audio
+ * is kept in IndexedDB until retryGap() succeeds.
  */
 export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const queue = useMemo(() => createPendingQueue(options.db), [options.db]);
 
-  const latest = useRef({ options });
+  const latest = useRef({ options, queue });
   useLayoutEffect(() => {
-    latest.current = { options };
+    latest.current = { options, queue };
   });
 
   const controllerRef = useRef<ReturnType<typeof createRecorderController> | null>(null);
   controllerRef.current ??= createRecorderController({
     options: () => latest.current.options,
+    queue: () => latest.current.queue,
     setPhase,
     setError,
     setNotice,
@@ -122,13 +143,31 @@ export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
   useEffect(() => {
     // Set here as well as in dispose() so that StrictMode's unmount and remount works.
     controller.mount();
-    return () => controller.dispose();
+    document.addEventListener('visibilitychange', controller.onVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', controller.onVisibilityChange);
+      controller.dispose();
+    };
   }, [controller]);
+
+  // New settings (e.g. after a rejected key was replaced) clear the old error.
+  const { apiBaseUrl, accessKey } = options.settings;
+  useEffect(() => {
+    setError(null);
+  }, [apiBaseUrl, accessKey]);
 
   const state: RecorderState =
     phase !== 'idle' ? phase : isConfigured(options.settings) ? 'idle' : 'needsSetup';
 
-  return { state, error, notice, start: controller.start, stop: controller.stop };
+  return {
+    state,
+    error,
+    notice,
+    start: controller.start,
+    stop: controller.stop,
+    retryGap: controller.retryGap,
+    dismissMessages: controller.dismissMessages,
+  };
 }
 
 function createRecorderController(env: ControllerEnv) {
@@ -136,6 +175,10 @@ function createRecorderController(env: ControllerEnv) {
   let starting = false;
   /** False after unmount, so a start() still waiting on the microphone does not record. */
   let mounted = true;
+  let interruptedWhileHidden = false;
+  /** Audio of gaps from this page load; IndexedDB is the fallback (e.g. after a reload). */
+  const pending = new Map<string, PendingSegment>();
+  const retrying = new Set<string>();
 
   const deps = (): RecorderDeps => ({ ...defaultRecorderDeps, ...env.options().deps });
 
@@ -175,7 +218,7 @@ function createRecorderController(env: ControllerEnv) {
         stream,
         mimeType,
         onSegment: (segment) => handleSegment(current, segment),
-        onInterrupted: () => void finish(current),
+        onInterrupted: () => handleInterrupted(current),
       });
       current = {
         noteId,
@@ -187,6 +230,7 @@ function createRecorderController(env: ControllerEnv) {
         mimeType,
         transcript: '',
         uploads: new Set(),
+        unauthorized: false,
         finishing: null,
       };
       try {
@@ -245,6 +289,12 @@ function createRecorderController(env: ControllerEnv) {
     prompt: string,
   ): Promise<SegmentResult> {
     const d = deps();
+    // The server answers 413 for anything bigger (same constant), so do not spend an upload on it.
+    // Same outcome as a 413: warn and skip; no gap, since a retry would be refused again.
+    if (blob.size > MAX_AUDIO_BYTES) {
+      console.warn(`Segment ${seq} is ${blob.size} bytes, over ${MAX_AUDIO_BYTES}, and was skipped`);
+      return { kind: 'skip' };
+    }
     try {
       const response = await withRetry(
         () =>
@@ -258,31 +308,128 @@ function createRecorderController(env: ControllerEnv) {
       );
       return response.text.trim() === '' ? { kind: 'skip' } : { kind: 'text', text: response.text };
     } catch (error) {
-      // Dropped so that later segments are not held up.
-      console.error(`Segment ${seq} could not be transcribed`, error);
-      return { kind: 'skip' };
+      const status = error instanceof ApiError ? error.status : undefined;
+      if (status === 400 || status === 413) {
+        console.warn(`Segment ${seq} was rejected with ${status} and skipped`, error);
+        return { kind: 'skip' };
+      }
+      if (status === 401) handleUnauthorized(current);
+      // Network errors and 5xx after every retry, 401 and anything unexpected: keep the audio.
+      const gapId = d.newGapId();
+      await keepPending({ gapId, noteId: current.noteId, seq, blob, mimeType, prompt });
+      return { kind: 'gap', gapId, seq };
     }
   }
 
   /** Inserts every result that is now next in line. */
   function release(current: Session, seq: number, result: SegmentResult): void {
     for (const item of current.buffer.put(seq, result)) {
-      if (item.kind !== 'text') continue;
       // One failing insert must not drop the rest of the batch, which has already left the buffer.
       try {
-        current.inserter.insertText(item.text);
-        current.transcript += item.text;
+        if (item.kind === 'text') {
+          current.inserter.insertText(item.text);
+          current.transcript += item.text;
+        } else if (item.kind === 'gap') {
+          current.inserter.insertGap(item.gapId, item.seq);
+        }
       } catch (error) {
         console.error('Failed to insert a transcript', error);
       }
     }
   }
 
-  /** Unmount: stop the microphone; uploads still finish but insert nothing. */
+  async function keepPending(item: PendingSegment): Promise<void> {
+    pending.set(item.gapId, item);
+    try {
+      await env.queue().add(item);
+    } catch (error) {
+      console.error('Failed to keep an untranscribed segment', error);
+    }
+  }
+
+  function handleUnauthorized(current: Session): void {
+    if (current.unauthorized) return;
+    current.unauthorized = true;
+    env.setError(RECORDER_MESSAGES.unauthorized);
+    env.options().onUnauthorized?.();
+    void finish(current);
+  }
+
+  function handleInterrupted(current: Session): void {
+    if (document.visibilityState === 'hidden') interruptedWhileHidden = true;
+    else env.setNotice(RECORDER_MESSAGES.interrupted);
+    void finish(current);
+  }
+
+  function onVisibilityChange(): void {
+    if (document.visibilityState === 'visible' && interruptedWhileHidden) {
+      interruptedWhileHidden = false;
+      env.setNotice(RECORDER_MESSAGES.interrupted);
+    }
+  }
+
+  async function retryGap(gapId: string): Promise<void> {
+    // The editor the marker was clicked in. The note list stays usable while a retry runs (up to
+    // 1s+2s+4s of backoff plus 30s per attempt), so by the time the answer arrives the props may
+    // already hold another note's editor.
+    const { settings, editor } = env.options();
+    if (retrying.has(gapId) || !isConfigured(settings)) return;
+    retrying.add(gapId);
+    try {
+      const item = pending.get(gapId) ?? (await env.queue().get(gapId).catch(() => undefined));
+      if (!item) {
+        env.setError(RECORDER_MESSAGES.audioMissing);
+        return;
+      }
+      const d = deps();
+      const client = d.createClient(settings);
+      const response = await withRetry(
+        () =>
+          client.transcribe({
+            audio: item.blob,
+            seq: item.seq,
+            prompt: item.prompt,
+            filename: `segment-${item.seq}.${extensionFor(item.mimeType)}`,
+          }),
+        { sleep: d.sleep },
+      );
+      const text = response.text.trim() === '' ? '' : response.text;
+      if (!replaceGap(editor, gapId, text)) {
+        // Nothing was replaced, so the audio is still the only copy: keep it. A destroyed editor
+        // means the note was switched or deleted; the marker can be clicked again after going
+        // back. A live editor without the marker means the user deleted it; undo can bring it
+        // back, and the audio goes when the note is deleted (removeByNote).
+        if (editor.isDestroyed) env.setError(RECORDER_MESSAGES.retryFailed);
+        return;
+      }
+      pending.delete(gapId);
+      await env
+        .queue()
+        .remove(gapId)
+        .catch((error: unknown) => console.error('Failed to drop a retried segment', error));
+      env.setError(null);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        env.setError(RECORDER_MESSAGES.unauthorized);
+        env.options().onUnauthorized?.();
+      } else {
+        env.setError(RECORDER_MESSAGES.retryFailed);
+      }
+    } finally {
+      retrying.delete(gapId);
+    }
+  }
+
+  function dismissMessages(): void {
+    env.setError(null);
+    env.setNotice(null);
+  }
+
   function mount(): void {
     mounted = true;
   }
 
+  /** Unmount: stop the microphone; uploads still finish but insert nothing. */
   function dispose(): void {
     mounted = false;
     const current = session;
@@ -293,7 +440,7 @@ function createRecorderController(env: ControllerEnv) {
     stopTracks(current.stream);
   }
 
-  return { start, stop, mount, dispose };
+  return { start, stop, retryGap, dismissMessages, onVisibilityChange, mount, dispose };
 }
 
 function stopTracks(stream: MediaStream): void {
