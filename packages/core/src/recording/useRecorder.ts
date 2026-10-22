@@ -83,9 +83,17 @@ export interface UseRecorderResult {
   retryGap(gapId: string): Promise<void>;
   /**
    * The note was deleted, so its markers can never be retried: drops the audio kept for them,
-   * in memory and in IndexedDB. Never rejects; failures are logged.
+   * in memory and in IndexedDB, except the gapIds in `stillReferenced` (markers copied into a note
+   * that still exists). Never rejects; failures are logged.
    */
-  forgetNote(noteId: string): Promise<void>;
+  forgetNote(noteId: string, stillReferenced?: ReadonlySet<string>): Promise<void>;
+  /**
+   * Drops the kept audio of every gap whose marker no saved note has any more (e.g. retried
+   * markers, once the note holding the transcript was saved). NotesApp calls it once the notes are
+   * loaded from storage. Audio recorded by this page load is kept: its note may not be saved yet.
+   * Never rejects; failures are logged.
+   */
+  pruneAudio(referenced: ReadonlySet<string>): Promise<void>;
   dismissMessages(): void;
 }
 
@@ -175,6 +183,7 @@ export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
     stop: controller.stop,
     retryGap: controller.retryGap,
     forgetNote: controller.forgetNote,
+    pruneAudio: controller.pruneAudio,
     dismissMessages: controller.dismissMessages,
   };
 }
@@ -187,6 +196,8 @@ function createRecorderController(env: ControllerEnv) {
   let interruptedWhileHidden = false;
   /** Audio of gaps from this page load; IndexedDB is the fallback (e.g. after a reload). */
   const pending = new Map<string, PendingSegment>();
+  /** Every gap recorded by this page load, retried or not; pruneAudio() leaves their audio alone. */
+  const recordedHere = new Set<string>();
   const retrying = new Set<string>();
 
   const deps = (): RecorderDeps => ({ ...defaultRecorderDeps, ...env.options().deps });
@@ -283,8 +294,13 @@ function createRecorderController(env: ControllerEnv) {
     const prompt = tail(current.transcript, PROMPT_CHARS);
     const mimeType = blob.type || current.mimeType || '';
     const upload: Promise<void> = transcribeSegment(current, seq, blob, mimeType, prompt)
+      .catch((error: unknown) => {
+        console.error(`Failed to handle segment ${seq}`, error);
+        // This seq must still reach the buffer, or every later transcript would wait behind it.
+        return { kind: 'skip' } as const;
+      })
       .then((result) => release(current, seq, result))
-      .catch((error: unknown) => console.error(`Failed to handle segment ${seq}`, error))
+      .catch((error: unknown) => console.error(`Failed to insert segment ${seq}`, error))
       .finally(() => {
         current.uploads.delete(upload);
       });
@@ -354,6 +370,7 @@ function createRecorderController(env: ControllerEnv) {
 
   async function keepPending(item: PendingSegment): Promise<void> {
     pending.set(item.gapId, item);
+    recordedHere.add(item.gapId);
     try {
       await env.queue().add(item);
     } catch (error) {
@@ -424,11 +441,9 @@ function createRecorderController(env: ControllerEnv) {
         if (editor.isDestroyed) env.setError(RECORDER_MESSAGES.retryFailed);
         return;
       }
-      pending.delete(gapId);
-      await env
-        .queue()
-        .remove(gapId)
-        .catch((error: unknown) => console.error('Failed to drop a retried segment', error));
+      // The audio stays (in memory too, for a pasted copy of the marker) instead of leaving the
+      // queue now: the note with the transcript is saved later and that save can fail, and then the
+      // stored note still has the marker. pruneAudio() drops it once no saved note has the marker.
       env.setError(null);
     } catch (error) {
       const status = error instanceof ApiError ? error.status : undefined;
@@ -446,12 +461,23 @@ function createRecorderController(env: ControllerEnv) {
     }
   }
 
-  async function forgetNote(noteId: string): Promise<void> {
-    for (const [gapId, item] of pending) if (item.noteId === noteId) pending.delete(gapId);
+  async function forgetNote(noteId: string, stillReferenced?: ReadonlySet<string>): Promise<void> {
+    for (const [gapId, item] of pending) {
+      if (item.noteId === noteId && !stillReferenced?.has(gapId)) pending.delete(gapId);
+    }
     try {
-      await env.queue().removeByNote(noteId);
+      await env.queue().removeByNote(noteId, stillReferenced);
     } catch (error) {
       console.error('Failed to drop the untranscribed audio of a deleted note', error);
+    }
+  }
+
+  async function pruneAudio(referenced: ReadonlySet<string>): Promise<void> {
+    const keep = new Set([...referenced, ...recordedHere]);
+    try {
+      await env.queue().removeUnreferenced(keep);
+    } catch (error) {
+      console.error('Failed to drop untranscribed audio no note refers to', error);
     }
   }
 
@@ -476,7 +502,17 @@ function createRecorderController(env: ControllerEnv) {
     stopTracks(current.stream);
   }
 
-  return { start, stop, retryGap, forgetNote, dismissMessages, onVisibilityChange, mount, dispose };
+  return {
+    start,
+    stop,
+    retryGap,
+    forgetNote,
+    pruneAudio,
+    dismissMessages,
+    onVisibilityChange,
+    mount,
+    dispose,
+  };
 }
 
 function stopTracks(stream: MediaStream): void {

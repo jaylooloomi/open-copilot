@@ -127,6 +127,9 @@ button {
 .oc-record-btn {
   display: inline-flex;
   align-items: center;
+  /* Wide enough for the longest label (請先設定 + icon), so the chips do not shift between states. */
+  min-width: calc(4em + 60px);
+  justify-content: center;
   gap: 6px;
   padding: 8px 18px;
   border: none;
@@ -538,7 +541,7 @@ button {
   opacity: 1;
 }
 
-.oc-note-delete:hover {
+.oc-note-delete:hover:not(:disabled) {
   background: #fee2e2;
   color: var(--oc-danger);
 }
@@ -713,6 +716,17 @@ button {
   opacity: 0.5;
 }
 
+/* While recording the delete buttons are disabled: they stay hidden where they normally are, and
+   show dimmed where they normally show (hover, the active note). */
+.oc-note-item .oc-note-delete:disabled {
+  opacity: 0;
+}
+
+.oc-note-item:hover .oc-note-delete:disabled,
+.oc-note-item.is-active .oc-note-delete:disabled {
+  opacity: 0.5;
+}
+
 /* ---------- settings dialog ---------- */
 .oc-dialog-backdrop {
   position: fixed;
@@ -778,6 +792,14 @@ button {
   margin: 0;
   color: var(--oc-muted);
   font-size: 13px;
+}
+
+.oc-dialog-message.is-error {
+  color: var(--oc-danger);
+}
+
+.oc-dialog-message.is-ok {
+  color: #15803d;
 }
 
 .oc-dialog-actions {
@@ -850,6 +872,11 @@ button {
     opacity: 1;
   }
 
+  /* Always shown on phones, so always dimmed while disabled. */
+  .oc-note-item .oc-note-delete:disabled {
+    opacity: 0.5;
+  }
+
   /* The toolbar wraps here; a divider would hang at the end of a row, so the gap separates groups. */
   .oc-tool-group {
     padding-right: 0;
@@ -871,6 +898,7 @@ button {
 
   .oc-record-btn {
     flex-shrink: 0;
+    min-width: calc(4em + 52px);
     padding: 8px 14px;
   }
 

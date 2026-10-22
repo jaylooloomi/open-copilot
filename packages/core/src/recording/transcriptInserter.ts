@@ -27,7 +27,7 @@ export class TranscriptInserter {
   insertText(text: string): void {
     if (text === '') return;
     // schema.text() carries no marks, so a transcript is plain even inside bold text.
-    this.insert(this.editor.schema.text(text));
+    this.insert(this.editor.schema.text(transcriptLine(text)));
   }
 
   insertGap(gapId: string, seq: number): void {
@@ -98,6 +98,15 @@ export class TranscriptInserter {
     if (state.storedMarks) tr.setStoredMarks(state.storedMarks);
     return tr.setMeta('addToHistory', false);
   }
+}
+
+/**
+ * A transcript goes in as one inline run, so its line breaks become spaces (a raw newline inside a
+ * paragraph would show as a break only under white-space: pre-wrap). Shared with replaceGap, so a
+ * retried transcript looks the same as one that arrived the first time.
+ */
+export function transcriptLine(text: string): string {
+  return text.replace(/[\r\n]+/g, ' ');
 }
 
 /**

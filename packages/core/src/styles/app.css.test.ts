@@ -23,6 +23,17 @@ describe('app.css', () => {
     expect(mixed).toEqual([]);
   });
 
+  it('dims disabled delete buttons everywhere they show and gives them no hover colour', () => {
+    // .oc-note-item.is-active .oc-note-delete (0,3,0) must not out-rank the disabled look.
+    expect(css).toMatch(/\.oc-note-item\.is-active \.oc-note-delete:disabled[^{]*\{[^}]*opacity:\s*0\.5/);
+    expect(css).toMatch(/\.oc-note-delete:hover:not\(:disabled\)\s*\{/);
+    expect(selectorLists(css)).not.toContain('.oc-note-delete:hover');
+  });
+
+  it('keeps the record button one width for every label, so the action bar does not shift', () => {
+    expect(css).toMatch(/\.oc-record-btn\s*\{[^}]*min-width:[^}]*justify-content:\s*center/);
+  });
+
   it('drops the toolbar group dividers on narrow screens, where groups wrap onto new rows', () => {
     // A divider would otherwise hang at the end of a wrapped row with nothing after it.
     const narrow = css.slice(css.indexOf('@media (max-width: 767.98px)'));

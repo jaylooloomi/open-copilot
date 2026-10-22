@@ -164,5 +164,11 @@ test('一段連續失敗 4 次變成未轉寫標記，重新整理後點擊標�
 
   await expect(body).toHaveText('第1段。第2段。');
   await expect(gap).toHaveCount(0);
+  // The audio stays until no saved note has the marker: once the transcript is saved, the next
+  // load drops it.
+  expect(await pendingCount(page)).toBe(1);
+  await expect.poll(() => savedNoteHasGap(page)).toBe(false);
+  await page.reload();
+  await expect(body).toHaveText('第1段。第2段。');
   await expect.poll(() => pendingCount(page)).toBe(0);
 });

@@ -71,6 +71,33 @@ describe('createExtensions', () => {
     expect(e.getText()).toBe('Bye');
   });
 
+  it.each([
+    ['Ctrl+Z', { key: 'z' }],
+    ['Ctrl+Shift+Z', { key: 'Z', shiftKey: true }],
+    ['Ctrl+Y', { key: 'y' }],
+  ])('always handles %s, so the browser never runs its own contenteditable undo', (_name, keys) => {
+    const e = makeEditor('<p>Hello</p>');
+    // Nothing to undo or redo: ProseMirror's commands do nothing, but the key is still consumed.
+    const event = new KeyboardEvent('keydown', { ctrlKey: true, cancelable: true, ...keys });
+    e.view.dom.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(e.getText()).toBe('Hello');
+  });
+
+  it('Ctrl+Shift+Z and Ctrl+Y still redo', () => {
+    const e = makeEditor('<p>Hello</p>');
+    e.chain().selectAll().insertContent('Bye').run();
+    const press = (init: KeyboardEventInit) =>
+      e.view.dom.dispatchEvent(new KeyboardEvent('keydown', { ctrlKey: true, cancelable: true, ...init }));
+    press({ key: 'z' });
+    expect(e.getText()).toBe('Hello');
+    press({ key: 'Z', shiftKey: true });
+    expect(e.getText()).toBe('Bye');
+    press({ key: 'z' });
+    press({ key: 'y' });
+    expect(e.getText()).toBe('Bye');
+  });
+
   it('shows the zh-TW placeholder on an empty document', () => {
     const e = makeEditor('<p></p>');
     expect(EDITOR_PLACEHOLDER).toBe('在這裡開始編寫筆記..');

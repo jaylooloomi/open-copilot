@@ -20,6 +20,15 @@ export interface SettingsDialogProps {
 
 const defaultCheckHealth = (baseUrl: string) => createApiClient({ baseUrl, accessKey: '' }).health();
 
+/** The test result is coloured like the recorder's alerts: red for a failure, green for success. */
+function messageClass(message: string): string {
+  if (message === SETTINGS_MESSAGES.failed || message === SETTINGS_MESSAGES.invalidUrl) {
+    return 'oc-dialog-message is-error';
+  }
+  if (message === SETTINGS_MESSAGES.ok) return 'oc-dialog-message is-ok';
+  return 'oc-dialog-message';
+}
+
 /** 設定: backend URL, access key and a 測試連線 button. Render it only while it is open. */
 export function SettingsDialog({
   settings,
@@ -162,7 +171,7 @@ export function SettingsDialog({
             >
               測試連線
             </button>
-            <p className="oc-dialog-message" aria-live="polite">
+            <p className={messageClass(message)} aria-live="polite">
               {message}
             </p>
           </div>

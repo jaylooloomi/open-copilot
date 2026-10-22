@@ -1,4 +1,4 @@
-import type { Extensions } from '@tiptap/react';
+import { Extension, type Extensions } from '@tiptap/react';
 import { Highlight } from '@tiptap/extension-highlight';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Color, TextStyle } from '@tiptap/extension-text-style';
@@ -7,6 +7,26 @@ import { StarterKit } from '@tiptap/starter-kit';
 import { TranscriptGap } from './transcriptGap';
 
 export const EDITOR_PLACEHOLDER = '在這裡開始編寫筆記..';
+
+/**
+ * Undo/redo keys always count as handled. ProseMirror's undo/redo commands return false when there
+ * is nothing to undo or redo, and the browser then runs its own contenteditable undo, which edits
+ * the document behind ProseMirror's history (e.g. Ctrl+Shift+Z deleting the last typed words).
+ */
+const HistoryKeys = Extension.create({
+  name: 'historyKeys',
+  addKeyboardShortcuts() {
+    const undo = () => {
+      this.editor.commands.undo();
+      return true;
+    };
+    const redo = () => {
+      this.editor.commands.redo();
+      return true;
+    };
+    return { 'Mod-z': undo, 'Mod-Z': undo, 'Mod-Shift-z': redo, 'Mod-Shift-Z': redo, 'Mod-y': redo, 'Mod-Y': redo };
+  },
+});
 
 export function createExtensions(): Extensions {
   return [
@@ -19,5 +39,6 @@ export function createExtensions(): Extensions {
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Placeholder.configure({ placeholder: EDITOR_PLACEHOLDER }),
     TranscriptGap,
+    HistoryKeys,
   ];
 }

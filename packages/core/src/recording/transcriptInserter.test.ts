@@ -53,6 +53,12 @@ describe('TranscriptInserter', () => {
     expect(e.state.selection.from).toBe(5); // still after B
   });
 
+  it('turns line breaks in a transcript into spaces, like a retried one', () => {
+    const e = makeEditor('<p></p>');
+    new TranscriptInserter(e, 1).insertText('第一行\r\n第二行\n\n第三行');
+    expect(e.getHTML()).toBe('<p>第一行 第二行 第三行</p>');
+  });
+
   it('inserts plain text even inside bold text', () => {
     const e = makeEditor('<p><strong>AB</strong></p>');
     new TranscriptInserter(e, 2).insertText('一');

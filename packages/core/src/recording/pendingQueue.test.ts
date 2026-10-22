@@ -71,3 +71,29 @@ describe('createPendingQueue', () => {
     expect(await queue.get('g3')).toBeDefined();
   });
 });
+
+describe('createPendingQueue: keeping audio that a note still refers to', () => {
+  it('removeByNote keeps the segments listed in `keep`, e.g. a marker pasted into another note', async () => {
+    const queue = createPendingQueue(await newDb());
+    await queue.add(segment('g1', 1));
+    await queue.add(segment('g2', 2));
+
+    await queue.removeByNote('n1', new Set(['g2']));
+
+    expect(await queue.get('g1')).toBeUndefined();
+    expect(await queue.get('g2')).toBeDefined();
+  });
+
+  it('removeUnreferenced drops every segment whose gapId is not in the set', async () => {
+    const queue = createPendingQueue(await newDb());
+    await queue.add(segment('g1', 1));
+    await queue.add({ ...segment('g2', 1), noteId: 'n2' });
+    await queue.add(segment('g3', 3));
+
+    await queue.removeUnreferenced(new Set(['g3', 'not-stored']));
+
+    expect(await queue.get('g1')).toBeUndefined();
+    expect(await queue.get('g2')).toBeUndefined();
+    expect(await queue.get('g3')).toBeDefined();
+  });
+});

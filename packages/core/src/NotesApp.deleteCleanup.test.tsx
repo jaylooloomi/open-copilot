@@ -17,9 +17,9 @@ vi.mock('./recording/pendingQueue', async (importOriginal) => {
       const queue = actual.createPendingQueue(...args);
       return {
         ...queue,
-        removeByNote: (noteId: string) => {
+        removeByNote: (...removeArgs: Parameters<typeof queue.removeByNote>) => {
           if (queueBroken.value) throw new Error('queue unavailable');
-          return queue.removeByNote(noteId);
+          return queue.removeByNote(...removeArgs);
         },
       };
     },

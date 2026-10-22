@@ -3,8 +3,12 @@ import { ApiError } from '../api/apiClient';
 /** Waits before retry 1, 2 and 3. */
 export const RETRY_DELAYS_MS: readonly number[] = [1000, 2000, 4000];
 
-/** Longest wait honoured for a 429 Retry-After, so a huge value cannot stall the pipeline. */
-export const MAX_RETRY_AFTER_MS = 60_000;
+/**
+ * Longest wait honoured for a 429 Retry-After, so a huge value cannot stall the pipeline. It
+ * matches the backend, which clamps the upstream Retry-After to 1–300 s: a shorter cap would retry
+ * too early, get 429 again and use up the attempts.
+ */
+export const MAX_RETRY_AFTER_MS = 300_000;
 
 export interface RetryOptions {
   delaysMs?: readonly number[];

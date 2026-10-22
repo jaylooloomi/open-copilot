@@ -50,6 +50,23 @@ describe('replaceGap', () => {
     expect(e.getText()).toBe('前第一行 第二行 第三行後');
   });
 
+  it('stays out of the undo history, so Ctrl+Z cannot bring the retried marker back', () => {
+    const e = makeEditor(text('前'), gap('g1', 1));
+    e.commands.insertContentAt(e.state.doc.content.size - 1, '打字');
+    expect(replaceGap(e, 'g1', '第一段')).toBe(true);
+    e.commands.undo(); // undoes the user's typing only
+    expect(e.getText()).toBe('前第一段');
+    expect(e.getHTML()).not.toContain('data-transcript-gap');
+  });
+
+  it('keeps the marks the user turned on at the cursor', () => {
+    const e = makeEditor(text('前'), gap('g1', 1), text('後'));
+    e.commands.setTextSelection(2);
+    e.commands.setMark('bold');
+    expect(replaceGap(e, 'g1', '第一段')).toBe(true);
+    expect(e.state.storedMarks?.map((m) => m.type.name)).toEqual(['bold']);
+  });
+
   it('returns false when the gap is not in the document', () => {
     const e = makeEditor(text('前'), gap('g1', 1));
     expect(replaceGap(e, 'missing', '文字')).toBe(false);

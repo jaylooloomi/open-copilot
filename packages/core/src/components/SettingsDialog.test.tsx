@@ -69,7 +69,7 @@ describe('SettingsDialog', () => {
     expect(screen.getByRole('button', { name: '測試連線' })).toBeDisabled();
 
     answer(true);
-    expect(await screen.findByText('連線成功')).toBeInTheDocument();
+    expect(await screen.findByText('連線成功')).toHaveClass('oc-dialog-message', 'is-ok');
     expect(screen.getByRole('button', { name: '測試連線' })).toBeEnabled();
   });
 
@@ -77,11 +77,12 @@ describe('SettingsDialog', () => {
     const checkHealth = vi.fn(async (_url: string) => false);
     const { user, url } = setup({ apiBaseUrl: 'https://down.test', accessKey: '' }, checkHealth);
     await user.click(screen.getByRole('button', { name: '測試連線' }));
-    expect(await screen.findByText('連線失敗，請確認後端網址')).toBeInTheDocument();
+    // Shown as an error (danger colour), not like the neutral hint text.
+    expect(await screen.findByText('連線失敗，請確認後端網址')).toHaveClass('oc-dialog-message', 'is-error');
 
     await user.clear(url);
     await user.click(screen.getByRole('button', { name: '測試連線' }));
-    expect(screen.getByText('請輸入 http:// 或 https:// 開頭的網址')).toBeInTheDocument();
+    expect(screen.getByText('請輸入 http:// 或 https:// 開頭的網址')).toHaveClass('is-error');
     expect(checkHealth).toHaveBeenCalledTimes(1);
   });
 

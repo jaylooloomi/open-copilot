@@ -82,12 +82,15 @@ describe('withRetry', () => {
     expect(fn).toHaveBeenCalledTimes(2);
   });
 
-  it('caps a huge Retry-After at MAX_RETRY_AFTER_MS', async () => {
+  it('honours every Retry-After the backend can send (up to 300 s) and caps anything larger', async () => {
     const sleep = sleepSpy();
-    const fn = failing(new ApiError('slow down', 429, { retryAfterMs: 86_400_000 }));
-    expect(MAX_RETRY_AFTER_MS).toBe(60_000);
+    const fn = failing(
+      new ApiError('slow down', 429, { retryAfterMs: 300_000 }),
+      new ApiError('slow down', 429, { retryAfterMs: 86_400_000 }),
+    );
+    expect(MAX_RETRY_AFTER_MS).toBe(300_000);
     expect(await withRetry(fn, { sleep })).toBe('ok');
-    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([60_000]);
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([300_000, 300_000]);
   });
 
   it('stops retrying once the signal is aborted and throws the abort reason', async () => {

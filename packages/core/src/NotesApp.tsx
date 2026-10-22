@@ -1,6 +1,6 @@
 import { EMPTY_DOC } from '@oc/shared';
 import { Menu, X } from 'lucide-react';
-import { NodeSelection } from '@tiptap/pm/state';
+import { NodeSelection, Selection } from '@tiptap/pm/state';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { ActionBar } from './components/ActionBar';
 import { Banner } from './components/Banner';
@@ -16,6 +16,7 @@ import { displayTitle } from './notes/noteStore';
 import { useNotes } from './notes/useNotes';
 import { openAppDb } from './platform/db';
 import { usePlatform } from './platform/PlatformContext';
+import { collectGapIds } from './recording/gapRefs';
 import { useRecorder } from './recording/useRecorder';
 import { useSettings } from './settings/useSettings';
 import { useNoteDrawer } from './useNoteDrawer';
@@ -87,6 +88,16 @@ export function NotesApp() {
     onUnauthorized: () => setSettingsOpen(true),
   });
 
+  // Once the notes are loaded from storage, drop the kept audio of markers no saved note has any
+  // more (retried ones, or ones deleted by hand). Once per page load: the list is what is stored.
+  const { pruneAudio } = recorder;
+  const pruned = useRef(false);
+  useEffect(() => {
+    if (loading || loadError || pruned.current) return;
+    pruned.current = true;
+    void pruneAudio(collectGapIds(notes));
+  }, [loading, loadError, notes, pruneAudio]);
+
   useEffect(() => {
     if (focusTitleOf === undefined || focusTitleOf !== activeNote?.id) return;
     titleRef.current?.focus();
@@ -129,10 +140,11 @@ export function NotesApp() {
     if (window.confirm(`確定要刪除「${displayTitle(target)}」嗎？此動作無法復原。`)) {
       setStorageError(undefined);
       // Once the note is gone its ⚠ markers can never be retried, so drop their audio as well
-      // (only after the note itself was deleted; a failed delete keeps both). forgetNote never
-      // rejects.
+      // (only after the note itself was deleted; a failed delete keeps both), except for markers
+      // that were copied into another note. forgetNote never rejects.
+      const stillReferenced = collectGapIds(notes.filter((n) => n.id !== id));
       deleteNote(id).then(
-        () => recorder.forgetNote(id),
+        () => recorder.forgetNote(id, stillReferenced),
         reportFailure('刪除筆記失敗，請再試一次。', 'Failed to delete note'),
       );
     }
@@ -259,10 +271,12 @@ export function NotesApp() {
             value={activeNote.title}
             onChange={(title) => updateNote(activeNote.id, { title })}
             onEnter={() => {
-              // Move DOM focus now: focus() alone waits a frame, so a key typed right after Enter
-              // would still land in the title.
-              editor.view.focus();
-              editor.commands.focus('start');
+              // Set the cursor and move DOM focus synchronously. commands.focus() focuses a frame
+              // later, so a key typed right after Enter would land in the title, and the late
+              // focus could reset a selection made meanwhile (e.g. ArrowRight onto a ⚠ marker).
+              const { state, view } = editor;
+              view.dispatch(state.tr.setSelection(Selection.atStart(state.doc)).scrollIntoView());
+              view.focus();
             }}
           />
           <Editor editor={editor} />

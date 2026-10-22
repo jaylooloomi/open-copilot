@@ -1,4 +1,4 @@
-import { EMPTY_DOC, type Note } from '@oc/shared';
+import type { Note } from '@oc/shared';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -200,7 +200,19 @@ describe('NotesApp recording', () => {
       createdAt: 2,
       updatedAt: 2,
     };
-    const other: Note = { id: 'other', title: '其他', content: EMPTY_DOC, createdAt: 1, updatedAt: 1 };
+    // Its own marker keeps its audio from the load-time pruneAudio().
+    const other: Note = {
+      id: 'other',
+      title: '其他',
+      content: {
+        type: 'doc',
+        content: [
+          { type: 'paragraph', content: [{ type: 'transcriptGap', attrs: { gapId: 'gap-of-other-note', seq: 1 } }] },
+        ],
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    };
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { user, storage } = await renderApp({ notes: [withGap, other] });
     expect(await screen.findByText('⚠ 第 1 段未轉寫・重試')).toBeInTheDocument();

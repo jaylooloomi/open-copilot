@@ -85,7 +85,43 @@ describe('useRecorder: failures', () => {
       expect.objectContaining({ seq: 1, prompt: '', filename: 'segment-1.webm' }),
     );
     expect(ctx.editor.getHTML()).toBe('<p>補上的文字</p>');
-    expect(await createPendingQueue(ctx.db).get('gap-1')).toBeUndefined();
+    // The note holding the transcript is saved later (debounced, and the save can fail), so the
+    // audio stays in IndexedDB until pruneAudio() finds no saved note that still has the marker.
+    expect(await createPendingQueue(ctx.db).get('gap-1')).toBeDefined();
+  });
+
+  it('retryGap also works for a copy of a marker that was already retried', async () => {
+    const ctx = await setupRecorder({ content: `<p>${GAP_1}</p><p>${GAP_1}</p>` });
+    await keepAudioForGap1(ctx);
+    ctx.transcribe.mockResolvedValue({ seq: 1, text: '補上' });
+
+    await act(async () => {
+      await ctx.result.current.retryGap('gap-1');
+    });
+    expect(ctx.editor.getHTML()).toBe(`<p>補上</p><p>${GAP_1}</p>`);
+    await act(async () => {
+      await ctx.result.current.retryGap('gap-1');
+    });
+
+    expect(ctx.editor.getHTML()).toBe('<p>補上</p><p>補上</p>');
+    expect(ctx.result.current.error).toBeNull();
+  });
+
+  it('keeps inserting later segments when handling one segment throws', async () => {
+    const ctx = await setupRecorder();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    ctx.deps.newGapId = () => {
+      throw new Error('crypto.randomUUID is not available');
+    };
+    ctx.transcribe.mockImplementation(async (input) => {
+      if (input.seq === 1) throw new ApiError('down', 503);
+      return { seq: input.seq, text: `第${input.seq}段` };
+    });
+
+    await recordSegments(ctx, 3);
+
+    await waitFor(() => expect(ctx.editor.getText()).toBe('第2段第3段'));
+    expect(consoleError).toHaveBeenCalledWith('Failed to handle segment 1', expect.any(Error));
   });
 
   it('retryGap reads audio kept by an earlier page load from IndexedDB', async () => {
@@ -162,7 +198,8 @@ describe('useRecorder: failures', () => {
 
     expect(reopened.getHTML()).toBe('<p>補上的文字</p>');
     expect(ctx.result.current.error).toBeNull();
-    expect(await createPendingQueue(ctx.db).get('gap-1')).toBeUndefined();
+    // Kept until pruneAudio() finds no saved note with the marker.
+    expect(await createPendingQueue(ctx.db).get('gap-1')).toBeDefined();
   });
 
   it('retryGap keeps the audio, without a message, when the marker was deleted while waiting', async () => {
@@ -339,6 +376,52 @@ describe('useRecorder: failures', () => {
     });
     expect(ctx.transcribe).not.toHaveBeenCalled();
     expect(ctx.result.current.error).toBe(RECORDER_MESSAGES.audioMissing);
+  });
+
+  it('forgetNote keeps the audio of a marker that another note still has (a pasted copy)', async () => {
+    const ctx = await setupRecorder();
+    await keepAudioForGap1(ctx);
+    const queue = createPendingQueue(ctx.db);
+    await queue.add({ gapId: 'gap-2', noteId: 'n1', seq: 2, blob: new Blob(['y']), mimeType: 'audio/webm', prompt: '' });
+
+    await act(async () => {
+      await ctx.result.current.forgetNote('n1', new Set(['gap-1']));
+    });
+
+    expect(await queue.get('gap-1')).toBeDefined();
+    expect(await queue.get('gap-2')).toBeUndefined();
+  });
+
+  it('pruneAudio drops audio no note refers to, but keeps what this page load recorded', async () => {
+    const ctx = await setupRecorder();
+    ctx.transcribe.mockRejectedValue(new ApiError('down', 503));
+    await recordSegments(ctx, 1);
+    await waitFor(() => expect(ctx.editor.getHTML()).toBe(`<p>${GAP_1}</p>`));
+    const queue = createPendingQueue(ctx.db);
+    const old = { noteId: 'n2', seq: 1, blob: new Blob(['y']), mimeType: 'audio/webm', prompt: '' };
+    await queue.add({ ...old, gapId: 'still-there' });
+    await queue.add({ ...old, gapId: 'retried-earlier' });
+
+    // gap-1 is not saved in any note yet, but it was recorded by this page load.
+    await act(async () => {
+      await ctx.result.current.pruneAudio(new Set(['still-there']));
+    });
+
+    expect(await queue.get('still-there')).toBeDefined();
+    expect(await queue.get('retried-earlier')).toBeUndefined();
+    expect(await queue.get('gap-1')).toBeDefined();
+  });
+
+  it('pruneAudio logs instead of rejecting when IndexedDB fails', async () => {
+    const ctx = await setupRecorder();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    ctx.db.close();
+
+    await act(async () => {
+      await expect(ctx.result.current.pruneAudio(new Set())).resolves.toBeUndefined();
+    });
+
+    expect(consoleError).toHaveBeenCalledWith('Failed to drop untranscribed audio no note refers to', expect.anything());
   });
 
   it('forgetNote logs instead of rejecting when IndexedDB fails', async () => {
