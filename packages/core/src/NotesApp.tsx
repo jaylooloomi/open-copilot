@@ -369,9 +369,8 @@ export function NotesApp() {
             }}
           />
         </header>
-        <Banner backupDue={backup.backupDue} backupDisabled={listLocked} onBackup={startBackup} />
         {recorder.noSound && (
-          // Too long for the action bar on a phone, so it gets its own line under the banner.
+          // Too long for the action bar on a phone, so it gets its own line under the header.
           <p className="oc-no-sound" role="status">
             {RECORDER_MESSAGES.noSound}
           </p>
@@ -393,6 +392,7 @@ export function NotesApp() {
           </div>
         )}
         <Toolbar editor={editor} note={activeNote} />
+        <Banner backupDue={backup.backupDue} backupDisabled={listLocked} onBackup={startBackup} />
         <div
           className="oc-document"
           onClick={onDocumentClick}

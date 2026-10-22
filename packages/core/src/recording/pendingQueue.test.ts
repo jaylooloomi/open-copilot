@@ -96,4 +96,19 @@ describe('createPendingQueue: keeping audio that a note still refers to', () => 
     expect(await queue.get('g2')).toBeUndefined();
     expect(await queue.get('g3')).toBeDefined();
   });
+
+  it('removeUnreferenced keeps unreferenced segments stored at or after keepSince', async () => {
+    const queue = createPendingQueue(await newDb());
+    await queue.add({ ...segment('old'), createdAt: 999 });
+    await queue.add({ ...segment('edge'), createdAt: 1000 });
+    await queue.add({ ...segment('fresh'), createdAt: 5000 });
+    await queue.add(segment('unknown-age'));
+
+    await queue.removeUnreferenced(new Set(), 1000);
+
+    expect(await queue.get('old')).toBeUndefined();
+    expect(await queue.get('unknown-age')).toBeUndefined();
+    expect(await queue.get('edge')).toBeDefined();
+    expect(await queue.get('fresh')).toBeDefined();
+  });
 });

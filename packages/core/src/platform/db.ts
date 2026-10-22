@@ -9,6 +9,8 @@ export interface PendingSegmentRecord {
   blob: Blob;
   mimeType: string;
   prompt: string;
+  /** When it was stored (epoch ms); rows from before this field have none. */
+  createdAt?: number;
 }
 
 export interface AppDbSchema extends DBSchema {

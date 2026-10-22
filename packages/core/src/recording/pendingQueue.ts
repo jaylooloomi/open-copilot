@@ -16,8 +16,12 @@ export interface PendingQueue {
    * (markers that were copied into a note that still exists).
    */
   removeByNote(noteId: string, keep?: ReadonlySet<string>): Promise<void>;
-  /** Drops the audio of every gap whose gapId is not in `referenced` (no note has its marker). */
-  removeUnreferenced(referenced: ReadonlySet<string>): Promise<void>;
+  /**
+   * Drops the audio of every gap whose gapId is not in `referenced` (no note has its marker).
+   * With `keepSince` (epoch ms), audio stored at or after that time is kept as well: another tab
+   * may have just stored it and not yet saved the note with its marker.
+   */
+  removeUnreferenced(referenced: ReadonlySet<string>, keepSince?: number): Promise<void>;
 }
 
 /** The `pendingSegments` store (keyPath `gapId`) as a small queue API. */
@@ -40,8 +44,10 @@ export function createPendingQueue(db: AppDbHandle): PendingQueue {
     removeByNote(noteId, keep = new Set()) {
       return removeWhere(db, (row) => row.noteId === noteId && !keep.has(row.gapId));
     },
-    removeUnreferenced(referenced) {
-      return removeWhere(db, (row) => !referenced.has(row.gapId));
+    removeUnreferenced(referenced, keepSince) {
+      const isRecent = (row: PendingSegment) =>
+        keepSince !== undefined && row.createdAt !== undefined && row.createdAt >= keepSince;
+      return removeWhere(db, (row) => !referenced.has(row.gapId) && !isRecent(row));
     },
   };
 }

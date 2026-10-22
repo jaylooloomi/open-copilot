@@ -49,7 +49,7 @@ export interface UseAiAssistantResult {
   acceptPrivacy(): void;
   /** Closes the notice without sending anything. */
   cancelPrivacy(): void;
-  /** Closes the panel (and the notice); a response still on its way is ignored. Stable across renders. */
+  /** Closes the panel (and the notice) and cancels a request still on its way. Stable across renders. */
   close(): void;
 }
 
@@ -69,38 +69,49 @@ export function useAiAssistant({
   // Mirrors `pending` so two calls before a re-render cannot both send the waiting request.
   const pendingRef = useRef<AiCall | null>(null);
   const requestId = useRef(0);
+  // Cancels the running request, so a closed panel does not keep spending the backend's AI quota.
+  const inFlight = useRef<AbortController | null>(null);
+
+  /** Makes any running request stale and cancels it. */
+  const cancelRunning = useCallback(() => {
+    requestId.current += 1;
+    inFlight.current?.abort();
+    inFlight.current = null;
+  }, []);
 
   const setPending = useCallback((call: AiCall | null) => {
     pendingRef.current = call;
     setPendingState(call);
   }, []);
 
-  // After unmount no response may set state.
-  useEffect(
-    () => () => {
-      requestId.current += 1;
-    },
-    [],
-  );
+  // After unmount no response may set state, and the running request is cancelled.
+  useEffect(() => cancelRunning, [cancelRunning]);
 
   const run = ({ kind, input }: AiCall) => {
-    const id = ++requestId.current;
+    cancelRunning();
+    const id = requestId.current;
+    const controller = new AbortController();
+    inFlight.current = controller;
+    const options = { signal: controller.signal };
     setPanel({ requestId: id, kind, status: 'loading' });
     const client = deps.createClient(settings);
     const result: Promise<AiPanelState> =
       kind === 'summary'
         ? client
-            .summarize(input)
+            .summarize(input, options)
             .then(({ summary }): AiPanelState => ({ requestId: id, kind: 'summary', status: 'done', summary }))
         : client
-            .todos(input)
+            .todos(input, options)
             .then(({ items }): AiPanelState => ({ requestId: id, kind: 'todos', status: 'done', items }));
     result.then(
       (next) => {
-        if (requestId.current === id) setPanel(next);
+        if (requestId.current !== id) return;
+        inFlight.current = null;
+        setPanel(next);
       },
       (error: unknown) => {
         if (requestId.current !== id) return;
+        inFlight.current = null;
         console.error('AI request failed', error);
         setPanel({ requestId: id, kind, status: 'error', message: aiErrorMessage(error) });
         if (error instanceof ApiError && error.status === 401) onUnauthorized?.();
@@ -109,10 +120,10 @@ export function useAiAssistant({
   };
 
   const close = useCallback(() => {
-    requestId.current += 1;
+    cancelRunning();
     setPanel(null);
     setPending(null);
-  }, [setPending]);
+  }, [cancelRunning, setPending]);
 
   return {
     panel,

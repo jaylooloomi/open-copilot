@@ -34,6 +34,12 @@ export const RECORDER_MESSAGES = {
 /** How much of the text already inserted in this recording is sent as the prompt. */
 export const PROMPT_CHARS = 200;
 
+/**
+ * pruneAudio() keeps unreferenced audio stored this recently. Another tab (web build) may have
+ * just stored it, and the note with its ⚠ marker is only saved a moment later.
+ */
+export const RECENT_AUDIO_GRACE_MS = 10 * 60_000;
+
 export interface SegmentRecorderHandle {
   start(): void;
   stop(): Promise<void>;
@@ -449,13 +455,29 @@ function createRecorderController(env: ControllerEnv) {
     if (!current.disposed) env.setTranscribing(current.waiting);
   }
 
-  async function keepPending(item: PendingSegment): Promise<void> {
+  async function keepPending(segment: PendingSegment): Promise<void> {
+    const item = { ...segment, createdAt: now() };
     pending.set(item.gapId, item);
     recordedHere.add(item.gapId);
     try {
       await env.queue().add(item);
     } catch (error) {
       console.error('Failed to keep an untranscribed segment', error);
+    }
+  }
+
+  /**
+   * Clears createdAt once a retry has replaced the marker, so the recent-audio grace no longer
+   * applies and the next load's pruneAudio() can drop the audio as soon as no saved note needs it.
+   */
+  async function markRetried(item: PendingSegment): Promise<void> {
+    if (item.createdAt === undefined) return;
+    const { createdAt: _createdAt, ...retried } = item;
+    if (pending.has(item.gapId)) pending.set(item.gapId, retried);
+    try {
+      await env.queue().add(retried);
+    } catch (error) {
+      console.error('Failed to update a retried segment', error);
     }
   }
 
@@ -526,6 +548,7 @@ function createRecorderController(env: ControllerEnv) {
       // queue now: the note with the transcript is saved later and that save can fail, and then the
       // stored note still has the marker. pruneAudio() drops it once no saved note has the marker.
       env.setError(null);
+      await markRetried(item);
     } catch (error) {
       const status = error instanceof ApiError ? error.status : undefined;
       if (status === 401) {
@@ -556,7 +579,7 @@ function createRecorderController(env: ControllerEnv) {
   async function pruneAudio(referenced: ReadonlySet<string>): Promise<void> {
     const keep = new Set([...referenced, ...recordedHere]);
     try {
-      await env.queue().removeUnreferenced(keep);
+      await env.queue().removeUnreferenced(keep, now() - RECENT_AUDIO_GRACE_MS);
     } catch (error) {
       console.error('Failed to drop untranscribed audio no note refers to', error);
     }

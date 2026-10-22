@@ -298,6 +298,45 @@ describe('createApiClient() AI endpoints', () => {
     expect((await pending).status).toBe(0);
   });
 
+  it.each(['summary', 'todos'] as const)('cancels the %s request when the caller aborts its signal', async (kind) => {
+    let fetchSignal: AbortSignal | undefined;
+    const { fetchImpl } = fakeFetch(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          fetchSignal = init.signal ?? undefined;
+          init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        }),
+    );
+    const client = createApiClient({ baseUrl: 'https://api.test', accessKey: 'k', fetchImpl });
+    const caller = new AbortController();
+
+    const pending = errorOf(
+      kind === 'summary'
+        ? client.summarize(AI_INPUT, { signal: caller.signal })
+        : client.todos(AI_INPUT, { signal: caller.signal }),
+    );
+    await Promise.resolve();
+    expect(fetchSignal?.aborted).toBe(false);
+    caller.abort();
+
+    const error = await pending;
+    expect(fetchSignal?.aborted).toBe(true);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.status).toBe(0);
+  });
+
+  it('does not send an AI request whose signal is already aborted', async () => {
+    const { fetchImpl } = fakeFetch(() => json({ summary: 'x' }));
+    const client = createApiClient({ baseUrl: 'https://api.test', accessKey: 'k', fetchImpl });
+    const caller = new AbortController();
+    caller.abort();
+
+    const error = await errorOf(client.summarize(AI_INPUT, { signal: caller.signal }));
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(error.status).toBe(0);
+  });
+
   it('defaults the AI deadline to longer than the backend LLM timeout', () => {
     expect(AI_REQUEST_TIMEOUT_MS).toBeGreaterThan(AI_UPSTREAM_TIMEOUT_MS);
   });

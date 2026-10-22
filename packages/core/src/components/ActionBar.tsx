@@ -130,8 +130,8 @@ export function ActionBar({
                 aria-disabled="true"
                 title="即將推出"
               >
-                <Lock size={14} aria-hidden="true" />
                 <span>{label}</span>
+                <Lock size={14} aria-hidden="true" />
               </button>
             );
           })}

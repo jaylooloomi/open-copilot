@@ -21,8 +21,8 @@ function deferred<T>() {
 
 function fakeDeps({ acknowledged = true } = {}) {
   let ack = acknowledged;
-  const summarize = vi.fn<(input: AiRequest) => Promise<AiSummaryResponse>>();
-  const todos = vi.fn<(input: AiRequest) => Promise<AiTodosResponse>>();
+  const summarize = vi.fn<(input: AiRequest, options?: { signal?: AbortSignal }) => Promise<AiSummaryResponse>>();
+  const todos = vi.fn<(input: AiRequest, options?: { signal?: AbortSignal }) => Promise<AiTodosResponse>>();
   const createClient = vi.fn((_settings: Settings) => ({ summarize, todos }));
   const privacy = {
     isAcknowledged: vi.fn(() => ack),
@@ -54,7 +54,7 @@ describe('useAiAssistant', () => {
 
     expect(result.current.panel).toMatchObject({ kind: 'summary', status: 'loading' });
     expect(f.createClient).toHaveBeenCalledWith(SETTINGS);
-    expect(f.summarize).toHaveBeenCalledWith(INPUT);
+    expect(f.summarize).toHaveBeenCalledWith(INPUT, { signal: expect.any(AbortSignal) });
     await act(async () => call.resolve({ summary: '決定寄出報價單' }));
     expect(result.current.panel).toMatchObject({ kind: 'summary', status: 'done', summary: '決定寄出報價單' });
   });
@@ -83,7 +83,7 @@ describe('useAiAssistant', () => {
 
     expect(f.privacy.acknowledge).toHaveBeenCalledTimes(1);
     expect(result.current.privacyPending).toBe(false);
-    expect(f.summarize).toHaveBeenCalledWith(INPUT);
+    expect(f.summarize).toHaveBeenCalledWith(INPUT, { signal: expect.any(AbortSignal) });
     expect(result.current.panel).toMatchObject({ status: 'done', summary: '摘要' });
   });
 
@@ -115,7 +115,7 @@ describe('useAiAssistant', () => {
     const edited = { ...INPUT, text: `${INPUT.text}（已修改）` };
     await act(async () => result.current.request('summary', edited));
     expect(f.summarize).toHaveBeenCalledTimes(2);
-    expect(f.summarize).toHaveBeenLastCalledWith(edited);
+    expect(f.summarize).toHaveBeenLastCalledWith(edited, { signal: expect.any(AbortSignal) });
     expect(result.current.panel).toMatchObject({ status: 'done', summary: '摘要' });
   });
 
@@ -156,6 +156,61 @@ describe('useAiAssistant', () => {
     await act(async () => first.resolve({ summary: '舊的' }));
 
     expect(result.current.panel).toMatchObject({ kind: 'todos', status: 'done' });
+  });
+
+  it('cancels the running request when the panel is closed', () => {
+    const f = fakeDeps();
+    f.summarize.mockReturnValueOnce(deferred<AiSummaryResponse>().promise);
+    const { result } = setup(f);
+
+    act(() => result.current.request('summary', INPUT));
+    const signal = f.summarize.mock.calls[0]?.[1]?.signal;
+    expect(signal?.aborted).toBe(false);
+    act(() => result.current.close());
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('cancels the older request when a newer one starts', () => {
+    const f = fakeDeps();
+    f.summarize.mockReturnValueOnce(deferred<AiSummaryResponse>().promise);
+    f.todos.mockReturnValueOnce(deferred<AiTodosResponse>().promise);
+    const { result } = setup(f);
+
+    act(() => result.current.request('summary', INPUT));
+    act(() => result.current.request('todos', INPUT));
+
+    expect(f.summarize.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    expect(f.todos.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+  });
+
+  it('cancels the running request on unmount', () => {
+    const f = fakeDeps();
+    f.todos.mockReturnValueOnce(deferred<AiTodosResponse>().promise);
+    const { result, unmount } = setup(f);
+
+    act(() => result.current.request('todos', INPUT));
+    unmount();
+
+    expect(f.todos.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+
+  it('does not report the error of a request it cancelled', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const f = fakeDeps();
+    f.summarize.mockImplementationOnce(
+      (_input, options) =>
+        new Promise<AiSummaryResponse>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(new ApiError('Network error', 0)));
+        }),
+    );
+    const { result } = setup(f);
+
+    act(() => result.current.request('summary', INPUT));
+    await act(async () => result.current.close());
+
+    expect(result.current.panel).toBeNull();
+    expect(errors).not.toHaveBeenCalled();
   });
 
   it('keeps close() the same function across renders', () => {

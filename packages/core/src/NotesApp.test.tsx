@@ -74,6 +74,13 @@ describe('NotesApp', () => {
     expect(screen.getByRole('toolbar', { name: '格式工具列' })).toBeInTheDocument();
   });
 
+  it('shows the banner under the formatting toolbar, as in the reference design', async () => {
+    await renderApp();
+    const toolbar = screen.getByRole('toolbar', { name: '格式工具列' });
+    const banner = screen.getByRole('note');
+    expect(toolbar.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('shows a typed title in the list and saves it', async () => {
     const { user, storage } = await renderApp();
     await user.type(titleInput(), '週會');

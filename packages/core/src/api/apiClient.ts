@@ -33,15 +33,21 @@ export interface TranscribeInput {
   filename: string;
 }
 
+/** Lets the caller cancel a request, e.g. when the AI panel closes before the answer arrives. */
+export interface RequestOptions {
+  /** Aborting it cancels the fetch; the call then rejects with ApiError status 0. */
+  signal?: AbortSignal;
+}
+
 export interface ApiClient {
   /** GET /health; true only for 200 `{ ok: true }`. Never throws. */
   health(): Promise<boolean>;
   /** POST /transcribe; rejects with ApiError. */
   transcribe(input: TranscribeInput): Promise<TranscribeResponse>;
   /** POST /ai/summary; rejects with ApiError (503 `ai_unavailable` when the backend has no Groq key). */
-  summarize(input: AiRequest): Promise<AiSummaryResponse>;
+  summarize(input: AiRequest, options?: RequestOptions): Promise<AiSummaryResponse>;
   /** POST /ai/todos; rejects with ApiError like summarize(). */
-  todos(input: AiRequest): Promise<AiTodosResponse>;
+  todos(input: AiRequest, options?: RequestOptions): Promise<AiTodosResponse>;
 }
 
 export interface ApiClientOptions {
@@ -85,14 +91,21 @@ export function createApiClient({
 }: ApiClientOptions): ApiClient {
   const root = baseUrl.trim().replace(/\/+$/, '');
 
-  /** Fetches and reads the JSON body under one deadline, so a stalled body also times out. */
+  /**
+   * Fetches and reads the JSON body under one deadline, so a stalled body also times out.
+   * Aborting `callerSignal` cancels it the same way.
+   */
   async function send(
     path: string,
     init: RequestInit,
     deadlineMs: number = timeoutMs,
+    callerSignal?: AbortSignal,
   ): Promise<{ res: Response; body: unknown }> {
+    if (callerSignal?.aborted) throw new ApiError('Network error', 0, { cause: callerSignal.reason });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), deadlineMs);
+    const onCallerAbort = () => controller.abort();
+    callerSignal?.addEventListener('abort', onCallerAbort, { once: true });
     try {
       let res: Response;
       try {
@@ -105,6 +118,7 @@ export function createApiClient({
       return { res, body };
     } finally {
       clearTimeout(timer);
+      callerSignal?.removeEventListener('abort', onCallerAbort);
     }
   }
 
@@ -112,6 +126,7 @@ export function createApiClient({
   async function postAi(
     path: '/ai/summary' | '/ai/todos',
     { title, text }: AiRequest,
+    signal?: AbortSignal,
   ): Promise<{ res: Response; body: unknown }> {
     const result = await send(
       path,
@@ -121,6 +136,7 @@ export function createApiClient({
         body: JSON.stringify({ title, text }),
       },
       aiTimeoutMs,
+      signal,
     );
     if (!result.res.ok) throw responseError(result.res, result.body);
     return result;
@@ -154,16 +170,16 @@ export function createApiClient({
       return { seq: body.seq, text: body.text };
     },
 
-    async summarize(input) {
-      const { res, body } = await postAi('/ai/summary', input);
+    async summarize(input, options) {
+      const { res, body } = await postAi('/ai/summary', input, options?.signal);
       if (!isRecord(body) || typeof body.summary !== 'string') {
         throw new ApiError('Invalid summary response', res.status);
       }
       return { summary: body.summary };
     },
 
-    async todos(input) {
-      const { res, body } = await postAi('/ai/todos', input);
+    async todos(input, options) {
+      const { res, body } = await postAi('/ai/todos', input, options?.signal);
       const items = isRecord(body) ? body.items : undefined;
       if (!Array.isArray(items) || !items.every((item): item is string => typeof item === 'string')) {
         throw new ApiError('Invalid todos response', res.status);

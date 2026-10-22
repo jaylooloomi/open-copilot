@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/apiClient';
 import { CONFIGURED, createTestEditor, settle, setupRecorder } from '../test/recorderHarness';
 import { createPendingQueue } from './pendingQueue';
-import { RECORDER_MESSAGES } from './useRecorder';
+import { RECENT_AUDIO_GRACE_MS, RECORDER_MESSAGES } from './useRecorder';
 
 type Ctx = Awaited<ReturnType<typeof setupRecorder>>;
 
@@ -410,6 +410,59 @@ describe('useRecorder: failures', () => {
     expect(await queue.get('still-there')).toBeDefined();
     expect(await queue.get('retried-earlier')).toBeUndefined();
     expect(await queue.get('gap-1')).toBeDefined();
+  });
+
+  it('pruneAudio keeps unreferenced audio stored in the last few minutes, e.g. by another tab', async () => {
+    const ctx = await setupRecorder();
+    ctx.clock.now = 60 * 60_000;
+    const queue = createPendingQueue(ctx.db);
+    const row = { noteId: 'n2', seq: 1, blob: new Blob(['y']), mimeType: 'audio/webm', prompt: '' };
+    // Another tab just stored this; the note with its marker is saved a moment later.
+    await queue.add({ ...row, gapId: 'other-tab', createdAt: ctx.clock.now - 60_000 });
+    await queue.add({ ...row, gapId: 'stale', createdAt: ctx.clock.now - RECENT_AUDIO_GRACE_MS - 1 });
+
+    await act(async () => {
+      await ctx.result.current.pruneAudio(new Set());
+    });
+
+    expect(await queue.get('other-tab')).toBeDefined();
+    expect(await queue.get('stale')).toBeUndefined();
+  });
+
+  it('lets the next load prune the audio of a gap it retried, however recently it was stored', async () => {
+    const ctx = await setupRecorder({ content: `<p>${GAP_1}</p>` });
+    ctx.clock.now = 60 * 60_000;
+    const queue = createPendingQueue(ctx.db);
+    await queue.add({
+      gapId: 'gap-1',
+      noteId: 'n1',
+      seq: 1,
+      blob: new Blob(['x']),
+      mimeType: 'audio/webm',
+      prompt: '',
+      createdAt: ctx.clock.now - 60_000,
+    });
+    ctx.transcribe.mockResolvedValueOnce({ seq: 1, text: '補上的文字' });
+
+    await act(async () => {
+      await ctx.result.current.retryGap('gap-1');
+    });
+
+    expect(ctx.editor.getHTML()).toBe('<p>補上的文字</p>');
+    // Still kept (the note is saved later), but no longer protected as freshly stored audio.
+    const stored = await queue.get('gap-1');
+    expect(stored).toBeDefined();
+    expect(stored?.createdAt).toBeUndefined();
+  });
+
+  it('records when it stored the audio of a failed segment', async () => {
+    const ctx = await setupRecorder();
+    ctx.clock.now = 1234;
+    ctx.transcribe.mockRejectedValue(new ApiError('down', 503));
+    await recordSegments(ctx, 1);
+    await waitFor(() => expect(ctx.editor.getHTML()).toBe(`<p>${GAP_1}</p>`));
+
+    expect((await createPendingQueue(ctx.db).get('gap-1'))?.createdAt).toBe(1234);
   });
 
   it('pruneAudio logs instead of rejecting when IndexedDB fails', async () => {

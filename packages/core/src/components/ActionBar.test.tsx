@@ -67,7 +67,9 @@ describe('ActionBar', () => {
     for (const button of buttons) {
       expect(button).toBeDisabled();
       expect(button).toHaveAttribute('aria-disabled', 'true');
-      expect(button.querySelector('svg')).not.toBeNull();
+      // Label first, lock after it, as in the reference design.
+      expect(button.firstElementChild?.tagName).toBe('SPAN');
+      expect(button.lastElementChild?.tagName.toLowerCase()).toBe('svg');
     }
     const aiButtons = Array.from(document.querySelectorAll('.oc-ai-btn')).map((b) => b.textContent);
     expect(aiButtons).toEqual(labels);
