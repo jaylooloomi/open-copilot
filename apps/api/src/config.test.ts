@@ -40,9 +40,28 @@ describe('loadConfig', () => {
     expect(config.allowedOrigins).not.toBe(DEFAULT_ALLOWED_ORIGINS);
   });
 
+  it('falls back to default origins when ALLOWED_ORIGINS is only separators', () => {
+    expect(loadConfig({ ...base, ALLOWED_ORIGINS: ' , ' }).allowedOrigins).toEqual([
+      ...DEFAULT_ALLOWED_ORIGINS,
+    ]);
+  });
+
   it('parses PORT and rejects invalid values', () => {
     expect(loadConfig({ ...base, PORT: '3000' }).port).toBe(3000);
+    expect(loadConfig({ ...base, PORT: '1' }).port).toBe(1);
+    expect(loadConfig({ ...base, PORT: '65535' }).port).toBe(65535);
     expect(() => loadConfig({ ...base, PORT: 'abc' })).toThrow('PORT');
+    expect(() => loadConfig({ ...base, PORT: '0' })).toThrow('PORT');
     expect(() => loadConfig({ ...base, PORT: '70000' })).toThrow('PORT');
+  });
+
+  it('falls back to the default port when PORT is blank', () => {
+    expect(loadConfig({ ...base, PORT: '   ' }).port).toBe(8787);
+  });
+
+  it('rejects PORT values that are not plain decimal digits', () => {
+    for (const port of ['0x1F90', '1e3', '3000.0', '+3000', '-1']) {
+      expect(() => loadConfig({ ...base, PORT: port }), port).toThrow('PORT');
+    }
   });
 });

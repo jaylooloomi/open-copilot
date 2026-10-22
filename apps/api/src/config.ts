@@ -21,6 +21,11 @@ function splitList(value: string | undefined): string[] {
     .filter((item) => item.length > 0);
 }
 
+// Only plain decimal digits; Number() alone would also accept '0x1F90', '1e3' and '3000.0'.
+function parsePort(raw: string): number {
+  return /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
+}
+
 export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const openaiApiKey = env['OPENAI_API_KEY']?.trim();
   if (!openaiApiKey) {
@@ -36,7 +41,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const allowedOrigins = origins.length > 0 ? origins : [...DEFAULT_ALLOWED_ORIGINS];
 
   const rawPort = env['PORT']?.trim();
-  const port = rawPort ? Number(rawPort) : DEFAULT_PORT;
+  const port = rawPort ? parsePort(rawPort) : DEFAULT_PORT;
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`PORT must be an integer between 1 and 65535, got "${rawPort}"`);
   }
