@@ -26,6 +26,19 @@ export class SegmentPolicy {
     this.maxMs = options.maxMs ?? 8000;
     this.silenceMs = options.silenceMs ?? 300;
     this.threshold = options.threshold ?? 0.01;
+    for (const [name, value] of Object.entries({
+      minMs: this.minMs,
+      maxMs: this.maxMs,
+      silenceMs: this.silenceMs,
+      threshold: this.threshold,
+    })) {
+      if (!Number.isFinite(value) || value < 0) {
+        throw new RangeError(`SegmentPolicy ${name} must be a finite number >= 0, got ${value}`);
+      }
+    }
+    if (this.minMs > this.maxMs) {
+      throw new RangeError(`SegmentPolicy minMs (${this.minMs}) must not exceed maxMs (${this.maxMs})`);
+    }
   }
 
   start(nowMs: number): void {
@@ -33,6 +46,7 @@ export class SegmentPolicy {
     this.silenceStartMs = null;
   }
 
+  /** A NaN rms counts as speech (it resets the pause timer), so a bad reading never causes an early cut. */
   update(nowMs: number, rms: number): 'continue' | 'cut' {
     if (rms < this.threshold) this.silenceStartMs ??= nowMs;
     else this.silenceStartMs = null;

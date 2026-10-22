@@ -68,4 +68,24 @@ describe('SegmentPolicy', () => {
     policy.start(0);
     expect(run(policy, 50, 5000, (t) => (t < 1200 ? 0.6 : 0.4))).toBe(1300);
   });
+
+  it('rejects options that are negative, not finite, or have minMs above maxMs', () => {
+    expect(() => new SegmentPolicy({ maxMs: Number.NaN })).toThrow(RangeError);
+    expect(() => new SegmentPolicy({ minMs: -1 })).toThrow(RangeError);
+    expect(() => new SegmentPolicy({ silenceMs: Number.POSITIVE_INFINITY })).toThrow(RangeError);
+    expect(() => new SegmentPolicy({ threshold: -0.1 })).toThrow(RangeError);
+    expect(() => new SegmentPolicy({ minMs: 9000, maxMs: 8000 })).toThrow(RangeError);
+    expect(() => new SegmentPolicy({ minMs: 5000, maxMs: 5000 })).not.toThrow();
+  });
+
+  it('treats a NaN rms reading as speech, so it resets the pause timer', () => {
+    const policy = new SegmentPolicy();
+    policy.start(0);
+    const rmsAt = (t: number) => {
+      if (t === 5100) return Number.NaN;
+      return t < 5000 ? SPEECH : SILENCE;
+    };
+    // Silence from 5000 is interrupted by NaN at 5100; the pause restarts at 5150 and cuts at 5450.
+    expect(run(policy, 50, 8000, rmsAt)).toBe(5450);
+  });
 });
