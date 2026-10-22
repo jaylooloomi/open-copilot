@@ -12,7 +12,7 @@ import {
   postTranscribe,
   transcribeForm,
 } from './test/helpers';
-import { UpstreamRateLimitError } from './transcriber/errors';
+import { UpstreamPayloadTooLargeError, UpstreamRateLimitError } from './transcriber/errors';
 
 const BODY = { title: '週會', text: '下週三前要寄出報價單。' };
 const AUTH = { Authorization: `Bearer ${TEST_KEY}` };
@@ -52,6 +52,17 @@ describe('POST /ai/todos', () => {
     expect(await res.json()).toEqual({ items: ['寄出報價單', '確認場地'] });
     expect(assistant.extractTodos).toHaveBeenCalledTimes(1);
     expect(assistant.summarize).not.toHaveBeenCalled();
+  });
+
+  it('drops items that become duplicates after the Traditional Chinese conversion', async () => {
+    const { app } = createTestApp({
+      assistant: createFakeAssistant({ todos: ['开会', '開會', '寄出报价单', '寄出報價單'] }),
+    });
+
+    const res = await postAi(app, '/ai/todos', BODY);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ items: ['開會', '寄出報價單'] });
   });
 
   it('returns an empty list when the note has no todos', async () => {
@@ -142,6 +153,18 @@ describe.each(PATHS)('%s guards', (path) => {
     expect(assistant.extractTodos).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['control characters escaped as \\u0001', '\\u0001'.repeat(AI_MAX_TEXT_CHARS)],
+    ['emoji escaped as surrogate pairs', '\\ud83d\\ude00'.repeat(AI_MAX_TEXT_CHARS)],
+  ])('accepts AI_MAX_TEXT_CHARS characters of %s in the JSON body', async (_label, escaped) => {
+    const { app } = createTestApp();
+
+    const raw = `{"title":"","text":"${escaped}"}`;
+    const res = await postAi(app, path, raw);
+
+    expect(res.status).toBe(200);
+  });
+
   it('returns 413 payload_too_large for a raw body over AI_MAX_BODY_BYTES', async () => {
     const { app } = createTestApp();
 
@@ -171,6 +194,22 @@ describe.each(PATHS)('%s guards', (path) => {
     expect(consoleWarn).toHaveBeenCalledWith(
       `[${path.slice(1)}] upstream rate limited; retry after 7s`,
     );
+  });
+
+  it('answers 413 payload_too_large without Retry-After when the LLM rejects the request as too large', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const tooLarge = new UpstreamPayloadTooLargeError();
+    const { app } = createTestApp({
+      assistant: createFakeAssistant({ summary: tooLarge, todos: tooLarge }),
+    });
+
+    const res = await postAi(app, path, BODY, { ...AUTH, Origin: ALLOWED_ORIGIN });
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: 'payload_too_large' });
+    expect(res.headers.get('Retry-After')).toBeNull();
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ALLOWED_ORIGIN);
+    expect(consoleWarn).toHaveBeenCalledWith(`[${path.slice(1)}] upstream rejected the request as too large`);
   });
 
   it.each([

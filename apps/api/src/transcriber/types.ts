@@ -1,5 +1,5 @@
 export interface TranscribeInput {
-  /** 單段音訊（webm/opus 或 mp4）；檔名需帶副檔名，OpenAI 依副檔名判斷格式。 */
+  /** 單段音訊（webm/opus 或 mp4）；檔名需帶副檔名，上游服務（OpenAI 或 Groq）依副檔名判斷格式。 */
   file: File;
   /** 前一段已轉寫的文字，可為空字串。 */
   prompt: string;

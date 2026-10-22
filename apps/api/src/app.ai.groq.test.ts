@@ -106,6 +106,27 @@ describe('POST /ai/* with Groq (mocked upstream)', () => {
     expect(console.warn).toHaveBeenCalledWith('[ai/todos] upstream rate limited; retry after 7s');
   });
 
+  it('answers 413 payload_too_large when Groq rejects the request as over the TPM budget, calling Groq once', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { app, upstream } = createGroqAiApp(() =>
+      jsonResponse(413, {
+        error: {
+          message: 'Request too large for model on tokens per minute (TPM): Limit 8000, Requested 12000',
+          type: 'tokens',
+          code: 'rate_limit_exceeded',
+        },
+      }),
+    );
+
+    const res = await postAi(app, '/ai/summary', BODY);
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: 'payload_too_large' });
+    expect(res.headers.get('Retry-After')).toBeNull();
+    expect(upstream.calls).toHaveLength(1);
+    expect(console.warn).toHaveBeenCalledWith('[ai/summary] upstream rejected the request as too large');
+  });
+
   it.each([
     ['a server error', 500],
     ['a rejected API key', 401],

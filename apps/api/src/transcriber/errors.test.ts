@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS,
   MAX_UPSTREAM_RETRY_AFTER_SECONDS,
+  UpstreamPayloadTooLargeError,
   UpstreamRateLimitError,
   parseRetryAfter,
   toUpstreamError,
@@ -86,6 +87,18 @@ describe('toUpstreamError', () => {
     expect(mapped).toBeInstanceOf(UpstreamRateLimitError);
     expect(mapped.retryAfterSeconds).toBeGreaterThanOrEqual(58);
     expect(mapped.retryAfterSeconds).toBeLessThanOrEqual(60);
+  });
+
+  it('turns an upstream 413 (for example Groq "Request too large" over the TPM budget) into UpstreamPayloadTooLargeError', () => {
+    const original = apiError(413, { 'retry-after': '7' });
+
+    const mapped = toUpstreamError(original);
+
+    expect(mapped).toBeInstanceOf(UpstreamPayloadTooLargeError);
+    const error = mapped as UpstreamPayloadTooLargeError;
+    expect(error.cause).toBe(original);
+    expect(error.name).toBe('UpstreamPayloadTooLargeError');
+    expect(error.message).toBe('upstream rejected the request as too large');
   });
 
   it('passes every other error through unchanged', () => {

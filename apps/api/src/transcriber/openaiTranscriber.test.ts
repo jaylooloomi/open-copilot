@@ -7,13 +7,11 @@ import {
   OPENAI_BASE_URL,
   OPENAI_MAX_RETRIES,
   OPENAI_TIMEOUT_MS,
-  PROMPT_PREFIX,
-  PROMPT_TAIL_CHARS,
   TRANSCRIBE_MODEL,
-  buildPrompt,
   createOpenAIClient,
   createOpenAITranscriber,
 } from './openaiTranscriber';
+import { PROMPT_PREFIX, PROMPT_TAIL_CHARS, buildPrompt } from './prompt';
 
 function createFakeClient(create: (...args: unknown[]) => Promise<unknown>) {
   const spy = vi.fn(create);

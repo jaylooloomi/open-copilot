@@ -4,7 +4,7 @@ import { buildPrompt } from './prompt';
 import type { Transcriber } from './types';
 
 // 實作在 prompt.ts，與 Groq 共用；既有程式與測試從這裡匯入，所以重新匯出。
-export { PROMPT_PREFIX, PROMPT_TAIL_CHARS, buildPrompt } from './prompt';
+export { PROMPT_PREFIX, buildPrompt } from './prompt';
 
 export const TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe';
 
