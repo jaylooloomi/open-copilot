@@ -119,7 +119,7 @@ describe('createOpenAITranscriber (M6)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps only the last 80 characters of a long prompt', async () => {
+  it('keeps only the last 60 characters of a long prompt', async () => {
     const { client, create } = createFakeClient(async () => ({ text: '好' }));
     const transcriber = createOpenAITranscriber('sk-test', client);
     const tail = '乙'.repeat(PROMPT_TAIL_CHARS);

@@ -30,9 +30,9 @@ afterEach(() => {
 describe('POST /transcribe with Groq (mocked upstream)', () => {
   it('sends the segment to whisper-large-v3-turbo with a truncated prompt and returns traditional text', async () => {
     const { app, upstream } = createGroqApp(() => jsonResponse(200, { text: ' 这是测试 ' }));
-    const tail = '乙'.repeat(80);
+    const tail = '乙'.repeat(60);
 
-    const res = await postTranscribe(app, transcribeForm({ seq: '2', prompt: '甲'.repeat(120) + tail }));
+    const res = await postTranscribe(app, transcribeForm({ seq: '2', prompt: '甲'.repeat(140) + tail }));
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ seq: 2, text: '這是測試' });

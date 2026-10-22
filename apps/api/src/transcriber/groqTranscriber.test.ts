@@ -60,7 +60,7 @@ describe('createGroqTranscriber', () => {
     expect((create.mock.calls[0]![0] as { model: string }).model).toBe('whisper-large-v3');
   });
 
-  it('keeps only the last 80 characters of a long prompt', async () => {
+  it('keeps only the last 60 characters of a long prompt', async () => {
     const { client, create } = createFakeClient(async () => ({ text: '' }));
     const transcriber = createGroqTranscriber('gsk-test', undefined, client);
     const tail = '乙'.repeat(PROMPT_TAIL_CHARS);
