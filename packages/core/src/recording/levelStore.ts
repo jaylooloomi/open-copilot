@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 /** Read side of the microphone level, for components. */
 export interface LevelSource {
@@ -21,7 +21,8 @@ export function createLevelStore(): LevelStore {
   return {
     get: () => level,
     set: (next) => {
-      const value = Number.isFinite(next) ? next : 0;
+      // An RMS reading lies in 0..1; clamp so a meter never renders out of range.
+      const value = Number.isFinite(next) ? Math.min(1, Math.max(0, next)) : 0;
       if (value === level) return;
       level = value;
       for (const listener of [...listeners]) listener();
@@ -43,5 +44,8 @@ const NO_SOURCE: LevelSource = {
 /** The current level of `source` (0 without one); re-renders when it changes. */
 export function useLevel(source: LevelSource | undefined): number {
   const store = source ?? NO_SOURCE;
-  return useSyncExternalStore(store.subscribe, store.get, store.get);
+  // Call through the source so implementations whose methods use `this` keep their binding.
+  const subscribe = useCallback((listener: () => void) => store.subscribe(listener), [store]);
+  const get = useCallback(() => store.get(), [store]);
+  return useSyncExternalStore(subscribe, get, get);
 }

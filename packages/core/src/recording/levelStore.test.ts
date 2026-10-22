@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { createLevelStore, useLevel } from './levelStore';
+import { createLevelStore, useLevel, type LevelSource } from './levelStore';
 
 describe('createLevelStore', () => {
   it('starts at 0 and keeps the last level', () => {
@@ -29,6 +29,14 @@ describe('createLevelStore', () => {
     expect(store.get()).toBe(0);
   });
 
+  it('clamps a reading to the 0..1 range', () => {
+    const store = createLevelStore();
+    store.set(-0.2);
+    expect(store.get()).toBe(0);
+    store.set(1.7);
+    expect(store.get()).toBe(1);
+  });
+
   it('stops notifying after unsubscribing', () => {
     const store = createLevelStore();
     const listener = vi.fn();
@@ -46,6 +54,29 @@ describe('useLevel', () => {
     expect(result.current).toBe(0);
     act(() => store.set(0.3));
     expect(result.current).toBe(0.3);
+  });
+
+  it('works with a class-based source whose methods use this', () => {
+    class ClassSource implements LevelSource {
+      private level = 0;
+      private readonly listeners = new Set<() => void>();
+      get(): number {
+        return this.level;
+      }
+      subscribe(listener: () => void): () => void {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
+      }
+      push(level: number): void {
+        this.level = level;
+        for (const listener of this.listeners) listener();
+      }
+    }
+    const source = new ClassSource();
+    const { result } = renderHook(() => useLevel(source));
+    expect(result.current).toBe(0);
+    act(() => source.push(0.6));
+    expect(result.current).toBe(0.6);
   });
 
   it('reads 0 without a store', () => {
