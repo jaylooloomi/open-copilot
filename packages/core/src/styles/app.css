@@ -596,6 +596,209 @@ button {
   border: 0;
 }
 
+/* ---------- recording ---------- */
+.oc-actionbar-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.oc-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--oc-border);
+  border-radius: 50%;
+  background: var(--oc-bg);
+  color: var(--oc-muted);
+  cursor: pointer;
+}
+
+.oc-settings-btn:hover {
+  border-color: var(--oc-primary);
+  color: var(--oc-primary);
+}
+
+.oc-record-btn.is-recording {
+  background: var(--oc-danger);
+  animation: oc-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes oc-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(220, 38, 38, 0);
+  }
+}
+
+.oc-spin {
+  animation: oc-spin 1s linear infinite;
+}
+
+@keyframes oc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.oc-recorder-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 16px 0;
+  padding: 10px 14px;
+  border: 1px solid #fde68a;
+  border-radius: var(--oc-radius);
+  background: #fffbeb;
+  font-size: 14px;
+}
+
+.oc-recorder-alert-text {
+  flex: 1;
+}
+
+.oc-recorder-alert p {
+  margin: 0;
+}
+
+.oc-recorder-error {
+  color: var(--oc-danger);
+}
+
+.oc-recorder-notice {
+  color: #92400e;
+}
+
+.oc-alert-close {
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--oc-muted);
+  cursor: pointer;
+}
+
+.oc-editor .ProseMirror .oc-gap {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #b45309;
+  font-size: 0.9em;
+  line-height: 1.6;
+  cursor: pointer;
+  user-select: none;
+}
+
+.oc-editor .ProseMirror .oc-gap:hover {
+  background: #fde68a;
+}
+
+.oc-editor .ProseMirror .oc-gap.ProseMirror-selectednode {
+  outline: 2px solid var(--oc-primary);
+}
+
+.oc-icon-btn:disabled,
+.oc-note-select:disabled,
+.oc-note-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ---------- settings dialog ---------- */
+.oc-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(17, 24, 39, 0.4);
+}
+
+.oc-dialog {
+  width: min(440px, 100%);
+  padding: 20px;
+  border-radius: var(--oc-radius);
+  background: var(--oc-bg);
+  box-shadow: 0 16px 48px rgba(17, 24, 39, 0.2);
+}
+
+.oc-dialog-title {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+
+.oc-dialog-form {
+  display: grid;
+  gap: 8px;
+}
+
+.oc-dialog-form label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.oc-dialog-form input {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--oc-border);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.oc-dialog-form input:focus {
+  border-color: var(--oc-primary);
+  outline: none;
+}
+
+.oc-dialog-hint {
+  margin: 0;
+  color: var(--oc-muted);
+  font-size: 13px;
+}
+
+.oc-dialog-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.oc-dialog-message {
+  margin: 0;
+  color: var(--oc-muted);
+  font-size: 13px;
+}
+
+.oc-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.oc-primary-btn {
+  height: 32px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 999px;
+  background: var(--oc-gradient);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 /* ---------- narrow screens: note list becomes a drawer ---------- */
 @media (max-width: 767.98px) {
   .oc-menu-btn {
@@ -683,6 +886,16 @@ button {
   }
 
   .oc-ai-btn {
+    flex-shrink: 0;
+  }
+
+  /* The AI chips scroll inside .oc-actionbar-end; the gear stays visible at its end. */
+  .oc-actionbar-end {
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+
+  .oc-settings-btn {
     flex-shrink: 0;
   }
 

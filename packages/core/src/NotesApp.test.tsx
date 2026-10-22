@@ -66,7 +66,9 @@ describe('NotesApp', () => {
 
   it('renders the action bar, banner and toolbar', async () => {
     await renderApp();
-    expect(screen.getByRole('button', { name: '錄製' })).toBeDisabled();
+    // No backend configured yet (jsdom localStorage starts empty).
+    expect(screen.getByRole('button', { name: '請先設定' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '設定' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'AI 摘要' })).toBeDisabled();
     expect(screen.getByRole('note')).toHaveTextContent('手動輸入累了？');
     expect(screen.getByRole('toolbar', { name: '格式工具列' })).toBeInTheDocument();

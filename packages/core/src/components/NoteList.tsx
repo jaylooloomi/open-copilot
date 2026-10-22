@@ -9,6 +9,8 @@ export interface NoteListProps {
   onSelect(id: string): void;
   onCreate(): void;
   onDelete(id: string): void;
+  /** While recording, notes cannot be created, switched or deleted. */
+  disabled?: boolean;
 }
 
 const timeFormat = new Intl.DateTimeFormat('zh-TW', {
@@ -19,7 +21,14 @@ const timeFormat = new Intl.DateTimeFormat('zh-TW', {
   hour12: false,
 });
 
-export function NoteList({ notes, activeId, onSelect, onCreate, onDelete }: NoteListProps) {
+export function NoteList({
+  notes,
+  activeId,
+  onSelect,
+  onCreate,
+  onDelete,
+  disabled = false,
+}: NoteListProps) {
   return (
     <nav className="oc-notelist" aria-label="筆記">
       <div className="oc-notelist-header">
@@ -29,6 +38,7 @@ export function NoteList({ notes, activeId, onSelect, onCreate, onDelete }: Note
           className="oc-icon-btn"
           aria-label="新增筆記"
           title="新增筆記"
+          disabled={disabled}
           onClick={onCreate}
         >
           <Plus size={18} />
@@ -47,6 +57,7 @@ export function NoteList({ notes, activeId, onSelect, onCreate, onDelete }: Note
                 type="button"
                 className="oc-note-select"
                 aria-current={active ? 'true' : undefined}
+                disabled={disabled}
                 onClick={() => onSelect(note.id)}
               >
                 <span className="oc-note-title">{title}</span>
@@ -63,6 +74,7 @@ export function NoteList({ notes, activeId, onSelect, onCreate, onDelete }: Note
                 className="oc-note-delete"
                 aria-label={`刪除「${title}」`}
                 title={`刪除「${title}」`}
+                disabled={disabled}
                 onClick={() => onDelete(note.id)}
               >
                 <Trash size={16} />

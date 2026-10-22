@@ -171,11 +171,16 @@ test('新增筆記後游標停在新筆記的標題', async ({ page }) => {
 
 test('窄螢幕時錄製與 AI 按鈕排在同一列，頁面不會橫向捲動', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const record = await page.getByRole('button', { name: '錄製' }).boundingBox();
+  // Located by class: its label is 請先設定 until a backend is configured (M3b).
+  const record = await page.locator('.oc-record-btn').boundingBox();
   const summary = await page.getByRole('button', { name: 'AI 摘要' }).boundingBox();
   expect(Math.abs(record!.y + record!.height / 2 - (summary!.y + summary!.height / 2))).toBeLessThan(
     4,
   );
+  // The settings gear stays on the same row and inside the screen.
+  const gear = await page.getByRole('button', { name: '設定', exact: true }).boundingBox();
+  expect(Math.abs(record!.y + record!.height / 2 - (gear!.y + gear!.height / 2))).toBeLessThan(4);
+  expect(gear!.x + gear!.width).toBeLessThanOrEqual(390);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );

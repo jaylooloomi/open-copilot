@@ -103,4 +103,15 @@ describe('NoteList', () => {
     expect(onDelete).toHaveBeenCalledWith('b');
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  it('disables creating, switching and deleting while disabled (recording)', async () => {
+    const handlers = { onSelect: vi.fn(), onCreate: vi.fn(), onDelete: vi.fn() };
+    render(<NoteList notes={NOTES} activeId="b" disabled {...handlers} />);
+    const buttons = within(screen.getByRole('navigation', { name: '筆記' })).getAllByRole('button');
+    expect(buttons).toHaveLength(5);
+    for (const button of buttons) expect(button).toBeDisabled();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: /^未命名筆記/ }));
+    expect(handlers.onSelect).not.toHaveBeenCalled();
+  });
 });

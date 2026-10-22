@@ -1,9 +1,10 @@
 import { EMPTY_DOC } from '@oc/shared';
-import { Menu } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Menu, X } from 'lucide-react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { ActionBar } from './components/ActionBar';
 import { Banner } from './components/Banner';
 import { NoteList } from './components/NoteList';
+import { SettingsDialog } from './components/SettingsDialog';
 import { StorageAlert } from './components/StorageAlert';
 import { Editor } from './editor/Editor';
 import { TitleInput } from './editor/TitleInput';
@@ -11,9 +12,21 @@ import { Toolbar } from './editor/Toolbar';
 import { useNoteEditor } from './editor/useNoteEditor';
 import { displayTitle } from './notes/noteStore';
 import { useNotes } from './notes/useNotes';
+import { openAppDb } from './platform/db';
 import { usePlatform } from './platform/PlatformContext';
+import { createPendingQueue } from './recording/pendingQueue';
+import { useRecorder } from './recording/useRecorder';
+import { useSettings } from './settings/useSettings';
 import { useNoteDrawer } from './useNoteDrawer';
 import './styles/app.css';
+
+/** A second connection to the app database, for the recording queue (Platform stays as is). */
+function openRecorderDb() {
+  const db = openAppDb();
+  // Failures surface where the queue is used; this only keeps them from being "unhandled".
+  db.catch((error: unknown) => console.error('Failed to open the recording queue', error));
+  return db;
+}
 
 export function NotesApp() {
   const { storage } = usePlatform();
@@ -40,6 +53,9 @@ export function NotesApp() {
   const titleRef = useRef<HTMLInputElement>(null);
   // A note just created from the 新增筆記 button: its title gets focus once it is shown.
   const [focusTitleOf, setFocusTitleOf] = useState<string | undefined>(undefined);
+  const { settings, saveSettings } = useSettings();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [recorderDb] = useState(openRecorderDb);
 
   // Called unconditionally (rules of hooks); recreated whenever the active note changes.
   const editor = useNoteEditor({
@@ -48,6 +64,14 @@ export function NotesApp() {
     // Routed by the note the editor belongs to, so an edit typed while the active note is
     // changing cannot land on another note.
     onChange: (content, noteId) => updateNote(noteId, { content }),
+  });
+
+  const recorder = useRecorder({
+    editor,
+    noteId: activeNote?.id,
+    settings,
+    db: recorderDb,
+    onUnauthorized: () => setSettingsOpen(true),
   });
 
   useEffect(() => {
@@ -76,6 +100,7 @@ export function NotesApp() {
   }
 
   const closeDrawer = () => setDrawerOpen(false);
+  const recording = recorder.state === 'recording' || recorder.state === 'stopping';
 
   // A failed create rejects without adding the note; deleteNote rejects only when the remove
   // failed, after putting the note back. Either way the user has to be told, and the rejection
@@ -90,8 +115,34 @@ export function NotesApp() {
     if (!target) return;
     if (window.confirm(`確定要刪除「${displayTitle(target)}」嗎？此動作無法復原。`)) {
       setStorageError(undefined);
-      deleteNote(id).catch(reportFailure('刪除筆記失敗，請再試一次。', 'Failed to delete note'));
+      // Once the note is gone its ⚠ markers can never be retried, so drop their audio as well
+      // (only after the note itself was deleted; a failed delete keeps both).
+      deleteNote(id).then(
+        () =>
+          createPendingQueue(recorderDb)
+            .removeByNote(id)
+            .catch((error: unknown) =>
+              console.error('Failed to drop the untranscribed audio of a deleted note', error),
+            ),
+        reportFailure('刪除筆記失敗，請再試一次。', 'Failed to delete note'),
+      );
     }
+  };
+
+  const onRecord = () => {
+    if (recorder.state === 'needsSetup') setSettingsOpen(true);
+    else if (recorder.state === 'idle') void recorder.start();
+    else if (recorder.state === 'recording') void recorder.stop();
+  };
+
+  // The ⚠ 第 N 段未轉寫・重試 marker is the retry button.
+  const onDocumentClick = (event: MouseEvent<HTMLDivElement>) => {
+    const gap = event.target instanceof Element ? event.target.closest('[data-transcript-gap]') : null;
+    const gapId = gap?.getAttribute('data-transcript-gap');
+    if (!gapId) return;
+    event.preventDefault();
+    if (recorder.state === 'needsSetup') setSettingsOpen(true);
+    else void recorder.retryGap(gapId);
   };
 
   return (
@@ -100,6 +151,7 @@ export function NotesApp() {
         <NoteList
           notes={notes}
           activeId={activeNote.id}
+          disabled={recording}
           onSelect={(id) => {
             selectNote(id);
             closeDrawer();
@@ -142,11 +194,31 @@ export function NotesApp() {
           >
             <Menu size={20} />
           </button>
-          <ActionBar />
+          <ActionBar
+            recordState={recorder.state}
+            onRecord={onRecord}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
         </header>
         <Banner />
+        {(recorder.error || recorder.notice) && (
+          <div className="oc-recorder-alert" role="alert">
+            <div className="oc-recorder-alert-text">
+              {recorder.error && <p className="oc-recorder-error">{recorder.error}</p>}
+              {recorder.notice && <p className="oc-recorder-notice">{recorder.notice}</p>}
+            </div>
+            <button
+              type="button"
+              className="oc-alert-close"
+              aria-label="關閉訊息"
+              onClick={recorder.dismissMessages}
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+          </div>
+        )}
         <Toolbar editor={editor} note={activeNote} />
-        <div className="oc-document">
+        <div className="oc-document" onClick={onDocumentClick}>
           <TitleInput
             inputRef={titleRef}
             value={activeNote.title}
@@ -161,6 +233,17 @@ export function NotesApp() {
           <Editor editor={editor} />
         </div>
       </main>
+
+      {settingsOpen && (
+        <SettingsDialog
+          settings={settings}
+          onSave={(next) => {
+            saveSettings(next);
+            setSettingsOpen(false);
+          }}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
 
       {storageError ? (
         <StorageAlert message={storageError} onDismiss={() => setStorageError(undefined)} />
