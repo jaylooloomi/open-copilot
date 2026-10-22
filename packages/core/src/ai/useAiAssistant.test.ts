@@ -164,4 +164,57 @@ describe('useAiAssistant', () => {
     rerender();
     expect(result.current.close).toBe(close);
   });
+
+  it('sends the waiting request once when the notice is accepted twice in a row', async () => {
+    const f = fakeDeps({ acknowledged: false });
+    f.summarize.mockResolvedValue({ summary: '摘要' });
+    const { result } = setup(f);
+
+    act(() => result.current.request('summary', INPUT));
+    await act(async () => {
+      const { acceptPrivacy } = result.current;
+      acceptPrivacy();
+      acceptPrivacy();
+    });
+
+    expect(f.summarize).toHaveBeenCalledTimes(1);
+    expect(f.privacy.acknowledge).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing for acceptPrivacy() without a waiting request', () => {
+    const f = fakeDeps({ acknowledged: false });
+    const { result } = setup(f);
+
+    act(() => result.current.acceptPrivacy());
+
+    expect(f.privacy.acknowledge).not.toHaveBeenCalled();
+    expect(f.createClient).not.toHaveBeenCalled();
+    expect(result.current.panel).toBeNull();
+  });
+
+  it('does nothing for retry() before any request', () => {
+    const f = fakeDeps();
+    const { result } = setup(f);
+
+    act(() => result.current.retry());
+
+    expect(f.createClient).not.toHaveBeenCalled();
+    expect(result.current.panel).toBeNull();
+  });
+
+  it('ignores a response that arrives after unmount', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const f = fakeDeps();
+    const call = deferred<AiSummaryResponse>();
+    f.summarize.mockReturnValueOnce(call.promise);
+    const { result, unmount } = setup(f);
+
+    act(() => result.current.request('summary', INPUT));
+    const before = result.current.panel;
+    unmount();
+    await act(async () => call.resolve({ summary: '太晚了' }));
+
+    expect(result.current.panel).toBe(before);
+    expect(errors).not.toHaveBeenCalled();
+  });
 });

@@ -64,9 +64,16 @@ export function useAiAssistant({
   deps = defaultAiAssistantDeps,
 }: UseAiAssistantOptions): UseAiAssistantResult {
   const [panel, setPanel] = useState<AiPanelState | null>(null);
-  const [pending, setPending] = useState<AiCall | null>(null);
+  const [pending, setPendingState] = useState<AiCall | null>(null);
+  // Mirrors `pending` so two calls before a re-render cannot both send the waiting request.
+  const pendingRef = useRef<AiCall | null>(null);
   const requestId = useRef(0);
   const lastCall = useRef<AiCall | null>(null);
+
+  const setPending = useCallback((call: AiCall | null) => {
+    pendingRef.current = call;
+    setPendingState(call);
+  }, []);
 
   // After unmount no response may set state.
   useEffect(
@@ -106,7 +113,7 @@ export function useAiAssistant({
     requestId.current += 1;
     setPanel(null);
     setPending(null);
-  }, []);
+  }, [setPending]);
 
   return {
     panel,
@@ -119,10 +126,11 @@ export function useAiAssistant({
       if (lastCall.current) run(lastCall.current);
     },
     acceptPrivacy() {
-      if (!pending) return;
+      const call = pendingRef.current;
+      if (!call) return;
       deps.privacy.acknowledge();
       setPending(null);
-      run(pending);
+      run(call);
     },
     cancelPrivacy() {
       setPending(null);
