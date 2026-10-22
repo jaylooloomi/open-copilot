@@ -90,6 +90,8 @@ export interface UseRecorderResult {
   levels: LevelSource;
   /** No reading reached the threshold for over 10 s in this recording; a loud reading clears it. */
   noSound: boolean;
+  /** Segments uploaded but not inserted yet (waiting for their transcript or an earlier one). */
+  transcribing: number;
   start(): Promise<void>;
   stop(): Promise<void>;
   retryGap(gapId: string): Promise<void>;
@@ -135,6 +137,8 @@ interface Session {
   noSound: NoSoundDetector;
   /** Whether the hint is shown now, so the state is only set when it changes. */
   noSoundShown: boolean;
+  /** Segments handed to handleSegment that have not left the ordered buffer yet. */
+  waiting: number;
 }
 
 interface ControllerEnv {
@@ -146,6 +150,7 @@ interface ControllerEnv {
   setNotice(message: string | null): void;
   setStartedAt(ms: number | null): void;
   setNoSound(shown: boolean): void;
+  setTranscribing(count: number): void;
 }
 
 /**
@@ -160,6 +165,7 @@ export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
   const [notice, setNotice] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [noSound, setNoSound] = useState(false);
+  const [transcribing, setTranscribing] = useState(0);
   const [levels] = useState(createLevelStore);
   const queue = useMemo(() => createPendingQueue(options.db), [options.db]);
 
@@ -178,6 +184,7 @@ export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
     setNotice,
     setStartedAt,
     setNoSound,
+    setTranscribing,
   });
   const controller = controllerRef.current;
 
@@ -207,6 +214,7 @@ export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
     startedAt,
     levels,
     noSound,
+    transcribing,
     start: controller.start,
     stop: controller.stop,
     retryGap: controller.retryGap,
@@ -286,6 +294,7 @@ function createRecorderController(env: ControllerEnv) {
         disposed: false,
         noSound: new NoSoundDetector(startedAt),
         noSoundShown: false,
+        waiting: 0,
       };
       try {
         recorder.start();
@@ -320,6 +329,7 @@ function createRecorderController(env: ControllerEnv) {
       while (current.uploads.size > 0) await Promise.allSettled([...current.uploads]);
       current.inserter.destroy();
       if (session === current) session = null;
+      if (!current.disposed) env.setTranscribing(0);
       env.setPhase('idle');
     })();
     return current.finishing;
@@ -345,6 +355,8 @@ function createRecorderController(env: ControllerEnv) {
   }
 
   function handleSegment(current: Session, { seq, blob }: RecordedSegment): void {
+    current.waiting += 1;
+    reportWaiting(current);
     const prompt = tail(current.transcript, PROMPT_CHARS);
     const mimeType = blob.type || current.mimeType || '';
     const upload: Promise<void> = transcribeSegment(current, seq, blob, mimeType, prompt)
@@ -405,7 +417,8 @@ function createRecorderController(env: ControllerEnv) {
 
   /** Inserts every result that is now next in line. */
   function release(current: Session, seq: number, result: SegmentResult): void {
-    for (const item of current.buffer.put(seq, result)) {
+    const ready = current.buffer.put(seq, result);
+    for (const item of ready) {
       // One failing insert must not drop the rest of the batch, which has already left the buffer.
       try {
         if (item.kind === 'text') {
@@ -420,6 +433,15 @@ function createRecorderController(env: ControllerEnv) {
         console.error('Failed to insert a transcript', error);
       }
     }
+    if (ready.length > 0) {
+      current.waiting -= ready.length;
+      reportWaiting(current);
+    }
+  }
+
+  /** 轉寫中 N 段; an unmounted recording no longer shows anything. */
+  function reportWaiting(current: Session): void {
+    if (!current.disposed) env.setTranscribing(current.waiting);
   }
 
   async function keepPending(item: PendingSegment): Promise<void> {
@@ -552,6 +574,7 @@ function createRecorderController(env: ControllerEnv) {
     session = null;
     current.disposed = true;
     clearLiveFeedback();
+    env.setTranscribing(0);
     current.inserter.destroy();
     void current.recorder.stop().catch(() => undefined);
     stopTracks(current.stream);

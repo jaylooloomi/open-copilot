@@ -1,6 +1,6 @@
 import { act } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { setupRecorder } from '../test/recorderHarness';
+import { settle, setupRecorder } from '../test/recorderHarness';
 import { RECORDER_MESSAGES } from './useRecorder';
 
 type Ctx = Awaited<ReturnType<typeof setupRecorder>>;
@@ -129,5 +129,61 @@ describe('useRecorder: live recording feedback', () => {
     reading(ctx, 100, 0.3);
     ctx.unmount();
     expect(ctx.result.current.levels.get()).toBe(0);
+  });
+});
+
+describe('useRecorder: 轉寫中 N 段', () => {
+  it('counts uploaded segments until their transcript is inserted, in recording order', async () => {
+    const ctx = await setupRecorder();
+    await startAt(ctx, 0);
+    expect(ctx.result.current.transcribing).toBe(0);
+
+    act(() => {
+      ctx.recorders[0].emit(1);
+      ctx.recorders[0].emit(2);
+    });
+    expect(ctx.result.current.transcribing).toBe(2);
+
+    ctx.calls[1].resolve('第二段。');
+    await settle();
+    expect(ctx.result.current.transcribing).toBe(2); // segment 2 waits for segment 1
+
+    ctx.calls[0].resolve('第一段。');
+    await settle();
+    expect(ctx.result.current.transcribing).toBe(0);
+    expect(ctx.editor.getText()).toBe('第一段。第二段。');
+  });
+
+  it('counts an empty transcript as done', async () => {
+    const ctx = await setupRecorder();
+    await startAt(ctx, 0);
+    act(() => ctx.recorders[0].emit(1));
+    expect(ctx.result.current.transcribing).toBe(1);
+
+    ctx.calls[0].resolve('  ');
+    await settle();
+    expect(ctx.result.current.transcribing).toBe(0);
+  });
+
+  it('counts the last segment while stopping and is back to 0 once stopped', async () => {
+    const ctx = await setupRecorder();
+    await startAt(ctx, 0);
+    ctx.recorders[0].onStop = () => ctx.recorders[0].emit(1);
+
+    let stopped!: Promise<void>;
+    act(() => {
+      stopped = ctx.result.current.stop();
+    });
+    await settle();
+    expect(ctx.result.current.state).toBe('stopping');
+    expect(ctx.result.current.startedAt).toBeNull();
+    expect(ctx.result.current.transcribing).toBe(1);
+
+    ctx.calls[0].resolve('最後一段。');
+    await act(async () => {
+      await stopped;
+    });
+    expect(ctx.result.current.state).toBe('idle');
+    expect(ctx.result.current.transcribing).toBe(0);
   });
 });
