@@ -26,7 +26,7 @@
   - **Groq**：使用 `openai` SDK，`baseURL: https://api.groq.com/openai/v1`；模型 `whisper-large-v3-turbo`，可用 `GROQ_TRANSCRIBE_MODEL` 覆寫；`language: 'zh'`。
   - **OpenAI**：沿用 v1 的 `gpt-4o-mini-transcribe`。
 - `config.ts` 的 `openaiApiKey` 改成 `{ provider, apiKey, model }`。`Transcriber` 介面維持不變。
-- **prompt 長度上限**：Whisper 系列的 prompt 上限是 224 tokens，所以後端要截斷 prompt，只保留**最後 80 個字**（加上固定前綴）。前端照樣送最後 200 字，由後端負責截斷，前端不用改。
+- **prompt 長度上限**：Whisper 系列的 prompt 上限是 224 tokens，所以後端要截斷 prompt，只保留**最後 60 個字**（加上固定前綴；Whisper 用 byte-level BPE，token 數不超過 UTF-8 位元組數，前綴 13 字加 60 字最多 219 位元組，罕用繁體字也不會超過 224 tokens）。前端照樣送最後 200 字，由後端負責截斷，前端不用改。
 - **上游 429**：Groq 回 429 時，後端改回 429 `rate_limited`，並轉傳上游的 `Retry-After`（沒有就帶 `10`）。v1 原本把它當 502，現在讓前端照 429 的規則等待後重送。
 - `.env.example` 和 README 加上 `GROQ_API_KEY`、`TRANSCRIBE_PROVIDER`、`GROQ_TRANSCRIBE_MODEL`。
 
@@ -160,3 +160,9 @@
 2. `apps/api` 設定新增 `TRANSCRIBE_PROVIDER`（`groq`、`openai`、`windows`）、`GROQ_API_KEY`、`GROQ_TRANSCRIBE_MODEL`、`GROQ_LLM_MODEL`；`ApiErrorCode` 新增 `ai_unavailable`。`TRANSCRIBE_PROVIDER` 未設定時依序選擇：有 `GROQ_API_KEY` 用 `groq`，否則有 `OPENAI_API_KEY` 用 `openai`，否則在 Windows 上用 `windows`，都不符合就啟動失敗（見 1.2a）。
 3. 上游 429 改為回 429，不再是 502。
 4. 新增 `SegmentRecorder` 的 `onLevel` 回呼、`backup/*` 模組，以及 AI 端點的型別（`packages/shared/src/ai.ts`）。
+5. M3a 實作時追加、已核准的行為（M6 改寫 `apps/api` 設定與轉寫服務時必須保留）：
+   - `Transcriber.transcribe` 的輸入多一個選填欄位 `signal?: AbortSignal`：`app.ts` 在用戶端斷線時中止上游請求，每個轉寫服務實作（含 M6 的 Groq）都要把它轉給上游 SDK。
+   - `loadConfig` 去除 `ACCESS_KEYS`、`ALLOWED_ORIGINS` 的重複項；`ALLOWED_ORIGINS` 每項必須是完整 origin（`scheme://host[:port]`，無路徑、無尾斜線），否則 throw；`ACCESS_KEYS` 任一項含空白就 throw。另匯出 `MIN_ACCESS_KEY_LENGTH`（16）與 `accessKeyWarning()`，短金鑰只警告不拒絕。
+   - `apps/api/.env.example` 的 `ACCESS_KEYS` 刻意留空，直接複製後啟動會因缺金鑰而失敗，逼使用者自填長隨機金鑰（計畫 Task 10 原寫 `change-me-1,change-me-2`）。
+   - `rateLimit` 找不到 `accessKey` 時 throw（經 `app.onError` 成 500），不退回 `anonymous` 桶；依契約的中介層順序不會發生。
+   - 關機處理只處理第一個 SIGINT／SIGTERM，之後的訊號只記錄，不再呼叫 `server.close()`。

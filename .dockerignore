@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+**/*.test.ts
+**/src/test
+**/vitest.config.ts
+.git
+playwright-report
+test-results
+apps/web/android
+apps/desktop/release
+docs
