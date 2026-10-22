@@ -2,11 +2,14 @@ import type { JSONContent } from '@oc/shared';
 import { describe, expect, it } from 'vitest';
 import {
   formatListItem,
+  isTaskChecked,
   linkHref,
   linkRuns,
   linkShowsHref,
   listStart,
   nodeText,
+  TASK_CHECKED,
+  TASK_UNCHECKED,
   TRANSCRIPT_GAP_TEXT,
 } from './common';
 
@@ -93,5 +96,24 @@ describe('links', () => {
     expect(linkShowsHref('www.x.tw', 'http://www.x.tw')).toBe(true);
     expect(linkShowsHref(' a@b.co', 'mailto:a@b.co')).toBe(true);
     expect(linkShowsHref('官網', 'https://x.tw')).toBe(false);
+  });
+});
+
+describe('formatListItem with an indent width', () => {
+  it('indents the following lines by the given width instead of the marker width', () => {
+    expect(formatListItem('- [ ] ', '準備\n- [x] 訂場地', 2)).toBe('- [ ] 準備\n  - [x] 訂場地');
+  });
+});
+
+describe('task items', () => {
+  it('counts only checked: true as checked', () => {
+    expect(isTaskChecked({ type: 'taskItem', attrs: { checked: true } })).toBe(true);
+    expect(isTaskChecked({ type: 'taskItem', attrs: { checked: false } })).toBe(false);
+    expect(isTaskChecked({ type: 'taskItem', attrs: { checked: 'true' } })).toBe(false);
+    expect(isTaskChecked({ type: 'taskItem' })).toBe(false);
+  });
+
+  it('uses ☐ and ☑ as the plain-text boxes', () => {
+    expect([TASK_UNCHECKED, TASK_CHECKED]).toEqual(['☐', '☑']);
   });
 });

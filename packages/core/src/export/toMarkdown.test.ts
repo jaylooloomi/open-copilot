@@ -209,3 +209,46 @@ describe('toMarkdown', () => {
     );
   });
 });
+
+const task = (checked: boolean, ...content: JSONContent[]): JSONContent => ({
+  type: 'taskItem',
+  attrs: { checked },
+  content,
+});
+const tasks = (...items: JSONContent[]): JSONContent => ({ type: 'taskList', content: items });
+
+describe('toMarkdown task lists', () => {
+  it('writes unchecked items as - [ ] and checked ones as - [x]', () => {
+    expect(
+      toMarkdown(
+        note(
+          '',
+          h(2, '待辦事項'),
+          tasks(task(false, p(text('寄出報價單'))), task(true, p(text('預約會議室')))),
+        ),
+      ),
+    ).toBe('### 待辦事項\n\n- [ ] 寄出報價單\n- [x] 預約會議室\n');
+  });
+
+  it('indents a nested task list by two spaces, under the item text', () => {
+    expect(
+      toMarkdown(note('', tasks(task(false, p(text('準備')), tasks(task(true, p(text('訂場地')))))))),
+    ).toBe('- [ ] 準備\n  - [x] 訂場地\n');
+  });
+
+  it('keeps a task list inside a bullet list item', () => {
+    expect(toMarkdown(note('', ul(item(p(text('專案')), tasks(task(false, p(text('寫測試'))))))))).toBe(
+      '- 專案\n  - [ ] 寫測試\n',
+    );
+  });
+
+  it('escapes item text so it cannot change the checkbox', () => {
+    expect(toMarkdown(note('', tasks(task(false, p(text('[x] 其實沒做'))))))).toBe('- [ ] \\[x\\] 其實沒做\n');
+  });
+
+  it('keeps the space after an empty item box, so GFM still reads it as a task', () => {
+    expect(toMarkdown(note('', tasks(task(false, p()), task(true, p(text('完成'))))))).toBe(
+      '- [ ] \n- [x] 完成\n',
+    );
+  });
+});

@@ -1,9 +1,11 @@
 import type { JSONContent, Note } from '@oc/shared';
 import {
   formatListItem,
+  isTaskChecked,
   linkRuns,
   listStart,
   nodeText,
+  TASK_LIST_TYPE,
   TRANSCRIPT_GAP_TEXT,
   TRANSCRIPT_GAP_TYPE,
 } from './common';
@@ -30,7 +32,8 @@ const PUNCTUATION_EDGES = /^([\s\p{P}\p{S}]*)([\s\S]*?)([\s\p{P}\p{S}]*)$/u;
 
 /**
  * Markdown: `# title`, body headings one level lower (`##`–`####`), `**bold**`, `*italic*`,
- * `<u>underline</u>`, `[text](href)` links, `- ` / `1. ` lists. Colour, highlight and alignment are dropped.
+ * `<u>underline</u>`, `[text](href)` links, `- ` / `1. ` lists and `- [ ]` / `- [x]` task lists.
+ * Colour, highlight and alignment are dropped.
  */
 export function toMarkdown(note: Note): string {
   const blocks = renderBlocks(note.content.content ?? []);
@@ -57,6 +60,7 @@ function renderBlock(node: JSONContent): string {
     }
     case 'bulletList':
     case 'orderedList':
+    case TASK_LIST_TYPE:
       return renderList(node);
     default:
       // Unknown block: its text content, one paragraph per line.
@@ -70,10 +74,13 @@ function renderBlock(node: JSONContent): string {
 
 function renderList(list: JSONContent): string {
   const ordered = list.type === 'orderedList';
+  const task = list.type === TASK_LIST_TYPE;
   const start = listStart(list);
   return (list.content ?? [])
     .map((item, index) => {
-      const marker = ordered ? `${start + index}. ` : '- ';
+      let marker = '- ';
+      if (task) marker = isTaskChecked(item) ? '- [x] ' : '- [ ] ';
+      else if (ordered) marker = `${start + index}. `;
       let body = '';
       for (const child of item.content ?? []) {
         const block = renderBlock(child);
@@ -81,13 +88,17 @@ function renderList(list: JSONContent): string {
         if (body !== '') body += canInterruptParagraph(child, block) ? '\n' : '\n\n';
         body += block;
       }
-      return formatListItem(marker, body);
+      // GFM needs whitespace after `]` to read a task marker, so an empty item keeps `- [ ] ` untrimmed
+      // (formatListItem would trim it to `- [ ]`, a bullet whose text is `[ ]`).
+      if (task && body === '') return marker;
+      // GFM reads `[ ]` as part of the item text, so nested lines line up after `- `.
+      return formatListItem(marker, body, task ? 2 : marker.length);
     })
     .join('\n');
 }
 
 function isList(node: JSONContent): boolean {
-  return node.type === 'bulletList' || node.type === 'orderedList';
+  return node.type === 'bulletList' || node.type === 'orderedList' || node.type === TASK_LIST_TYPE;
 }
 
 /**
