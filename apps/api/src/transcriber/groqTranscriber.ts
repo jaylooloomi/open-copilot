@@ -31,6 +31,9 @@ export function createGroqClient(apiKey: string, options: UpstreamClientOptions 
   });
 }
 
+/**
+ * apiKey 只在沒有注入 client 時使用；測試注入 client 時會被忽略（與 createOpenAITranscriber 相同）。
+ */
 export function createGroqTranscriber(
   apiKey: string,
   model: string = GROQ_DEFAULT_TRANSCRIBE_MODEL,
