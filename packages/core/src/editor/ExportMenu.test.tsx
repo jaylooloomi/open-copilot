@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ExportMenu } from './ExportMenu';
@@ -80,5 +80,35 @@ describe('ExportMenu', () => {
     await user.click(screen.getByText('outside'));
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('jumps to the first and last item with Home and End', async () => {
+    const { user, button } = setup();
+    await user.click(button);
+
+    await user.keyboard('{End}');
+    expect(screen.getByRole('menuitem', { name: 'PDF' })).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(screen.getByRole('menuitem', { name: 'Markdown' })).toHaveFocus();
+  });
+
+  it('closes when focus leaves the menu without a click or Tab', async () => {
+    const { user, button, onSelect } = setup();
+    await user.click(button);
+
+    // e.g. focus moving into the editor iframe or another window: relatedTarget is null.
+    act(() => {
+      fireEvent.blur(screen.getByRole('menuitem', { name: 'Markdown' }), { relatedTarget: null });
+    });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('stays open while focus moves between its own items', async () => {
+    const { user, button } = setup();
+    await user.click(button);
+    await user.keyboard('{ArrowDown}{ArrowDown}');
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '純文字' })).toHaveFocus();
   });
 });

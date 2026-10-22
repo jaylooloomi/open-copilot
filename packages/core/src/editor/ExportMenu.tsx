@@ -1,5 +1,5 @@
 import { ChevronDown, Download } from 'lucide-react';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react';
 import type { ExportFormat } from '../export/filename';
 
 export const EXPORT_OPTIONS: readonly { format: ExportFormat; label: string }[] = [
@@ -50,9 +50,21 @@ export function ExportMenu({ canPrint, onSelect }: ExportMenuProps) {
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       items[(index - 1 + items.length) % items.length]?.focus();
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      items[0]?.focus();
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      items[items.length - 1]?.focus();
     } else if (event.key === 'Tab') {
       setOpen(false);
     }
+  };
+
+  // Focus leaving the widget without a Tab or document mousedown (into the editor
+  // iframe, another window) closes the menu. relatedTarget is null in those cases.
+  const onMenuBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (!rootRef.current?.contains(event.relatedTarget as Node | null)) setOpen(false);
   };
 
   return (
@@ -76,6 +88,10 @@ export function ExportMenu({ canPrint, onSelect }: ExportMenuProps) {
           role="menu"
           aria-label="匯出格式"
           onKeyDown={onMenuKeyDown}
+          onBlur={onMenuBlur}
+          // Keep focus on the menu while an item is pressed, so browsers that do not
+          // focus buttons on click (Safari) do not blur, and close, before the click.
+          onMouseDown={(event) => event.preventDefault()}
         >
           {options.map((option) => (
             <button
