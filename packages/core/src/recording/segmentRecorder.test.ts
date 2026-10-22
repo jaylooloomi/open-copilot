@@ -1,10 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeAudioContext, createFakeStream, FakeMediaRecorder } from '../test/media';
+import { SegmentPolicy } from './segmentPolicy';
 import { SegmentRecorder } from './segmentRecorder';
 
 const SPEECH = 0.2;
 
-function setup(options: { mimeType?: string; audioContext?: 'fake' | 'throws' } = {}) {
+function setup(
+  options: {
+    mimeType?: string;
+    audioContext?: 'fake' | 'throws';
+    onLevel?: (rms: number) => void;
+    levelMs?: number;
+    policy?: SegmentPolicy;
+  } = {},
+) {
   const { stream, track, end } = createFakeStream();
   const audio = createFakeAudioContext();
   audio.setLevel(SPEECH);
@@ -15,6 +24,9 @@ function setup(options: { mimeType?: string; audioContext?: 'fake' | 'throws' } 
     mimeType: options.mimeType,
     onSegment: (segment) => segments.push(segment),
     onInterrupted,
+    onLevel: options.onLevel,
+    levelMs: options.levelMs,
+    policy: options.policy,
     createAudioContext:
       options.audioContext === 'throws'
         ? () => {
@@ -197,5 +209,90 @@ describe('SegmentRecorder', () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(recorders()).toHaveLength(2);
     await recorder.stop();
+  });
+});
+
+describe('SegmentRecorder onLevel', () => {
+  it('reports the microphone level about every 100ms', async () => {
+    const onLevel = vi.fn();
+    const { recorder } = setup({ onLevel });
+    recorder.start();
+
+    await vi.advanceTimersByTimeAsync(50);
+    expect(onLevel).toHaveBeenCalledTimes(1);
+    expect(onLevel.mock.calls[0]![0]).toBeCloseTo(SPEECH);
+
+    await vi.advanceTimersByTimeAsync(50); // 100ms: only 50ms since the last report
+    expect(onLevel).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(50); // 150ms
+    expect(onLevel).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(900); // 1050ms: reports at 50, 150, …, 1050
+    expect(onLevel).toHaveBeenCalledTimes(11);
+    await recorder.stop();
+  });
+
+  it('reports silence as well', async () => {
+    const onLevel = vi.fn();
+    const { recorder, audio } = setup({ onLevel });
+    recorder.start();
+    await vi.advanceTimersByTimeAsync(50);
+    audio.setLevel(0);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(onLevel).toHaveBeenLastCalledWith(0);
+    await recorder.stop();
+  });
+
+  it('takes its own reporting interval', async () => {
+    const onLevel = vi.fn();
+    const { recorder } = setup({ onLevel, levelMs: 200 });
+    recorder.start();
+    await vi.advanceTimersByTimeAsync(1050); // reports at 50, 250, 450, 650, 850, 1050
+    expect(onLevel).toHaveBeenCalledTimes(6);
+    await recorder.stop();
+  });
+
+  it('reports nothing while the audio context is not running', async () => {
+    const onLevel = vi.fn();
+    const { recorder, audio } = setup({ onLevel });
+    (audio.context as unknown as { state: string }).state = 'suspended';
+    recorder.start();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onLevel).not.toHaveBeenCalled();
+    await recorder.stop();
+  });
+
+  it('reports nothing without an AudioContext', async () => {
+    const onLevel = vi.fn();
+    const { recorder } = setup({ onLevel, audioContext: 'throws' });
+    recorder.start();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onLevel).not.toHaveBeenCalled();
+    await recorder.stop();
+  });
+
+  it('keeps cutting segments when onLevel throws', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const onLevel = vi.fn(() => {
+      throw new Error('listener failed');
+    });
+    const { recorder } = setup({ onLevel, policy: new SegmentPolicy({ minMs: 1000, maxMs: 2000 }) });
+    recorder.start();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(recorders()).toHaveLength(2);
+    expect(error).toHaveBeenCalledWith('Failed to report the microphone level', expect.any(Error));
+    await recorder.stop();
+    error.mockRestore();
+  });
+
+  it('stops reporting once stopped', async () => {
+    const onLevel = vi.fn();
+    const { recorder } = setup({ onLevel });
+    recorder.start();
+    await vi.advanceTimersByTimeAsync(150);
+    await recorder.stop();
+    const reported = onLevel.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onLevel).toHaveBeenCalledTimes(reported);
   });
 });

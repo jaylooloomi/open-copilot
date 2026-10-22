@@ -14,6 +14,13 @@ export interface SegmentRecorderOptions {
   onSegment(segment: RecordedSegment): void;
   /** A track of the stream ended (device unplugged, app sent to the background…). */
   onInterrupted(): void;
+  /**
+   * The microphone level (RMS of the latest samples), about every `levelMs`. Only real readings
+   * are reported: never without an analyser or while the audio context is not running.
+   */
+  onLevel?(rms: number): void;
+  /** Minimum time between two onLevel calls (default 100ms). */
+  levelMs?: number;
   policy?: SegmentPolicy;
   now?: () => number;
   createAudioContext?: () => AudioContext;
@@ -45,6 +52,8 @@ export class SegmentRecorder {
   private samples = new Float32Array(0);
   private started = false;
   private stopping: Promise<void> | null = null;
+  /** When onLevel was last called; null before the first report. */
+  private lastLevelAt: number | null = null;
 
   constructor(private readonly options: SegmentRecorderOptions) {
     this.policy = options.policy ?? new SegmentPolicy();
@@ -93,7 +102,24 @@ export class SegmentRecorder {
 
   private poll(): void {
     if (!this.current || this.stopping) return;
-    if (this.policy.update(this.now(), this.readRms()) === 'cut') this.cut();
+    const now = this.now();
+    const level = this.readLevel();
+    if (level !== null) this.reportLevel(now, level);
+    // Without a reading every poll counts as speech, so segments are cut at maxMs, not every pause.
+    if (this.policy.update(now, level ?? 1) === 'cut') this.cut();
+  }
+
+  private reportLevel(now: number, level: number): void {
+    const { onLevel, levelMs = 100 } = this.options;
+    if (!onLevel) return;
+    if (this.lastLevelAt !== null && now - this.lastLevelAt < levelMs) return;
+    this.lastLevelAt = now;
+    try {
+      onLevel(level);
+    } catch (error) {
+      // A failing meter must not stop the recording from being cut into segments.
+      console.error('Failed to report the microphone level', error);
+    }
   }
 
   private cut(): void {
@@ -164,9 +190,9 @@ export class SegmentRecorder {
     }
   }
 
-  private readRms(): number {
-    // A suspended context reads zeros; counting them as speech keeps cuts at maxMs, not every pause.
-    if (!this.analyser || this.audioContext?.state !== 'running') return 1;
+  /** RMS of the latest samples; null when there is no real reading (no analyser, or a suspended context, which reads zeros). */
+  private readLevel(): number | null {
+    if (!this.analyser || this.audioContext?.state !== 'running') return null;
     this.analyser.getFloatTimeDomainData(this.samples);
     return computeRms(this.samples);
   }
