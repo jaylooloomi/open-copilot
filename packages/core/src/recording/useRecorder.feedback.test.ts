@@ -186,4 +186,19 @@ describe('useRecorder: 轉寫中 N 段', () => {
     expect(ctx.result.current.state).toBe('idle');
     expect(ctx.result.current.transcribing).toBe(0);
   });
+
+  it('inserts nothing and logs no error when an upload finishes after unmount', async () => {
+    const ctx = await setupRecorder();
+    await startAt(ctx, 0);
+    act(() => ctx.recorders[0].emit(1));
+    expect(ctx.result.current.transcribing).toBe(1);
+
+    const errors = vi.spyOn(console, 'error');
+    ctx.unmount();
+
+    ctx.calls[0].resolve('卸載後才回來。');
+    await settle();
+    expect(ctx.editor.getText()).toBe('');
+    expect(errors).not.toHaveBeenCalled();
+  });
 });

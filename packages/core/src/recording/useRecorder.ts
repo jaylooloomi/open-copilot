@@ -355,6 +355,8 @@ function createRecorderController(env: ControllerEnv) {
   }
 
   function handleSegment(current: Session, { seq, blob }: RecordedSegment): void {
+    // Seqs come from SegmentRecorder as unique integers counting up from 1, so the buffer accepts
+    // every one and each counted segment is eventually released. finish() resets the count anyway.
     current.waiting += 1;
     reportWaiting(current);
     const prompt = tail(current.transcript, PROMPT_CHARS);
