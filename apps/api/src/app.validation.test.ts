@@ -13,6 +13,8 @@ describe('POST /transcribe validation', () => {
     ['negative seq', { seq: '-1' }],
     ['decimal seq', { seq: '1.5' }],
     ['non-numeric seq', { seq: 'abc' }],
+    ['seq above MAX_SAFE_INTEGER', { seq: '9007199254740993' }],
+    ['prompt sent as a file', { prompt: new File(['zh'], 'prompt.txt', { type: 'text/plain' }) }],
   ] as const)('returns 400 for %s', async (_label, fields) => {
     const { app, transcriber } = createTestApp();
     const res = await postTranscribe(app, transcribeForm(fields));

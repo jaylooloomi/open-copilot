@@ -35,7 +35,7 @@ export function audioFile(bytes = 1024, name = 'segment-1.webm', type = 'audio/w
 
 /** 建立 /transcribe 的 multipart 表單；欄位傳 null 代表不放這個欄位。 */
 export function transcribeForm(
-  fields: { audio?: File | string | null; seq?: string | null; prompt?: string } = {},
+  fields: { audio?: File | string | null; seq?: string | null; prompt?: File | string } = {},
 ): FormData {
   const form = new FormData();
   const { audio = audioFile(), seq = '1', prompt } = fields;
