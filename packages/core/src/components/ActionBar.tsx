@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { LevelSource } from '../recording/levelStore';
 import type { RecorderState } from '../recording/useRecorder';
+import { useId } from 'react';
 import { RecordingStatus } from './RecordingStatus';
 
 export const AI_FEATURES = ['AI 摘要', '待辦事項', 'AI 助理', 'AI 對話'] as const;
@@ -32,7 +33,10 @@ export const RECORD_LABELS: Record<RecorderState, string> = {
 export interface AiActions {
   summary(): void;
   todos(): void;
-  /** Why both buttons are unusable now, shown as their title; undefined when they can be used. */
+  /**
+   * Why both buttons are unusable now, shown as their title and linked as their accessible
+   * description; undefined (or empty) when they can be used.
+   */
   disabledReason?: string;
 }
 
@@ -74,6 +78,9 @@ export function ActionBar({
 }: ActionBarProps) {
   // Stopping a running recording is always allowed.
   const disabled = recordState === 'stopping' || (recordDisabled && recordState !== 'recording');
+  // An empty reason counts as no reason, so the buttons never end up disabled without one.
+  const aiReason = ai?.disabledReason || undefined;
+  const aiReasonId = useId();
   return (
     <div className="oc-actionbar">
       <button
@@ -104,8 +111,9 @@ export function ActionBar({
                   key={label}
                   type="button"
                   className="oc-ai-btn is-available"
-                  disabled={ai.disabledReason !== undefined}
-                  title={ai.disabledReason ?? label}
+                  disabled={aiReason !== undefined}
+                  title={aiReason ?? label}
+                  aria-describedby={aiReason !== undefined ? aiReasonId : undefined}
                   onClick={() => ai[action]()}
                 >
                   <Icon size={14} aria-hidden="true" />
@@ -127,6 +135,11 @@ export function ActionBar({
               </button>
             );
           })}
+          {ai && aiReason !== undefined && (
+            <span id={aiReasonId} className="oc-visually-hidden">
+              {aiReason}
+            </span>
+          )}
         </div>
         <button
           type="button"

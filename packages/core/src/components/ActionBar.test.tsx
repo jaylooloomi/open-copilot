@@ -160,19 +160,57 @@ describe('ActionBar AI actions', () => {
     expect(todos).toHaveBeenCalledTimes(1);
   });
 
-  it('disables both with the reason as their title', () => {
+  it('disables both with the reason as their title and description and ignores clicks', async () => {
+    const summary = vi.fn();
+    const todos = vi.fn();
     render(
       <ActionBar
         recordState="recording"
         onRecord={vi.fn()}
         onOpenSettings={vi.fn()}
-        ai={{ summary: vi.fn(), todos: vi.fn(), disabledReason: '錄音中無法使用 AI 功能' }}
+        ai={{ summary, todos, disabledReason: '錄音中無法使用 AI 功能' }}
       />,
     );
+    const user = userEvent.setup();
     for (const name of ['AI 摘要', '待辦事項']) {
       const button = screen.getByRole('button', { name });
       expect(button).toBeDisabled();
       expect(button).toHaveAttribute('title', '錄音中無法使用 AI 功能');
+      expect(button).toHaveAccessibleDescription('錄音中無法使用 AI 功能');
+      const describedBy = button.getAttribute('aria-describedby');
+      expect(describedBy).toBeTruthy();
+      expect(document.getElementById(describedBy!)).toHaveTextContent('錄音中無法使用 AI 功能');
+      await user.click(button);
+    }
+    expect(summary).not.toHaveBeenCalled();
+    expect(todos).not.toHaveBeenCalled();
+    for (const name of ['AI 助理', 'AI 對話']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute('title', '即將推出');
+    }
+  });
+
+  it('has no description while the AI buttons can be used', () => {
+    render(<ActionBar recordState="idle" onRecord={vi.fn()} onOpenSettings={vi.fn()} ai={{ summary: vi.fn(), todos: vi.fn() }} />);
+    for (const name of ['AI 摘要', '待辦事項']) {
+      expect(screen.getByRole('button', { name })).not.toHaveAttribute('aria-describedby');
+    }
+  });
+
+  it('treats an empty disabled reason as usable', () => {
+    render(
+      <ActionBar
+        recordState="idle"
+        onRecord={vi.fn()}
+        onOpenSettings={vi.fn()}
+        ai={{ summary: vi.fn(), todos: vi.fn(), disabledReason: '' }}
+      />,
+    );
+    for (const name of ['AI 摘要', '待辦事項']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toBeEnabled();
+      expect(button).toHaveAttribute('title', name);
     }
   });
 });
