@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import {
   createBrowserFileSaver,
   createIndexedDbStorage,
@@ -5,15 +6,21 @@ import {
   type FileSaver,
   type Platform,
 } from '@oc/core';
+import { installBackgroundMicGuard } from './backgroundMicGuard';
+import { createCapacitorFileSaver } from './capacitorFileSaver';
 import { createDesktopFileSaver } from './desktopFileSaver';
 
-/** Web and Electron (M4). M5 adds Capacitor. */
+/** Web, Electron (M4) and the Capacitor Android app (M5). */
 export async function selectPlatform(): Promise<Platform> {
   const db = await openAppDb();
+  const isCapacitorApp = Capacitor.isNativePlatform();
+  // Android silences a backgrounded app's microphone; end the recording there instead.
+  if (isCapacitorApp) installBackgroundMicGuard();
   return {
     storage: createIndexedDbStorage(db),
-    fileSaver: selectFileSaver(),
-    canPrint: true,
+    fileSaver: isCapacitorApp ? createCapacitorFileSaver() : selectFileSaver(),
+    // Android's WebView has no window.print(), so the app hides 匯出 PDF.
+    canPrint: !isCapacitorApp,
   };
 }
 

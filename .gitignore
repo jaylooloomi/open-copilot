@@ -8,3 +8,4 @@ test-results/
 !.env.example
 apps/web/android/app/build/
 apps/desktop/release/
+apps/web/android/.idea/
