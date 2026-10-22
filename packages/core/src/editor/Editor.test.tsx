@@ -127,6 +127,47 @@ describe('Editor + useNoteEditor', () => {
     });
   });
 
+  it('does not report a change when only the trailing paragraph is appended', () => {
+    const onChange = vi.fn();
+    const editorRef = { current: null as TiptapEditor | null };
+    const endsInList: JSONContent = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'a' }] },
+        {
+          type: 'bulletList',
+          content: [
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b' }] }],
+            },
+          ],
+        },
+      ],
+    };
+    render(<Harness noteId="a" content={endsInList} onChange={onChange} editorRef={editorRef} />);
+
+    // A selection-only transaction: StarterKit's TrailingNode appends an empty paragraph
+    // after the list, but the user has not edited the note.
+    act(() => {
+      editorRef.current?.commands.setTextSelection(2);
+    });
+    expect(editorRef.current?.getJSON().content?.at(-1)).toEqual({
+      type: 'paragraph',
+      attrs: { textAlign: null },
+    });
+    expect(onChange).not.toHaveBeenCalled();
+
+    // A real edit is still reported, trailing paragraph included.
+    act(() => {
+      editorRef.current?.chain().setTextSelection(2).insertContent('!').run();
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const reported = onChange.mock.lastCall?.[0] as JSONContent;
+    expect(reported.content?.[0]?.content?.[0]?.text).toBe('a!');
+    expect(reported.content).toHaveLength(3);
+  });
+
   it('ignores content prop changes for the same note (no reset while typing)', () => {
     const { rerender } = render(<Harness noteId="a" content={doc('Typed')} onChange={vi.fn()} />);
     rerender(<Harness noteId="a" content={doc('Stale')} onChange={vi.fn()} />);
