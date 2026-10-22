@@ -3,6 +3,9 @@ import { APIError } from 'openai';
 /** 上游 429 沒帶 Retry-After（或看不懂）時，要前端等待的秒數。 */
 export const DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS = 10;
 
+/** 上游要求等太久（例如每日額度用完）時，最多只叫前端等這麼多秒，避免卡住重試。 */
+export const MAX_UPSTREAM_RETRY_AFTER_SECONDS = 300;
+
 const DELAY_SECONDS = /^\d+(?:\.\d+)?$/;
 // RFC 9110 的 IMF-fixdate，例如 "Thu, 22 Oct 2026 08:00:15 GMT"。
 const IMF_FIXDATE = /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/;
@@ -18,17 +21,21 @@ export class UpstreamRateLimitError extends Error {
   }
 }
 
-/** 解析上游的 Retry-After（秒數或 HTTP 日期），回傳至少 1 的整數秒；看不懂就回 10。 */
+/** 解析上游的 Retry-After（秒數或 HTTP 日期），回傳 1–300 的整數秒；看不懂就回 10。 */
 export function parseRetryAfter(value: string | null | undefined, now: number = Date.now()): number {
   const raw = value?.trim() ?? '';
   if (DELAY_SECONDS.test(raw)) {
-    return Math.max(1, Math.ceil(Number(raw)));
+    return clampSeconds(Number(raw));
   }
   if (IMF_FIXDATE.test(raw)) {
     const at = Date.parse(raw);
-    if (!Number.isNaN(at)) return Math.max(1, Math.ceil((at - now) / 1000));
+    if (!Number.isNaN(at)) return clampSeconds((at - now) / 1000);
   }
   return DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS;
+}
+
+function clampSeconds(seconds: number): number {
+  return Math.min(MAX_UPSTREAM_RETRY_AFTER_SECONDS, Math.max(1, Math.ceil(seconds)));
 }
 
 /**

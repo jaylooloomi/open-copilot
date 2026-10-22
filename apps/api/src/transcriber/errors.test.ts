@@ -2,6 +2,7 @@ import { APIError } from 'openai';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS,
+  MAX_UPSTREAM_RETRY_AFTER_SECONDS,
   UpstreamRateLimitError,
   parseRetryAfter,
   toUpstreamError,
@@ -34,6 +35,15 @@ describe('parseRetryAfter', () => {
     expect(parseRetryAfter('Thu, 22 Oct 2026 07:59:00 GMT', now)).toBe(1);
   });
 
+  it('caps very long delays at 300 seconds', () => {
+    const now = Date.parse('2026-10-22T08:00:00Z');
+    expect(MAX_UPSTREAM_RETRY_AFTER_SECONDS).toBe(300);
+    expect(parseRetryAfter('300')).toBe(300);
+    expect(parseRetryAfter('301')).toBe(300);
+    expect(parseRetryAfter('99999999999')).toBe(300);
+    expect(parseRetryAfter('Fri, 22 Oct 2027 08:00:00 GMT', now)).toBe(300);
+  });
+
   it('falls back to 10 seconds when the header is missing or unreadable', () => {
     expect(DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS).toBe(10);
     for (const value of [null, undefined, '', '   ', 'soon', '-5', '1e3', '2026-10-22']) {
@@ -60,6 +70,22 @@ describe('toUpstreamError', () => {
     const mapped = toUpstreamError(apiError(429)) as UpstreamRateLimitError;
     expect(mapped).toBeInstanceOf(UpstreamRateLimitError);
     expect(mapped.retryAfterSeconds).toBe(10);
+  });
+
+  it('uses 10 seconds when the upstream 429 has no headers at all', () => {
+    // APIError.generate(429, …, undefined) 會變成連線錯誤，所以直接建構一個沒有標頭的 429。
+    const original = new APIError(429, { message: 'upstream 429' }, undefined, undefined);
+    const mapped = toUpstreamError(original) as UpstreamRateLimitError;
+    expect(mapped).toBeInstanceOf(UpstreamRateLimitError);
+    expect(mapped.retryAfterSeconds).toBe(10);
+  });
+
+  it('reads an HTTP-date Retry-After from the upstream 429', () => {
+    const at = new Date(Date.now() + 60_000).toUTCString();
+    const mapped = toUpstreamError(apiError(429, { 'retry-after': at })) as UpstreamRateLimitError;
+    expect(mapped).toBeInstanceOf(UpstreamRateLimitError);
+    expect(mapped.retryAfterSeconds).toBeGreaterThanOrEqual(58);
+    expect(mapped.retryAfterSeconds).toBeLessThanOrEqual(60);
   });
 
   it('passes every other error through unchanged', () => {
