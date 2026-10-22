@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Settings } from '../settings/settingsStore';
@@ -109,5 +109,72 @@ describe('SettingsDialog', () => {
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalledTimes(2);
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('closes when the backdrop is pressed but not when the dialog body is', () => {
+    const { onClose } = setup();
+    fireEvent.mouseDown(screen.getByRole('dialog'));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.mouseDown(document.querySelector('.oc-dialog-backdrop')!);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a pending test result after the URL is edited and clears the old message', async () => {
+    let answer: (ok: boolean) => void = () => undefined;
+    const checkHealth = vi.fn((_url: string) => new Promise<boolean>((resolve) => (answer = resolve)));
+    const { user, url } = setup({ apiBaseUrl: 'https://a.test', accessKey: '' }, checkHealth);
+    await user.click(screen.getByRole('button', { name: '測試連線' }));
+    expect(screen.getByText('測試中…')).toBeInTheDocument();
+
+    await user.type(url, 'x');
+    expect(screen.queryByText('測試中…')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '測試連線' })).toBeEnabled();
+
+    answer(true);
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText('連線成功')).not.toBeInTheDocument();
+  });
+
+  it('clears a finished test result when the URL is edited', async () => {
+    const { user, url } = setup({ apiBaseUrl: 'https://a.test', accessKey: '' });
+    await user.click(screen.getByRole('button', { name: '測試連線' }));
+    expect(await screen.findByText('連線成功')).toBeInTheDocument();
+    await user.type(url, 'x');
+    expect(screen.queryByText('連線成功')).not.toBeInTheDocument();
+  });
+
+  it('reports a failure and re-enables the button when checkHealth rejects', async () => {
+    const checkHealth = vi.fn(async (_url: string): Promise<boolean> => {
+      throw new Error('boom');
+    });
+    const { user } = setup({ apiBaseUrl: 'https://a.test', accessKey: '' }, checkHealth);
+    await user.click(screen.getByRole('button', { name: '測試連線' }));
+    expect(await screen.findByText('連線失敗，請確認後端網址')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '測試連線' })).toBeEnabled();
+  });
+
+  it('keeps Tab focus inside the dialog', async () => {
+    const { user, url } = setup();
+    const save = screen.getByRole('button', { name: '儲存' });
+    expect(url).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(save).toHaveFocus();
+    await user.tab();
+    expect(url).toHaveFocus();
+  });
+
+  it('returns focus to the element that opened it when it closes', () => {
+    const opener = document.createElement('button');
+    opener.textContent = 'open';
+    document.body.appendChild(opener);
+    opener.focus();
+    const { unmount } = render(
+      <SettingsDialog settings={{ apiBaseUrl: '', accessKey: '' }} onSave={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(screen.getByLabelText('後端網址')).toHaveFocus();
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
   });
 });

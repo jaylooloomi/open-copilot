@@ -32,13 +32,28 @@ export function SettingsDialog({
   const [message, setMessage] = useState('');
   const [testing, setTesting] = useState(false);
   const urlRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  /** Bumped whenever a pending connection test should be ignored. */
+  const testRequest = useRef(0);
   const titleId = useId();
   const urlId = useId();
   const keyId = useId();
 
   useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     urlRef.current?.focus();
+    return () => {
+      testRequest.current += 1;
+      if (opener?.isConnected) opener.focus();
+    };
   }, []);
+
+  /** Drops any pending test result and the old message: they describe settings that no longer apply. */
+  const invalidateTest = () => {
+    testRequest.current += 1;
+    setTesting(false);
+    setMessage('');
+  };
 
   const testConnection = async () => {
     const { apiBaseUrl: url } = normalizeSettings({ apiBaseUrl, accessKey });
@@ -46,11 +61,20 @@ export function SettingsDialog({
       setMessage(SETTINGS_MESSAGES.invalidUrl);
       return;
     }
+    const request = ++testRequest.current;
     setTesting(true);
     setMessage(SETTINGS_MESSAGES.testing);
-    const ok = await checkHealth(url);
-    setTesting(false);
-    setMessage(ok ? SETTINGS_MESSAGES.ok : SETTINGS_MESSAGES.failed);
+    let ok = false;
+    try {
+      ok = await checkHealth(url);
+    } catch {
+      ok = false;
+    } finally {
+      if (request === testRequest.current) {
+        setTesting(false);
+        setMessage(ok ? SETTINGS_MESSAGES.ok : SETTINGS_MESSAGES.failed);
+      }
+    }
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -68,6 +92,22 @@ export function SettingsDialog({
     if (event.key === 'Escape') {
       event.stopPropagation();
       onClose();
+      return;
+    }
+    if (event.key === 'Tab' && dialogRef.current) {
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>('input, button, select, textarea, [tabindex]'),
+      ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex >= 0);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
   };
 
@@ -79,6 +119,7 @@ export function SettingsDialog({
       }}
     >
       <div
+        ref={dialogRef}
         className="oc-dialog"
         role="dialog"
         aria-modal="true"
@@ -98,7 +139,10 @@ export function SettingsDialog({
             autoComplete="off"
             placeholder="https://api.example.com"
             value={apiBaseUrl}
-            onChange={(event) => setApiBaseUrl(event.target.value)}
+            onChange={(event) => {
+              setApiBaseUrl(event.target.value);
+              invalidateTest();
+            }}
           />
           <label htmlFor={keyId}>存取金鑰</label>
           <input
