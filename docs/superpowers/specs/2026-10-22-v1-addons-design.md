@@ -35,9 +35,25 @@
 - 原因：Groq 每次請求最少按 10 秒計費。免費額度是每分鐘 20 次、每小時 7,200 音訊秒、每天 28,800 音訊秒、每天 2,000 次請求。切成 8–12 秒時，一小時大約 6,000 計費秒，不會超過上限；每天約可錄 4–5 小時。
 - 契約 §4 的 `SegmentPolicy` 預設值跟著更新。
 
+### 1.2a Windows 內建離線轉寫（`windows` provider，2026-10-22 追加）
+- 使用者決定：沒有雲端 key 時，先用 Windows 內建的語音辨識，日後再換成 Groq。
+- 已實測可行：本機有 `System.Speech` 的 zh-TW 辨識器（`MS-1028-80-DESK`）。用繁中 TTS 合成句子再辨識，大部分字正確，但不會加標點（例：「請小明」辨識成「井小民」）。
+- `TRANSCRIBE_PROVIDER` 新增 `windows`。**未設定時的選擇順序**：有 `GROQ_API_KEY` 用 `groq`；否則有 `OPENAI_API_KEY` 用 `openai`；否則在 Windows（`process.platform === 'win32'`）上用 `windows`；以上都不符合就啟動失敗並說明原因。
+- 實作 `apps/api/src/transcriber/windowsTranscriber.ts`：
+  1. 上傳的音訊寫進暫存檔，再用 `ffmpeg -i <in> -ar 16000 -ac 1 -f wav <out.wav>` 轉檔。ffmpeg 路徑取 `FFMPEG_PATH`，沒設定就用 PATH 上的 `ffmpeg`。
+  2. 用 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File apps/api/scripts/windows-stt.ps1 -Wav <out.wav>` 辨識。這支腳本必須存成 **UTF-8 with BOM**，否則 Windows PowerShell 5 會讀錯中文。腳本用 `SpeechRecognitionEngine(zh-TW)` 搭配 `DictationGrammar` 和 `SetInputToWaveFile`，迴圈呼叫 `Recognize()`，回傳 null **或丟出例外**都視為結束，避免無窮迴圈。最後把結果以 UTF-8 JSON `{ "text": "..." }` 輸出到 stdout。
+  3. 單次辨識逾時 30 秒，最多同時處理 2 段，多的排隊。暫存檔一律在 `finally` 刪除。
+  4. 忽略 `prompt`。輸出照樣經過 `toTraditional`。
+- 錯誤處理：ffmpeg 或 PowerShell 失敗、逾時都丟錯，由後端對應成 502 `upstream_error`。
+- 啟動檢查：provider 是 `windows`，但不在 Windows 上或找不到 ffmpeg 時，立即失敗並給出明確訊息。Docker（Linux）映像不支援這個 provider，README 要寫明。
+- 測試：
+  - 單元測試注入假的 process runner，涵蓋成功、逾時、非零結束碼、併發上限。
+  - 整合測試 `windowsTranscriber.integration.test.ts`：在 win32 上用 TTS 產生 WAV 後實際辨識，檢查是否出現關鍵詞；非 Windows 則 skip。
+- 契約變更：`TRANSCRIBE_PROVIDER` 多一個 `windows` 選項。
+
 ### 1.3 一鍵啟動原型
 - 根目錄加入 `npm run prototype`，對應 `scripts/prototype.mjs`：
-  1. 檢查有沒有轉寫金鑰；沒有就印出申請 Groq key 的步驟後結束，exit code 1。
+  1. 檢查轉寫來源：有 Groq 或 OpenAI 金鑰就用雲端；都沒有時，在 Windows 上自動改用 `windows` provider，並印出提示「目前使用 Windows 內建離線辨識，設定 GROQ_API_KEY 可提高準確度」。只有在連 `windows` 也不能用時，才印出申請 Groq key 的步驟並以 exit code 1 結束。
   2. `ACCESS_KEYS` 沒設定時，產生一把隨機存取金鑰，寫到 `apps/api/.env.local`（已列入 `.gitignore`），之後重複使用。
   3. 同時啟動後端（8787）和網頁 dev server（5173）。任何一個結束，另一個也跟著停止；按 Ctrl+C 會乾淨地收掉兩個。
   4. 自動開啟瀏覽器，網址是 `http://localhost:5173/#oc-setup=<base64url(JSON)>`，裡面帶 `apiBaseUrl` 和 `accessKey`。
@@ -50,9 +66,9 @@
 - 測試流程：
   1. 用 PowerShell 的 `System.Speech` 和繁中語音（`Microsoft Hanhan`；找不到就用任一個 `zh-TW` 語音）合成一段約 20 秒的固定中文句子，輸出成 WAV，放在暫存目錄。
   2. Chromium 帶 `--use-fake-ui-for-media-stream`、`--use-fake-device-for-media-stream`、`--use-file-for-fake-audio-capture=<wav>` 啟動。
-  3. 啟動真的後端（真的打 Groq），用 `#oc-setup` 填好設定，按「錄製」，約 25 秒後按「停止」。
-  4. **判定**：編輯器裡至少出現 3 個預先指定關鍵詞中的 2 個（繁體）；不能出現簡體字樣本（例如「这」「们」）；而且沒有任何未轉寫標記。
-- 缺少 `GROQ_API_KEY` 時，測試標記為 skipped 並說明原因，**不算通過**。最終報告必須寫明真實測試有沒有實際跑過。
+  3. 啟動真的後端，用 `#oc-setup` 填好設定，按「錄製」，約 25 秒後按「停止」。後端走預設的 provider 選擇順序：有 Groq key 就真的打 Groq，否則用 `windows` 離線辨識。
+  4. **判定**：編輯器裡至少出現 3 個預先指定關鍵詞中的 2 個（繁體）；不能出現簡體字樣本（例如「这」「们」）；而且沒有任何未轉寫標記。關鍵詞要挑 Windows 辨識器也能穩定辨識出來的詞（例如「會議」「測試」「版本」）。
+- 這台機器沒有 key 時用 `windows` provider 跑，所以**一定要實際跑過並通過**。只有在非 Windows、而且沒有任何 key 的環境才 skip。測試報告要寫明這次用的是哪個 provider。
 - 執行指令：`npm run e2e:real -w @oc/web`。
 
 ## 2. M7：GitHub Actions CI
