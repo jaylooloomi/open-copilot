@@ -105,3 +105,38 @@ describe('createExtensions', () => {
     expect(empty).toHaveAttribute('data-placeholder', '在這裡開始編寫筆記..');
   });
 });
+
+describe('createExtensions task lists', () => {
+  it('parses task lists and keeps each item checked state', () => {
+    const e = makeEditor(
+      '<ul data-type="taskList">' +
+        '<li data-type="taskItem" data-checked="true"><p>寄出報價單</p></li>' +
+        '<li data-type="taskItem" data-checked="false"><p>預約會議室</p></li>' +
+        '</ul>',
+    );
+    const list = e.getJSON().content?.[0];
+    expect(list?.type).toBe('taskList');
+    expect(list?.content?.map((item) => [item.type, item.attrs?.checked])).toEqual([
+      ['taskItem', true],
+      ['taskItem', false],
+    ]);
+    expect(e.view.dom.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+  });
+
+  it('toggles a paragraph into a task list', () => {
+    const e = makeEditor('<p>準備</p>');
+    e.chain().setTextSelection(2).toggleTaskList().run();
+    expect(e.isActive('taskList')).toBe(true);
+    expect(e.getJSON().content?.[0]?.content?.[0]?.attrs?.checked).toBe(false);
+  });
+
+  it('lets a task item hold a nested task list', () => {
+    const e = makeEditor(
+      '<ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>準備</p>' +
+        '<ul data-type="taskList"><li data-type="taskItem" data-checked="true"><p>訂場地</p></li></ul>' +
+        '</li></ul>',
+    );
+    const outer = e.getJSON().content?.[0]?.content?.[0];
+    expect(outer?.content?.map((child) => child.type)).toEqual(['paragraph', 'taskList']);
+  });
+});

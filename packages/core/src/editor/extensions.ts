@@ -1,5 +1,6 @@
 import { Extension, type Extensions } from '@tiptap/react';
 import { Highlight } from '@tiptap/extension-highlight';
+import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Color, TextStyle } from '@tiptap/extension-text-style';
 import { Placeholder } from '@tiptap/extensions';
@@ -38,6 +39,9 @@ export function createExtensions(): Extensions {
     Highlight.configure({ multicolor: true }),
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Placeholder.configure({ placeholder: EDITOR_PLACEHOLDER }),
+    // M11: AI 待辦事項 are inserted as a task list. Nested, so a list pasted into an item survives.
+    TaskList,
+    TaskItem.configure({ nested: true }),
     TranscriptGap,
     HistoryKeys,
   ];
