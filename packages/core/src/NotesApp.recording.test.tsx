@@ -376,6 +376,8 @@ describe('NotesApp recording feedback', () => {
   });
 
   it('shows 轉寫中 N 段 while a segment waits for its transcript', async () => {
+    // No AudioContext, so the recorder takes no level readings and the test stays on the transcribing count.
+    vi.stubGlobal('AudioContext', undefined);
     installMicrophone();
     // /transcribe waits until the test answers it.
     let answer!: (response: Response) => void;
