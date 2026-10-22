@@ -1,5 +1,6 @@
 import type { Note } from '@oc/shared';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import type { Editor as TiptapEditor } from '@tiptap/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AI_DISABLED_REASONS, AI_MESSAGES } from './ai/aiMessages';
@@ -160,6 +161,30 @@ describe('NotesApp AI', () => {
     await user.click(within(panel).getByRole('button', { name: '重試' }));
     // The panel is keyed on the request, so the retry shows a new one.
     await within(await screen.findByRole('complementary', { name: 'AI 摘要' })).findByText('好了');
+  });
+
+  it('retries with the note as it is now, not as it was on the first request', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fetchMock = installBackend({
+      '/ai/summary': [json({ error: 'ai_unavailable' }, 503), json({ summary: '好了' })],
+    });
+    const { user } = await renderApp({ acknowledged: true });
+
+    await user.click(button('AI 摘要'));
+    const panel = await screen.findByRole('complementary', { name: 'AI 摘要' });
+    await within(panel).findByRole('alert');
+
+    // jsdom cannot place a click in ProseMirror, so edit through the editor Tiptap hangs on its element.
+    const { editor } = body() as HTMLElement & { editor: TiptapEditor };
+    act(() => {
+      editor.commands.insertContentAt(editor.state.doc.content.size, '<p>再補一句。</p>');
+    });
+    await waitFor(() => expect(body()).toHaveTextContent('再補一句。'));
+    await user.click(within(screen.getByRole('complementary', { name: 'AI 摘要' })).getByRole('button', { name: '重試' }));
+
+    await within(await screen.findByRole('complementary', { name: 'AI 摘要' })).findByText('好了');
+    const [, init] = fetchMock.mock.calls[1]!;
+    expect(JSON.parse(String(init?.body)).text).toContain('再補一句。');
   });
 
   it('opens the settings when the access key is rejected', async () => {

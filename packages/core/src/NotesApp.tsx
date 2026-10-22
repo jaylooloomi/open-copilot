@@ -142,6 +142,7 @@ export function NotesApp() {
   // characters), so it reruns only when the body changes, not on every recorder tick or title edit.
   // It sits above the loading early return (rules of hooks); the text depends on the content alone.
   const activeContent = activeNote?.content;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- aiNoteText drops the title, so the content is the only input.
   const aiText = useMemo(() => (activeNote ? aiNoteText(activeNote) : ''), [activeContent]);
 
   // Once the notes are loaded from storage, drop the kept audio of markers no saved note has any
@@ -412,7 +413,10 @@ export function NotesApp() {
           // Like <main>: hidden from focus while the note drawer is open.
           inert={drawerOpen}
           onClose={ai.close}
-          onRetry={ai.retry}
+          // 重試 sends the note as it is now: it may have been edited while the error was shown.
+          onRetry={() => {
+            if (ai.panel) requestAi(ai.panel.kind);
+          }}
           onInsertSummary={insertSummary}
           onInsertTodos={insertTodos}
           insertDisabledReason={aiBlocked ? AI_DISABLED_REASONS.recording : undefined}
