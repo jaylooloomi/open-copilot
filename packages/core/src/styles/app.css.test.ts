@@ -69,7 +69,17 @@ describe('app.css', () => {
   it('gives the AI chips only the space left beside the recording status on narrow screens', () => {
     const narrow = css.slice(css.indexOf('@media (max-width: 767.98px)'));
     // Sized from 0 rather than from the chips' full width, so they give way before the status does.
-    expect(narrow).toMatch(/\.oc-actionbar-end\s*\{[^}]*flex:\s*1 1 0[^}]*min-width:\s*34px/);
+    const rule = narrow.match(/\.oc-actionbar-end\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(rule).toMatch(/flex:\s*1 1 0\s*;/);
+    // Never narrower than the gear: both read the same size token.
+    expect(rule).toMatch(/min-width:\s*var\(--oc-gear-size\)\s*;/);
+  });
+
+  it('sizes the gear from one token', () => {
+    expect(css).toMatch(/:root\s*\{[^}]*--oc-gear-size:\s*34px\s*;/);
+    const gear = css.match(/\.oc-settings-btn\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(gear).toMatch(/width:\s*var\(--oc-gear-size\)\s*;/);
+    expect(gear).toMatch(/height:\s*var\(--oc-gear-size\)\s*;/);
   });
 
   it('lights level bars in the primary colour', () => {

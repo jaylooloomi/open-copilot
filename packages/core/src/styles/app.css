@@ -14,6 +14,7 @@
   --oc-danger: #dc2626;
   --oc-radius: 10px;
   --oc-sidebar-width: 260px;
+  --oc-gear-size: 34px;
   --oc-font: system-ui, -apple-system, 'Segoe UI', 'Noto Sans TC', 'PingFang TC',
     'Microsoft JhengHei', sans-serif;
 }
@@ -704,8 +705,8 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: var(--oc-gear-size);
+  height: var(--oc-gear-size);
   border: 1px solid var(--oc-border);
   border-radius: 50%;
   background: var(--oc-bg);
@@ -1062,7 +1063,7 @@ button {
   .oc-actionbar-end {
     flex: 1 1 0;
     flex-wrap: nowrap;
-    min-width: 34px;
+    min-width: var(--oc-gear-size);
   }
 
   .oc-settings-btn {
