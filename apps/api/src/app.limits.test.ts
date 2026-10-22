@@ -125,6 +125,33 @@ describe('POST /transcribe upstream rate limit', () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
+  it('treats a rate limit after the client disconnected as a disconnect: 502, no Retry-After', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const controller = new AbortController();
+    const transcriber = {
+      transcribe: vi.fn<Transcriber['transcribe']>(async () => {
+        controller.abort();
+        throw new UpstreamRateLimitError(7);
+      }),
+    };
+    const { app } = createTestApp({ transcriber });
+
+    const res = await app.request('/transcribe', {
+      method: 'POST',
+      body: transcribeForm(),
+      headers: { Authorization: `Bearer ${TEST_KEY}` },
+      signal: controller.signal,
+    });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'upstream_error' });
+    expect(res.headers.get('Retry-After')).toBeNull();
+    expect(consoleWarn).toHaveBeenCalledWith('[transcribe] client disconnected; upstream call cancelled');
+    expect(consoleWarn).not.toHaveBeenCalledWith(expect.stringContaining('rate limited'));
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
   it('keeps answering 502 for every other upstream error', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { app } = createTestApp({

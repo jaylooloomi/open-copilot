@@ -84,14 +84,17 @@ export function createApp({ transcriber, accessKeys, allowedOrigins, now = Date.
       try {
         rawText = await transcriber.transcribe({ file: audio, prompt, signal });
       } catch (err) {
-        if (signal.aborted) {
-          // 回應已經沒人收；記一行說明，避免被誤認成上游故障。
-          console.warn('[transcribe] client disconnected; upstream call cancelled');
-        } else if (err instanceof UpstreamRateLimitError) {
-          // 轉寫服務（例如 Groq 免費額度）限流：改回 429，前端依 Retry-After 等待後重送。
+        // 用戶端仍在線且上游限流（例如 Groq 免費額度）：回 429，前端依 Retry-After 等待後重送。
+        // 已斷線時優先當成斷線處理，不送 Retry-After。
+        if (!signal.aborted && err instanceof UpstreamRateLimitError) {
           console.warn(`[transcribe] upstream rate limited; retry after ${err.retryAfterSeconds}s`);
           c.header('Retry-After', String(err.retryAfterSeconds));
           return c.json({ error: 'rate_limited' } satisfies ApiErrorBody, 429);
+        }
+        // 其餘情況一律回 502。
+        if (signal.aborted) {
+          // 回應已經沒人收；記一行說明，避免被誤認成上游故障。
+          console.warn('[transcribe] client disconnected; upstream call cancelled');
         } else {
           // 只記錄錯誤訊息，不記錄金鑰或音訊內容。
           console.error('[transcribe] upstream error:', err instanceof Error ? err.message : String(err));
