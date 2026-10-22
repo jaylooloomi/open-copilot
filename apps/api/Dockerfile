@@ -14,7 +14,7 @@ FROM node:24-slim
 ENV NODE_ENV=production
 ENV PORT=8787
 WORKDIR /app
-COPY --from=deps /app/package.json /app/package-lock.json ./
+COPY --from=deps /app/package.json /app/package-lock.json /app/tsconfig.base.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/shared ./packages/shared
 COPY --from=deps /app/apps/api ./apps/api

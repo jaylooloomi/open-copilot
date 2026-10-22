@@ -13,7 +13,7 @@ Hono + Node 的小型 API：接收前端錄音切好的單段音訊，交給 Ope
 
 | 狀態碼 | `error` | 何時發生 |
 |---|---|---|
-| 400 | `bad_request` | 缺 `audio`、`audio` 為空或不是檔案、`seq` 不是正整數、body 不是 multipart |
+| 400 | `bad_request` | 缺 `audio`、`audio` 為空或不是檔案、`seq` 不是正整數（或超過 `Number.MAX_SAFE_INTEGER`）、`prompt` 不是字串（例如以檔案送出）、body 不是 multipart |
 | 401 | `unauthorized` | 缺少或錯誤的存取金鑰 |
 | 404 | `bad_request` | 未知路徑或方法（例如 `GET /transcribe`、後端網址多了路徑前綴） |
 | 413 | `payload_too_large` | 音訊超過 5MB |
@@ -78,6 +78,8 @@ docker run --rm -p 8787:8787 --env-file apps/api/.env open-copilot-api
 ```
 
 `--env-file` 內若設定了 `PORT`，`-p` 的容器埠要跟著改。
+
+同一份 `.env` 要給 `docker run --env-file` 用時，值不可加引號：Node 的 `--env-file`（`npm run dev`）會去掉引號，Docker 會原樣保留，例如 `OPENAI_API_KEY="sk-..."` 進到容器就帶著引號，每次呼叫 OpenAI 都會回 502 `upstream_error`。
 
 ## 部署注意
 

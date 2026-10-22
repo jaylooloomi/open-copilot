@@ -5,6 +5,8 @@
 **/.env.*
 !**/.env.example
 **/*.test.ts
+**/src/test
+**/vitest.config.ts
 .git
 playwright-report
 test-results
