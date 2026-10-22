@@ -86,6 +86,8 @@ export interface UseRecorderResult {
   notice: string | null;
   /** When the running recording started (deps.now(), epoch ms); null unless state is 'recording'. */
   startedAt: number | null;
+  /** The clock startedAt was read from (deps.now); the timer must count with this same clock. */
+  now(): number;
   /** The latest microphone level (RMS) while recording, 0 otherwise; read it with useLevel(). */
   levels: LevelSource;
   /** No reading reached the threshold for over 10 s in this recording; a loud reading clears it. */
@@ -212,6 +214,7 @@ export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
     error,
     notice,
     startedAt,
+    now: controller.now,
     levels,
     noSound,
     transcribing,
@@ -582,9 +585,14 @@ function createRecorderController(env: ControllerEnv) {
     stopTracks(current.stream);
   }
 
+  function now(): number {
+    return deps().now();
+  }
+
   return {
     start,
     stop,
+    now,
     retryGap,
     forgetNote,
     pruneAudio,

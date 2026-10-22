@@ -96,6 +96,19 @@ describe('ActionBar', () => {
     expect(screen.getByText('轉寫中 1 段')).toBeInTheDocument();
   });
 
+  it('times the recording with the clock it is given', () => {
+    render(
+      <ActionBar
+        recordState="recording"
+        startedAt={1_000}
+        now={() => 126_000}
+        onRecord={vi.fn()}
+        onOpenSettings={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('timer', { name: '錄音時間' })).toHaveTextContent('02:05');
+  });
+
   it('drops the timer and meter while stopping but keeps the transcribing count', () => {
     render(
       <ActionBar

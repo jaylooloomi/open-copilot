@@ -1064,10 +1064,14 @@ button {
     flex: 1 1 0;
     flex-wrap: nowrap;
     min-width: var(--oc-gear-size);
+    /* Its width never depends on the chips (flex-basis 0), so it can be the query container below. */
+    container: oc-actionbar-end / inline-size;
   }
 
   .oc-settings-btn {
     flex-shrink: 0;
+    /* Stays at the right edge, also when the chips are hidden. */
+    margin-left: auto;
   }
 
   /* About 140px is left beside 錄製 and the gear at 375px: a smaller status fits there, and if it
@@ -1127,5 +1131,15 @@ button {
 
   .oc-title {
     font-size: 22px;
+  }
+}
+
+/* Too narrow for the gear, the gap and one whole chip (86px with the default font; the limit leaves
+   room for a wider one): hide the chips instead of showing a clipped sliver of the first one, e.g.
+   at 390px with the timer, meter and 轉寫中 N 段 all shown. Only phones make .oc-actionbar-end a
+   container, so this never applies on wider screens. */
+@container oc-actionbar-end (max-width: 139.98px) {
+  .oc-ai-group {
+    display: none;
   }
 }

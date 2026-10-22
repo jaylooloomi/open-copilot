@@ -25,6 +25,8 @@ export interface ActionBarProps {
   levels?: LevelSource;
   /** 轉寫中 N 段 (useRecorder's transcribing); hidden at 0. */
   transcribing?: number;
+  /** Clock for the timer: useRecorder's now, the one startedAt was read from. Defaults to Date.now. */
+  now?: () => number;
 }
 
 function RecordIcon({ state }: { state: RecorderState }) {
@@ -41,6 +43,7 @@ export function ActionBar({
   startedAt = null,
   levels,
   transcribing = 0,
+  now,
 }: ActionBarProps) {
   // Stopping a running recording is always allowed.
   const disabled = recordState === 'stopping' || (recordDisabled && recordState !== 'recording');
@@ -61,6 +64,7 @@ export function ActionBar({
         startedAt={startedAt}
         levels={levels}
         transcribing={transcribing}
+        now={now}
       />
       <div className="oc-actionbar-end">
         <div className="oc-ai-group">

@@ -319,6 +319,7 @@ export function NotesApp() {
             startedAt={recorder.startedAt}
             levels={recorder.levels}
             transcribing={recorder.transcribing}
+            now={recorder.now}
           />
         </header>
         <Banner backupDue={backup.backupDue} backupDisabled={listLocked} onBackup={startBackup} />

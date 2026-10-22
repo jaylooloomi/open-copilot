@@ -52,6 +52,13 @@ describe('useRecorder: live recording feedback', () => {
     expect(ctx.result.current.startedAt).toBeNull();
   });
 
+  it('exposes the clock startedAt was read from, so the timer uses the same one', async () => {
+    const ctx = await setupRecorder();
+    await startAt(ctx, 42_000);
+    ctx.clock.now = 107_000;
+    expect(ctx.result.current.now() - ctx.result.current.startedAt!).toBe(65_000);
+  });
+
   it('counts from when the microphone is granted, not from the click, after a delayed permission prompt', async () => {
     const ctx = await setupRecorder();
     // The permission prompt stays open for 5 s: the clock moves while getUserMedia is pending.

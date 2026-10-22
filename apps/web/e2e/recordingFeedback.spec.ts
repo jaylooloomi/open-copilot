@@ -182,6 +182,19 @@ test('手機寬度錄音時，錄音狀態不會把設定鈕擠出畫面，頁�
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow).toBe(0);
+  // The AI chips either show at least one whole chip or are hidden: never a clipped sliver.
+  const chips = await page.evaluate(() => {
+    const group = document.querySelector('.oc-ai-group')!;
+    const first = group.querySelector('.oc-ai-btn')!;
+    const groupBox = group.getBoundingClientRect();
+    const chipBox = first.getBoundingClientRect();
+    return {
+      hidden: getComputedStyle(group).display === 'none',
+      groupRight: groupBox.right,
+      chipRight: chipBox.right,
+    };
+  });
+  if (!chips.hidden) expect(chips.chipRight).toBeLessThanOrEqual(chips.groupRight + 0.5);
 
   answerAtOnce = true;
   for (const route of held.splice(0)) await transcript(route, seqOf(route));
