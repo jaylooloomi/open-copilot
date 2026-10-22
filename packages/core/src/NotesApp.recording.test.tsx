@@ -158,7 +158,12 @@ describe('NotesApp recording', () => {
     expect(fetchMock).toHaveBeenCalledTimes(sent);
 
     // The cursor is at the start, in front of the marker; ArrowRight selects it (it is an atom).
-    await user.keyboard('{ArrowRight}{Enter}');
+    // fireEvent with keyCode 39, as browsers send it, so ProseMirror's own arrow handling selects
+    // the marker. user-event's {ArrowRight} has no keyCode: it only moves the DOM selection, which
+    // ProseMirror reads back later, and under load that raced with focus handling and with Enter.
+    fireEvent.keyDown(body(), { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 });
+    expect(screen.getByText('⚠ 第 1 段未轉寫・重試')).toHaveClass('ProseMirror-selectednode');
+    await user.keyboard('{Enter}');
 
     await waitFor(() => expect(body()).toHaveTextContent('鍵盤補上'));
     expect(screen.queryByText('⚠ 第 1 段未轉寫・重試')).not.toBeInTheDocument();
