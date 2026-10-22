@@ -7,7 +7,12 @@ import { createExtensions } from './extensions';
 export interface UseNoteEditorOptions {
   /** The editor is recreated (fresh content + undo history) whenever this changes. */
   noteId: string | undefined;
-  /** Initial content; later changes for the same noteId are ignored. */
+  /**
+   * Bump to recreate the editor for the same note, e.g. after an import replaced the note's
+   * content. Defaults to 0.
+   */
+  revision?: number;
+  /** Initial content; later changes for the same noteId and revision are ignored. */
   content: JSONContent;
   /**
    * Called with the whole document after each edit, and the id of the note the editor was
@@ -24,7 +29,7 @@ export interface UseNoteEditorOptions {
  * component stays mounted; inside `<Activity mode="hidden">` or a hidden Suspense subtree
  * Tiptap may destroy it, so this hook is not meant for those.
  */
-export function useNoteEditor({ noteId, content, onChange }: UseNoteEditorOptions): TiptapEditor {
+export function useNoteEditor({ noteId, revision = 0, content, onChange }: UseNoteEditorOptions): TiptapEditor {
   const extensions = useMemo(() => createExtensions(), []);
   // The note each editor instance was created for. useEditor only replaces the editor in a
   // passive effect after a noteId change, while it already routes onUpdate to the newest
@@ -65,7 +70,7 @@ export function useNoteEditor({ noteId, content, onChange }: UseNoteEditorOption
         if (noteId !== undefined && owner === noteId) onChange(editor.getJSON(), owner);
       },
     },
-    [noteId],
+    [noteId, revision],
   );
 }
 
