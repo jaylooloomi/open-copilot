@@ -31,4 +31,20 @@ describe('toFilename', () => {
     expect(toFilename('   ', 'docx')).toBe('未命名筆記.docx');
     expect(toFilename('???', 'pdf')).toBe('未命名筆記.pdf');
   });
+
+  it('adds an underscore to Windows reserved device names', () => {
+    expect(toFilename('CON', 'md')).toBe('CON_.md');
+    expect(toFilename('nul', 'txt')).toBe('nul_.txt');
+    expect(toFilename('Aux', 'pdf')).toBe('Aux_.pdf');
+    expect(toFilename('prn', 'docx')).toBe('prn_.docx');
+    expect(toFilename('COM1', 'md')).toBe('COM1_.md');
+    expect(toFilename('lpt9', 'md')).toBe('lpt9_.md');
+    expect(toFilename('con.backup', 'md')).toBe('con_.backup.md');
+  });
+
+  it('keeps names that only start with a reserved word', () => {
+    expect(toFilename('Console', 'md')).toBe('Console.md');
+    expect(toFilename('COM10', 'md')).toBe('COM10.md');
+    expect(toFilename('nul 會議', 'md')).toBe('nul 會議.md');
+  });
 });
