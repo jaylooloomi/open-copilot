@@ -75,6 +75,39 @@ describe('TranscriptInserter', () => {
     expect(e.getHTML()).toBe('<p>A</p><p>B一</p>');
   });
 
+  it('keeps consecutive inserts in one paragraph after the anchor paragraph is deleted', () => {
+    const e = makeEditor('<p>A</p><p>B</p><p>C</p>');
+    const inserter = new TranscriptInserter(e, 4); // inside B
+    e.commands.deleteRange({ from: 3, to: 6 }); // removes the whole B paragraph
+    inserter.insertText('一');
+    inserter.insertGap('g1', 1);
+    inserter.insertText('三');
+    expect(e.getHTML()).toBe(
+      '<p>A一<span class="oc-gap" data-transcript-gap="g1">⚠ 第 1 段未轉寫・重試</span>三</p><p>C</p>',
+    );
+  });
+
+  it('keeps inserting into one paragraph after select-all and delete', () => {
+    const e = makeEditor('<p>AB</p><p>CD</p>');
+    const inserter = new TranscriptInserter(e, 2);
+    e.commands.selectAll();
+    e.commands.deleteSelection();
+    inserter.insertText('一');
+    inserter.insertText('二');
+    expect(e.getHTML()).toBe('<p>一二</p>');
+  });
+
+  it('never moves the user’s code out of a code block when a gap arrives', () => {
+    const e = makeEditor('<pre><code>ab</code></pre>');
+    const inserter = new TranscriptInserter(e, 2); // between a and b
+    inserter.insertText('一');
+    inserter.insertGap('g1', 1);
+    inserter.insertText('三');
+    expect(e.getHTML()).toBe(
+      '<pre><code>a一b</code></pre><p><span class="oc-gap" data-transcript-gap="g1">⚠ 第 1 段未轉寫・重試</span>三</p><p></p>', // the trailing empty paragraph comes from the editor's trailing-node rule
+    );
+  });
+
   it('ignores empty text and stops after destroy()', () => {
     const e = makeEditor();
     const inserter = new TranscriptInserter(e, 2);

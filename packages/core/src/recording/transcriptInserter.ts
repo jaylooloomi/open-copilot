@@ -1,7 +1,7 @@
 import type { Node as PmNode } from '@tiptap/pm/model';
 import { Selection, type Transaction } from '@tiptap/pm/state';
 import type { Editor } from '@tiptap/react';
-import { TRANSCRIPT_GAP_TYPE } from '../export/common';
+import { TRANSCRIPT_GAP_TEXT, TRANSCRIPT_GAP_TYPE } from '../export/common';
 
 /**
  * Inserts transcripts at the position the cursor had when recording started. The position is
@@ -57,7 +57,32 @@ export class TranscriptInserter {
   private insert(node: PmNode): void {
     if (this.destroyed || this.editor.isDestroyed) return;
     const { state, view } = this.editor;
-    view.dispatch(state.tr.insert(this.pos, node));
+    // Edits made while recording (e.g. deleting the anchor's paragraph) can map the anchor out of
+    // any textblock, so normalize it on every insert to keep consecutive transcripts together.
+    const pos = textPosition(this.editor, this.pos);
+    const $pos = state.doc.resolve(pos);
+    if ($pos.parent.canReplaceWith($pos.index(), $pos.index(), node.type)) {
+      // Mapped with assoc = 1 in onTransaction, so the anchor ends up right after the node.
+      this.pos = pos;
+      view.dispatch(state.tr.insert(pos, node));
+      return;
+    }
+    // The textblock does not accept this node (a gap inside a code block). Never split the
+    // user's block: put the node in a new paragraph right after it and continue from there.
+    const after = $pos.after();
+    const paragraph = state.schema.nodes.paragraph?.createAndFill(null, node);
+    const $after = state.doc.resolve(after);
+    if (paragraph && $after.parent.canReplaceWith($after.index(), $after.index(), paragraph.type)) {
+      this.pos = after;
+      view.dispatch(state.tr.insert(after, paragraph));
+      // The anchor is mapped to just past the new paragraph; pull it back to the paragraph's end
+      // so the next transcript continues right after the node.
+      this.pos = textPosition(this.editor, this.pos);
+      return;
+    }
+    // Last resort: the plain-text placeholder fits wherever text does.
+    this.pos = pos;
+    view.dispatch(state.tr.insertText(TRANSCRIPT_GAP_TEXT, pos));
   }
 }
 
