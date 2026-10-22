@@ -5,6 +5,7 @@ import { copyNote } from '../export/copyNote';
 import { exportNote } from '../export/exportNote';
 import type { ExportFormat } from '../export/filename';
 import { usePlatform } from '../platform/PlatformContext';
+import { isAbortError } from '../platform/isAbortError';
 import { ExportMenu } from './ExportMenu';
 
 /** How long a status message stays visible. */
@@ -75,8 +76,4 @@ export function NoteActions({ note }: { note: Note }) {
       <ExportMenu canPrint={platform.canPrint} onSelect={(format) => void runExport(format)} />
     </div>
   );
-}
-
-function isAbortError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { name?: unknown }).name === 'AbortError';
 }
