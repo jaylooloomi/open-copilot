@@ -6,7 +6,9 @@ name: CI
 on:
   push:
     branches: ['**']
+  # Branch pushes already run CI, so only PRs into main add a (merge-result) run.
   pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -62,7 +64,10 @@ jobs:
         if: hashFiles('apps/web/package.json') != ''
         run: npm run e2e
 
+      # Still build the image when e2e or an earlier step failed, so a
+      # Dockerfile regression is not hidden behind another failure.
       - name: Build API Docker image
+        if: ${{ !cancelled() }}
         run: docker build -f apps/api/Dockerfile .
 
       - name: Upload Playwright report
@@ -121,6 +126,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-results-desktop
-          path: apps/desktop/test-results/
+          path: |
+            apps/desktop/playwright-report/
+            apps/desktop/test-results/
           retention-days: 7
           if-no-files-found: ignore

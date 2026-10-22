@@ -15,6 +15,7 @@ const rootScripts = JSON.parse(readFileSync(new URL('package.json', repoRoot), '
 // so every step that needs one of them only runs when its package.json exists.
 const WEB_GATE = "hashFiles('apps/web/package.json') != ''";
 const DESKTOP_GATE = "hashFiles('apps/desktop/package.json') != ''";
+const DOCKER_BUILD = 'docker build -f apps/api/Dockerfile .';
 
 function job(name) {
   const found = workflow.jobs?.[name];
@@ -54,9 +55,10 @@ function assertNodeSetup(jobDef) {
   assert.equal(options.cache, 'npm');
 }
 
-test('runs on a push to any branch and on pull requests', () => {
+test('runs on a push to any branch and on pull requests into main', () => {
   assert.deepEqual(workflow.on.push, { branches: ['**'] });
-  assert.ok('pull_request' in workflow.on, 'pull_request trigger is missing');
+  // Branch pushes already run CI; PRs into main add the merge-result run.
+  assert.deepEqual(workflow.on.pull_request, { branches: ['main'] });
 });
 
 test('cancels superseded runs except on main, so every main commit keeps a result', () => {
@@ -89,11 +91,16 @@ test('web-api only runs the web steps when apps/web exists', () => {
   const webCommands = ['npm run build -w @oc/web', 'npx playwright install --with-deps chromium', 'npm run e2e'];
   for (const command of commands(webApi)) {
     const expected = webCommands.includes(command) ? WEB_GATE : undefined;
+    if (command === DOCKER_BUILD) continue;
     assert.equal(stepByRun(webApi, command).if, expected, `wrong condition on "${command}"`);
   }
   const notice = webApi.steps.find(isNotice);
   assert.ok(notice, 'skip notice for apps/web is missing');
   assert.equal(notice.if, "hashFiles('apps/web/package.json') == ''");
+});
+
+test('web-api still builds the API image when an earlier step fails', () => {
+  assert.equal(stepByRun(job('web-api'), DOCKER_BUILD).if, '${{ !cancelled() }}');
 });
 
 test('web-api uploads the Playwright report for 7 days when the web e2e fails', () => {
@@ -163,5 +170,7 @@ test('desktop uploads the Playwright results for 7 days when the Electron e2e fa
   assert.ok(upload, 'actions/upload-artifact is missing');
   assert.equal(upload.if, "failure() && steps.desktop-e2e.outcome == 'failure'");
   assert.match(upload.with.path, /apps\/desktop\/test-results\//);
+  assert.match(upload.with.path, /apps\/desktop\/playwright-report\//);
+  assert.equal(upload.with['if-no-files-found'], 'ignore');
   assert.equal(upload.with['retention-days'], 7);
 });
