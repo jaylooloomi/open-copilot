@@ -14,6 +14,9 @@ export const SHARE_DIALOG_TITLE = '分享匯出的筆記';
 export function createCapacitorFileSaver(): FileSaver {
   return {
     async save(filename, data) {
+      // Callers pass a plain name (core's toFilename strips separators); refuse anything that
+      // could step outside <cache>/exports.
+      if (!isPlainFilename(filename)) throw new Error(`無效的檔名：${filename}`);
       // Native Filesystem.writeFile takes binary data only as base64 (Blob is web-only).
       const { uri } = await Filesystem.writeFile({
         path: `${EXPORT_DIR}/${filename}`,
@@ -49,9 +52,15 @@ export function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-/** Android's Share plugin rejects with "Share canceled"; navigator.share with an AbortError. */
+function isPlainFilename(filename: string): boolean {
+  return filename !== '' && filename !== '.' && filename !== '..' && !/[\\/]/.test(filename);
+}
+
+/** Android's Share plugin rejects with exactly "Share canceled"; navigator.share with an AbortError. */
 function isShareCancel(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const { name, message } = error as { name?: unknown; message?: unknown };
-  return name === 'AbortError' || (typeof message === 'string' && /cancel/i.test(message));
+  return (
+    name === 'AbortError' || (typeof message === 'string' && /^share canceled$/i.test(message.trim()))
+  );
 }

@@ -76,6 +76,22 @@ describe('createCapacitorFileSaver', () => {
     await expect(saving).rejects.not.toMatchObject({ name: 'AbortError' });
   });
 
+  it('does not treat unrelated errors that mention "cancel" as a user cancel', async () => {
+    share.mockRejectedValueOnce(new Error('Activity was cancelled by the system: FileProvider error'));
+    const saving = createCapacitorFileSaver().save('a.txt', new Blob(['a']));
+    await expect(saving).rejects.toThrow('FileProvider error');
+    await expect(saving).rejects.not.toMatchObject({ name: 'AbortError' });
+  });
+
+  it.each(['../a.txt', 'sub/a.txt', 'sub\\a.txt', '..', '.', ''])(
+    'refuses a filename that is not a plain file name (%j) without writing anything',
+    async (filename) => {
+      await expect(createCapacitorFileSaver().save(filename, new Blob(['a']))).rejects.toThrow();
+      expect(writeFile).not.toHaveBeenCalled();
+      expect(share).not.toHaveBeenCalled();
+    },
+  );
+
   it('does not open the share sheet when the file cannot be written', async () => {
     writeFile.mockRejectedValueOnce(new Error('No space left on device'));
     await expect(createCapacitorFileSaver().save('a.txt', new Blob(['a']))).rejects.toThrow(
