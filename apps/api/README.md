@@ -17,7 +17,7 @@ Hono + Node 的小型 API：接收前端錄音切好的單段音訊，交給轉�
 | 401 | `unauthorized` | 缺少或錯誤的存取金鑰 |
 | 404 | `bad_request` | 未知路徑或方法（例如 `GET /transcribe`、後端網址多了路徑前綴） |
 | 413 | `payload_too_large` | 音訊超過 5MB |
-| 429 | `rate_limited` | 同一把金鑰每分鐘超過 60 次，或轉寫服務（Groq／OpenAI）回 429。回應帶 `Retry-After`（秒）：上游 429 時轉傳上游的值，上游沒給就帶 `10` |
+| 429 | `rate_limited` | 同一把金鑰每分鐘超過 60 次，或轉寫服務（Groq／OpenAI）回 429。回應帶 `Retry-After`（秒）：上游 429 時轉傳上游的值（秒數或 HTTP 日期皆可，取整數秒並限制在 1–300 秒），上游沒給或看不懂就帶 `10` |
 | 500 | `upstream_error` | 伺服器未預期的錯誤 |
 | 502 | `upstream_error` | 轉寫服務失敗（429 以外，例如金鑰錯誤、服務故障、逾時） |
 
