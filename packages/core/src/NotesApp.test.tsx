@@ -156,10 +156,9 @@ describe('NotesApp', () => {
 
     await user.click(screen.getByRole('button', { name: '開啟筆記清單' }));
     expect(app).toHaveAttribute('data-drawer-open', 'true');
-    expect(screen.getByRole('button', { name: '關閉筆記清單' })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
+    expect(
+      within(screen.getByRole('main')).getByRole('button', { name: '關閉筆記清單' }),
+    ).toHaveAttribute('aria-expanded', 'true');
 
     await user.click(within(list()).getByRole('button', { name: /^A/ }));
     expect(app).toHaveAttribute('data-drawer-open', 'false');
@@ -188,6 +187,26 @@ describe('NotesApp', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('does not report a failed delete when only storing the replacement note fails', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { user, storage, notes } = await renderApp([note('a', 'A', 'Alpha', 1)]);
+    storage.put.mockRejectedValueOnce(new Error('quota'));
+    const watch = watchUnhandledRejections();
+
+    await user.click(screen.getByRole('button', { name: '刪除「A」' }));
+
+    await waitFor(() =>
+      expect(consoleError).toHaveBeenCalledWith('Failed to save note', expect.any(Error)),
+    );
+    await watch.stop();
+    expect(watch.reasons).toEqual([]);
+    expect(notes.has('a')).toBe(false);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(1);
+    expect(titleInput()).toHaveValue('');
+  });
+
   it('reports the failure when creating a note fails, and clears it on a successful retry', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { user, storage } = await renderApp([note('a', 'A', 'Alpha', 1)]);
@@ -208,20 +227,19 @@ describe('NotesApp', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('moves focus into the open drawer, keeps it there, and closes on Escape', async () => {
+  // jsdom and user-event ignore `inert`, so this only checks that <main> gets the attribute; the
+  // real Tab trap is covered by the narrow-screen browser e2e.
+  it('moves focus into the open drawer, makes the page inert, and closes on Escape', async () => {
     const { user } = await renderApp([note('a', 'A', 'Alpha', 1), note('b', 'B', 'Beta', 2)]);
     const app = document.querySelector('.oc-app');
-    const sidebar = document.getElementById('oc-sidebar');
     const main = screen.getByRole('main');
     expect(main).not.toHaveAttribute('inert');
 
     await user.click(screen.getByRole('button', { name: '開啟筆記清單' }));
 
-    // Focus lands on the active note, and the page behind the drawer is out of reach.
+    // Focus lands on the active note, and the page behind the drawer is marked inert.
     expect(within(list()).getByRole('button', { name: /^B/ })).toHaveFocus();
     expect(main).toHaveAttribute('inert');
-    await user.tab();
-    expect(sidebar).toContainElement(document.activeElement as HTMLElement);
 
     await user.keyboard('{Escape}');
 
@@ -243,11 +261,14 @@ describe('NotesApp', () => {
 
   it('offers screen reader users a dismiss button inside the open drawer', async () => {
     const { user } = await renderApp([note('a', 'A', 'Alpha', 1)]);
-    expect(screen.queryByRole('button', { name: '關閉' })).not.toBeInTheDocument();
+    const sidebar = () => document.getElementById('oc-sidebar') as HTMLElement;
+    expect(
+      within(sidebar()).queryByRole('button', { name: '關閉筆記清單' }),
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '開啟筆記清單' }));
-    const dismiss = screen.getByRole('button', { name: '關閉' });
-    expect(document.getElementById('oc-sidebar')).toContainElement(dismiss);
+    // Same name as the menu button, which is out of reach behind the inert page.
+    const dismiss = within(sidebar()).getByRole('button', { name: '關閉筆記清單' });
     // Keyboard users close with Escape; the button stays out of the Tab order.
     expect(dismiss).toHaveAttribute('tabindex', '-1');
 

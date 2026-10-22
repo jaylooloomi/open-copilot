@@ -283,6 +283,11 @@ button {
   color: var(--oc-placeholder);
 }
 
+/* The title has no border or outline, so keyboard focus needs its own cue (WCAG 2.4.7). */
+.oc-title:focus-visible {
+  box-shadow: inset 0 -2px 0 var(--oc-primary);
+}
+
 .oc-editor .ProseMirror {
   min-height: 50vh;
   outline: none;

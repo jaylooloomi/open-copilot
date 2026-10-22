@@ -39,6 +39,7 @@ async function setup(initial: Note[] = []) {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('useNotes', () => {
@@ -322,6 +323,29 @@ describe('useNotes', () => {
     expect(result.current.activeNote?.id).toBe('a');
     expect(notes.get(freshId)?.title).toBe('new text');
     expect(notes.has('a')).toBe(true);
+  });
+
+  it('deleting the last note resolves even when its replacement cannot be stored', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { result, storage, notes } = await setup([note('a', 1)]);
+    storage.put.mockRejectedValueOnce(new Error('quota'));
+    await act(async () => {
+      await result.current.deleteNote('a');
+    });
+
+    // The note is gone, so there is nothing to retry: only the failed store is logged.
+    expect(notes.has('a')).toBe(false);
+    expect(result.current.notes).toHaveLength(1);
+    const freshId = result.current.activeNote?.id ?? '';
+    expect(freshId).not.toBe('a');
+    expect(consoleError).toHaveBeenCalledWith('Failed to save note', expect.any(Error));
+
+    // The replacement stays in memory, and its next edit stores it.
+    act(() => result.current.updateActive({ title: 'later' }));
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(notes.get(freshId)?.title).toBe('later');
   });
 
   it('flushes the pending save on unmount', async () => {

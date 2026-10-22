@@ -159,7 +159,14 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
           saver.cancel();
           pendingRef.current = undefined;
         }
-        await storage.put(latest);
+        // The note is already deleted, so a failed store of the replacement must not reject:
+        // there is nothing to retry. Log it like a failed autosave; the replacement stays in
+        // memory and its next edit stores it (an empty list also gets a fresh note on load).
+        try {
+          await storage.put(latest);
+        } catch (error) {
+          console.error('Failed to save note', error);
+        }
       }
     },
     [storage, now, saver, commit],

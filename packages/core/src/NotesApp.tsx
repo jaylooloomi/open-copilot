@@ -1,9 +1,10 @@
 import { EMPTY_DOC } from '@oc/shared';
-import { Menu, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Menu } from 'lucide-react';
+import { useState } from 'react';
 import { ActionBar } from './components/ActionBar';
 import { Banner } from './components/Banner';
 import { NoteList } from './components/NoteList';
+import { StorageAlert } from './components/StorageAlert';
 import { Editor } from './editor/Editor';
 import { TitleInput } from './editor/TitleInput';
 import { Toolbar } from './editor/Toolbar';
@@ -11,10 +12,8 @@ import { useNoteEditor } from './editor/useNoteEditor';
 import { displayTitle } from './notes/noteStore';
 import { useNotes } from './notes/useNotes';
 import { usePlatform } from './platform/PlatformContext';
+import { useNoteDrawer } from './useNoteDrawer';
 import './styles/app.css';
-
-/** Same breakpoint as the drawer rules in styles/app.css. */
-const DRAWER_MEDIA_QUERY = '(max-width: 767.98px)';
 
 export function NotesApp() {
   const { storage } = usePlatform();
@@ -27,11 +26,13 @@ export function NotesApp() {
     deleteNote,
     updateActive,
   } = useNotes(storage);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const {
+    open: drawerOpen,
+    setOpen: setDrawerOpen,
+    sidebarRef,
+    menuButtonRef,
+  } = useNoteDrawer();
   const [storageError, setStorageError] = useState<string | undefined>(undefined);
-  const sidebarRef = useRef<HTMLElement>(null);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const drawerWasOpen = useRef(false);
 
   // Called unconditionally (rules of hooks); recreated whenever the active note changes.
   const editor = useNoteEditor({
@@ -39,47 +40,6 @@ export function NotesApp() {
     content: activeNote?.content ?? EMPTY_DOC,
     onChange: (content) => updateActive({ content }),
   });
-
-  // The open drawer covers the page and <main> is inert: put focus inside the drawer, and when
-  // it closes hand focus back to the menu button instead of leaving it on a hidden element.
-  useEffect(() => {
-    const wasOpen = drawerWasOpen.current;
-    drawerWasOpen.current = drawerOpen;
-    const sidebar = sidebarRef.current;
-    if (drawerOpen && !wasOpen) {
-      const target =
-        sidebar?.querySelector<HTMLElement>('[aria-current="true"]') ??
-        sidebar?.querySelector<HTMLElement>('button');
-      target?.focus();
-    } else if (!drawerOpen && wasOpen) {
-      const active = document.activeElement;
-      if (!active || active === document.body || sidebar?.contains(active)) {
-        menuButtonRef.current?.focus();
-      }
-    }
-  }, [drawerOpen]);
-
-  useEffect(() => {
-    if (!drawerOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) setDrawerOpen(false);
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [drawerOpen]);
-
-  // The drawer only exists on narrow screens: if the window grows past the breakpoint while it
-  // is open, close it so <main> does not stay inert next to the regular sidebar.
-  useEffect(() => {
-    if (!drawerOpen || typeof window.matchMedia !== 'function') return;
-    const narrow = window.matchMedia(DRAWER_MEDIA_QUERY);
-    const closeIfWide = () => {
-      if (!narrow.matches) setDrawerOpen(false);
-    };
-    closeIfWide();
-    narrow.addEventListener('change', closeIfWide);
-    return () => narrow.removeEventListener('change', closeIfWide);
-  }, [drawerOpen]);
 
   if (loading || !activeNote) {
     return (
@@ -91,8 +51,9 @@ export function NotesApp() {
 
   const closeDrawer = () => setDrawerOpen(false);
 
-  // useNotes rolls a failed delete back and rejects; a failed create rejects without adding
-  // the note. Either way the user has to be told, and the rejection must not go unhandled.
+  // A failed create rejects without adding the note; deleteNote rejects only when the remove
+  // failed, after putting the note back. Either way the user has to be told, and the rejection
+  // must not go unhandled.
   const reportFailure = (message: string, logMessage: string) => (error: unknown) => {
     console.error(logMessage, error);
     setStorageError(message);
@@ -133,7 +94,7 @@ export function NotesApp() {
             tabIndex={-1}
             onClick={closeDrawer}
           >
-            關閉
+            關閉筆記清單
           </button>
         )}
       </aside>
@@ -167,19 +128,7 @@ export function NotesApp() {
       </main>
 
       {storageError && (
-        // Outside <main> so it is not inert, and above the drawer, since a delete fails there.
-        <div className="oc-storage-alert" role="alert">
-          <p>{storageError}</p>
-          <button
-            type="button"
-            className="oc-alert-dismiss"
-            aria-label="關閉錯誤訊息"
-            title="關閉錯誤訊息"
-            onClick={() => setStorageError(undefined)}
-          >
-            <X size={16} aria-hidden="true" />
-          </button>
-        </div>
+        <StorageAlert message={storageError} onDismiss={() => setStorageError(undefined)} />
       )}
     </div>
   );
