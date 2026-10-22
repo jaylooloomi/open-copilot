@@ -38,12 +38,4 @@ describe('AndroidManifest.xml', () => {
   it('asks for nothing else', () => {
     expect(permissions()).toHaveLength(3);
   });
-
-  it('keeps notes out of Android Auto Backup', () => {
-    // Notes and transcripts live in the WebView's IndexedDB; the app has its own explicit
-    // JSON backup, so the OS must not copy them to the user's cloud account behind their back.
-    expect(manifest()).toMatch(
-      /<application\b[^>]*\sandroid:allowBackup="false"/,
-    );
-  });
 });

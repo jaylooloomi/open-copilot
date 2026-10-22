@@ -15,8 +15,13 @@ export function createCapacitorFileSaver(): FileSaver {
   return {
     async save(filename, data) {
       // Callers pass a plain name (core's toFilename strips separators); refuse anything that
-      // could step outside <cache>/exports.
-      if (!isPlainFilename(filename)) throw new Error(`無效的檔名：${filename}`);
+      // could step outside <cache>/exports. Internal message: NoteActions shows its own text.
+      if (!isPlainFilename(filename)) throw new Error(`Invalid export filename: ${filename}`);
+      // Drop earlier exports so note contents do not pile up in the cache. Cleared before the next
+      // write rather than after Share resolves, which could race the receiving app's read.
+      await Filesystem.rmdir({ path: EXPORT_DIR, directory: Directory.Cache, recursive: true }).catch(
+        () => undefined, // no earlier exports folder
+      );
       // Native Filesystem.writeFile takes binary data only as base64 (Blob is web-only).
       const { uri } = await Filesystem.writeFile({
         path: `${EXPORT_DIR}/${filename}`,

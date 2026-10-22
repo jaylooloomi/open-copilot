@@ -5,13 +5,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { selectPlatform } from './selectPlatform';
 
 // Outside the Android app Capacitor reports a web platform; tests opt in per call.
-const { isNativePlatform, writeFile, share } = vi.hoisted(() => ({
+const { isNativePlatform, writeFile, rmdir, share } = vi.hoisted(() => ({
   isNativePlatform: vi.fn(() => false),
   writeFile: vi.fn(async (_options: WriteFileOptions) => ({ uri: 'file:///cache/exports/筆記.md' })),
+  rmdir: vi.fn(async () => undefined),
   share: vi.fn(async (_options: ShareOptions) => ({})),
 }));
 vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform } }));
-vi.mock('@capacitor/filesystem', () => ({ Directory: { Cache: 'CACHE' }, Filesystem: { writeFile } }));
+vi.mock('@capacitor/filesystem', () => ({ Directory: { Cache: 'CACHE' }, Filesystem: { writeFile, rmdir } }));
 vi.mock('@capacitor/share', () => ({ Share: { share } }));
 
 // The guard adds 'pause' and 'visibilitychange' listeners to the real jsdom document, and

@@ -1,4 +1,4 @@
-import type { WriteFileOptions } from '@capacitor/filesystem';
+import type { RmdirOptions, WriteFileOptions } from '@capacitor/filesystem';
 import type { ShareOptions } from '@capacitor/share';
 import { Buffer } from 'node:buffer';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -10,15 +10,16 @@ import {
 } from './capacitorFileSaver';
 
 // The native plugins do not exist in jsdom; replace them with spies.
-const { CACHE_URI, writeFile, share } = vi.hoisted(() => {
+const { CACHE_URI, writeFile, rmdir, share } = vi.hoisted(() => {
   const uri = 'file:///data/user/0/com.think4u.opencopilot/cache/exports/%E9%80%B1.md';
   return {
     CACHE_URI: uri,
     writeFile: vi.fn(async (_options: WriteFileOptions) => ({ uri })),
+    rmdir: vi.fn(async (_options: RmdirOptions) => undefined),
     share: vi.fn(async (_options: ShareOptions) => ({ activityType: 'com.google.android.gm' })),
   };
 });
-vi.mock('@capacitor/filesystem', () => ({ Directory: { Cache: 'CACHE' }, Filesystem: { writeFile } }));
+vi.mock('@capacitor/filesystem', () => ({ Directory: { Cache: 'CACHE' }, Filesystem: { writeFile, rmdir } }));
 vi.mock('@capacitor/share', () => ({ Share: { share } }));
 
 const base64 = (bytes: string | Uint8Array) =>
@@ -27,6 +28,7 @@ const base64 = (bytes: string | Uint8Array) =>
 afterEach(() => {
   // Back to the implementations above, dropping unused mock*Once values.
   writeFile.mockReset();
+  rmdir.mockReset();
   share.mockReset();
 });
 
@@ -91,6 +93,28 @@ describe('createCapacitorFileSaver', () => {
       expect(share).not.toHaveBeenCalled();
     },
   );
+
+  it('clears earlier exports from the cache before writing the new one', async () => {
+    await createCapacitorFileSaver().save('a.txt', new Blob(['a']));
+
+    expect(rmdir).toHaveBeenCalledWith({ path: EXPORT_DIR, directory: 'CACHE', recursive: true });
+    expect(rmdir.mock.invocationCallOrder[0]).toBeLessThan(writeFile.mock.invocationCallOrder[0]);
+  });
+
+  it('still exports when there is no earlier exports folder to clear', async () => {
+    rmdir.mockRejectedValueOnce(new Error('Folder does not exist.'));
+    await createCapacitorFileSaver().save('a.txt', new Blob(['a']));
+
+    expect(writeFile).toHaveBeenCalledTimes(1);
+    expect(share).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a non-plain filename with an internal (never shown) English message', async () => {
+    await expect(createCapacitorFileSaver().save('../a.txt', new Blob(['a']))).rejects.toThrow(
+      'Invalid export filename: ../a.txt',
+    );
+    expect(rmdir).not.toHaveBeenCalled();
+  });
 
   it('does not open the share sheet when the file cannot be written', async () => {
     writeFile.mockRejectedValueOnce(new Error('No space left on device'));
