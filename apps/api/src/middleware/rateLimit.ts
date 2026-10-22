@@ -44,6 +44,7 @@ export function rateLimit({ limit, windowMs, now = Date.now }: RateLimitOptions)
     }
 
     if (bucket.count >= limit) {
+      // 走到這裡時 t 必在窗內，ceil 已 ≥ 1；Math.max 只是防禦，避免日後改了開窗條件時回 Retry-After: 0。
       const retryAfterSeconds = Math.max(1, Math.ceil((bucket.windowStart + windowMs - t) / 1000));
       c.header('Retry-After', String(retryAfterSeconds));
       return c.json({ error: 'rate_limited' } satisfies ApiErrorBody, 429);

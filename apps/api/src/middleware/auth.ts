@@ -34,6 +34,7 @@ export function bearerAuth(accessKeys: string[]) {
       }
     }
 
+    // 建構時已拒絕空字串金鑰，token === '' 理論上不會比對成功；保留作為縱深防禦，以免日後拿掉上面的檢查。
     if (token === '' || matchedKey === undefined) {
       c.header('WWW-Authenticate', 'Bearer');
       return c.json({ error: 'unauthorized' } satisfies ApiErrorBody, 401);

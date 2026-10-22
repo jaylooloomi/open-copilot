@@ -30,9 +30,11 @@ CORS：只允許 `ALLOWED_ORIGINS` 內的來源，並公開 `Retry-After` 標頭
 | 名稱 | 必填 | 說明 |
 |---|---|---|
 | `OPENAI_API_KEY` | 是 | OpenAI API 金鑰 |
-| `ACCESS_KEYS` | 是 | 存取金鑰，逗號分隔 |
-| `ALLOWED_ORIGINS` | 否 | CORS 允許來源，逗號分隔；預設 `http://localhost:5173,https://localhost,capacitor://localhost,app://bundle` |
+| `ACCESS_KEYS` | 是 | 存取金鑰，逗號分隔。每把請用至少 16 字元的隨機值（例如 `node -e "console.log(crypto.randomUUID())"`）；較短的金鑰仍可啟動，但會印出警告 |
+| `ALLOWED_ORIGINS` | 否 | CORS 允許來源，逗號分隔；預設 `http://localhost:5173,https://localhost,capacitor://localhost,app://bundle`。每項只能是 `scheme://host[:port]`（例如 `https://notes.example.com`），不可有路徑或結尾斜線；格式不對會拒絕啟動 |
 | `PORT` | 否 | 監聽埠，預設 `8787` |
+
+伺服器固定連 `https://api.openai.com/v1`：OpenAI SDK 平常會讀的 `OPENAI_BASE_URL`、`OPENAI_ORG_ID`、`OPENAI_PROJECT_ID` 一律忽略，避免主機上為別的工具設定的值把音訊與金鑰送到別處。
 
 ## 本機執行
 
@@ -84,7 +86,8 @@ docker run --rm -p 8787:8787 --env-file apps/api/.env open-copilot-api
 ## 部署注意
 
 - 放在 HTTPS 之後（Fly.io／Render 預設提供）；存取金鑰走 `Authorization` 標頭，不可用明文 HTTP 對外。
+- 錯誤金鑰的嘗試不計入限流（限流依已通過驗證的金鑰計數），所以存取金鑰必須是長的隨機值，不能用 `dev-key` 這類好猜的字串對外。
 - `ALLOWED_ORIGINS` 要加上網頁正式網域。
 - 限流計數存在記憶體，只適用單一實例；要水平擴充需改成共用儲存（例如 Redis）。
-- 每個 `/transcribe` 只呼叫 OpenAI 一次（不重試）、單次逾時 25 秒，重試交給前端（前端每個請求 30 秒逾時）。反向代理的請求逾時請設在 30 秒以上，否則代理會比本程式先放棄。
-- 要換轉寫服務（Groq、Azure…）時，實作 `src/transcriber/types.ts` 的 `Transcriber` 介面並在 `src/server.ts` 換掉即可。
+- 每個 `/transcribe` 只呼叫 OpenAI 一次（不重試）、單次逾時 25 秒，重試交給前端（前端每個請求 30 秒逾時）。用戶端斷線或逾時放棄時，進行中的 OpenAI 呼叫會一併取消，不會和前端的重試疊在一起。反向代理的請求逾時請設在 30 秒以上，否則代理會比本程式先放棄。
+- 要換轉寫服務（Groq、Azure…）時，實作 `src/transcriber/types.ts` 的 `Transcriber` 介面（把 `signal` 轉給上游呼叫，斷線時才會取消）並在 `src/server.ts` 換掉即可。

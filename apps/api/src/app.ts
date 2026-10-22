@@ -77,12 +77,19 @@ export function createApp({ transcriber, accessKeys, allowedOrigins, now = Date.
         return c.json({ error: 'bad_request' } satisfies ApiErrorBody, 400);
       }
 
+      // 用戶端斷線（前端逾時、離開頁面）時 node-server 會 abort 這個 signal，上游呼叫跟著取消。
+      const signal = c.req.raw.signal;
       let rawText: string;
       try {
-        rawText = await transcriber.transcribe({ file: audio, prompt });
+        rawText = await transcriber.transcribe({ file: audio, prompt, signal });
       } catch (err) {
-        // 只記錄錯誤訊息，不記錄金鑰或音訊內容。
-        console.error('[transcribe] upstream error:', err instanceof Error ? err.message : String(err));
+        if (signal.aborted) {
+          // 回應已經沒人收；記一行說明，避免被誤認成上游故障。
+          console.warn('[transcribe] client disconnected; upstream call cancelled');
+        } else {
+          // 只記錄錯誤訊息，不記錄金鑰或音訊內容。
+          console.error('[transcribe] upstream error:', err instanceof Error ? err.message : String(err));
+        }
         return c.json({ error: 'upstream_error' } satisfies ApiErrorBody, 502);
       }
 

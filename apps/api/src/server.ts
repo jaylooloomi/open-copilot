@@ -1,10 +1,13 @@
 import { serve } from '@hono/node-server';
 import { createApp } from './app';
-import { loadConfig } from './config';
+import { accessKeyWarning, loadConfig } from './config';
 import { createShutdown } from './shutdown';
 import { createOpenAITranscriber } from './transcriber/openaiTranscriber';
 
 const config = loadConfig(process.env);
+
+const keyWarning = accessKeyWarning(config.accessKeys);
+if (keyWarning) console.warn(keyWarning);
 
 const app = createApp({
   transcriber: createOpenAITranscriber(config.openaiApiKey),

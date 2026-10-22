@@ -40,6 +40,24 @@ describe('POST /transcribe validation', () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'bad_request' });
   });
+
+  it('returns 400 (not a retryable 500) for a malformed multipart body', async () => {
+    // parseBody 在這裡會丟錯；沒接住的話會落到 onError 變成 500 upstream_error，M3b 會當成上游錯誤重試。
+    const { app, transcriber } = createTestApp();
+    const res = await app.request('/transcribe', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TEST_KEY}`,
+        Origin: ALLOWED_ORIGIN,
+        'Content-Type': 'multipart/form-data; boundary=xyz',
+      },
+      body: 'garbage',
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'bad_request' });
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ALLOWED_ORIGIN);
+    expect(transcriber.transcribe).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /transcribe size limit', () => {

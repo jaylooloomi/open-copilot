@@ -1,6 +1,7 @@
 import type OpenAI from 'openai';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  OPENAI_BASE_URL,
   OPENAI_MAX_RETRIES,
   OPENAI_TIMEOUT_MS,
   PROMPT_PREFIX,
@@ -38,14 +39,28 @@ describe('createOpenAITranscriber', () => {
 
     expect(text).toBe('大家好');
     expect(create).toHaveBeenCalledTimes(1);
-    expect(create).toHaveBeenCalledWith({
-      file,
-      model: TRANSCRIBE_MODEL,
-      language: 'zh',
-      prompt: '以下是繁體中文的語音內容。前文',
-      response_format: 'json',
-    });
+    expect(create).toHaveBeenCalledWith(
+      {
+        file,
+        model: TRANSCRIBE_MODEL,
+        language: 'zh',
+        prompt: '以下是繁體中文的語音內容。前文',
+        response_format: 'json',
+      },
+      { signal: undefined },
+    );
     expect(TRANSCRIBE_MODEL).toBe('gpt-4o-mini-transcribe');
+  });
+
+  it('forwards the abort signal so a disconnected client cancels the billed upstream call', async () => {
+    const { client, create } = createFakeClient(async () => ({ text: '大家好' }));
+    const transcriber = createOpenAITranscriber('sk-test', client);
+    const controller = new AbortController();
+
+    await transcriber.transcribe({ file, prompt: '', signal: controller.signal });
+
+    expect(create.mock.calls[0]![1]).toEqual({ signal: controller.signal });
+    expect((create.mock.calls[0]![1] as { signal: AbortSignal }).signal).toBe(controller.signal);
   });
 
   it('propagates client errors', async () => {
@@ -67,5 +82,26 @@ describe('createOpenAITranscriber', () => {
 
     const transcriber = createOpenAITranscriber('sk-test');
     expect(typeof transcriber.transcribe).toBe('function');
+  });
+});
+
+describe('createOpenAIClient environment isolation', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('always talks to api.openai.com, ignoring OPENAI_BASE_URL / OPENAI_ORG_ID / OPENAI_PROJECT_ID on the host', () => {
+    // SDK 預設會讀這些環境變數；主機上若為別的工具設了 OPENAI_BASE_URL，音訊與金鑰會被送到那裡。
+    vi.stubEnv('OPENAI_BASE_URL', 'http://127.0.0.1:18999/v1');
+    vi.stubEnv('OPENAI_ORG_ID', 'org-other-tool');
+    vi.stubEnv('OPENAI_PROJECT_ID', 'proj-other-tool');
+
+    const client = createOpenAIClient('sk-test');
+
+    expect(client.baseURL).toBe(OPENAI_BASE_URL);
+    expect(OPENAI_BASE_URL).toBe('https://api.openai.com/v1');
+    expect(client.organization).toBeNull();
+    expect(client.project).toBeNull();
+    expect(client.apiKey).toBe('sk-test');
   });
 });
