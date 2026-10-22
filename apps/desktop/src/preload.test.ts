@@ -25,7 +25,9 @@ describe('preload', () => {
 
   it('forwards saveFile to the main process over oc:save-file', async () => {
     const bytes = new Uint8Array([1, 2, 3]);
+    vi.mocked(ipcRenderer.invoke).mockClear();
     await expect(bridge.saveFile('筆記.md', bytes)).resolves.toBe(true);
+    expect(ipcRenderer.invoke).toHaveBeenCalledTimes(1);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(SAVE_FILE_CHANNEL, '筆記.md', bytes);
   });
 });

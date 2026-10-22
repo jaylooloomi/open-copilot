@@ -43,6 +43,9 @@ export function createSaveFileHandler(deps: SaveFileDeps) {
     }
     // The renderer only suggests a name; it never picks the folder.
     const name = path.basename(filename.replaceAll('\\', '/'));
+    if (name.trim() === '' || name === '.' || name === '..') {
+      throw new TypeError('filename must name a file');
+    }
     const filter = FILTERS[path.extname(name).slice(1).toLowerCase()];
 
     const result = await deps.showSaveDialog({

@@ -65,6 +65,15 @@ describe('createSaveFileHandler', () => {
     }
   });
 
+  it.each(['..', '.', '/', '\\', 'a/..'])(
+    'rejects %j, which has no usable file name',
+    async (filename) => {
+      const { saveFile, showSaveDialog } = setup({ canceled: true });
+      await expect(saveFile(filename, bytes)).rejects.toThrow('filename must name a file');
+      expect(showSaveDialog).not.toHaveBeenCalled();
+    },
+  );
+
   it('rejects arguments that did not come from desktopFileSaver', async () => {
     const { saveFile, showSaveDialog } = setup({ canceled: true });
     await expect(saveFile('', bytes)).rejects.toThrow('filename must be a non-empty string');
