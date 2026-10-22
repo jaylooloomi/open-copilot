@@ -82,7 +82,7 @@ export function createApp({ transcriber, accessKeys, allowedOrigins, now = Date.
         rawText = await transcriber.transcribe({ file: audio, prompt });
       } catch (err) {
         // 只記錄錯誤訊息，不記錄金鑰或音訊內容。
-        console.error('[transcribe] upstream error:', err instanceof Error ? err.message : err);
+        console.error('[transcribe] upstream error:', err instanceof Error ? err.message : String(err));
         return c.json({ error: 'upstream_error' } satisfies ApiErrorBody, 502);
       }
 

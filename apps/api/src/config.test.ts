@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_ALLOWED_ORIGINS, loadConfig } from './config';
 
@@ -63,5 +65,11 @@ describe('loadConfig', () => {
     for (const port of ['0x1F90', '1e3', '3000.0', '+3000', '-1']) {
       expect(() => loadConfig({ ...base, PORT: port }), port).toThrow('PORT');
     }
+  });
+
+  it('refuses to start from an unedited copy of .env.example', () => {
+    // 範例檔不能帶可用的存取金鑰：只換掉 OPENAI_API_KEY 就上線時，伺服器必須拒絕啟動。
+    const example = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+    expect(() => loadConfig(parseEnv(example))).toThrow('ACCESS_KEYS');
   });
 });

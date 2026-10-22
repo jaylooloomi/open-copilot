@@ -82,6 +82,24 @@ describe('POST /transcribe upstream failure', () => {
     expect(await res.json()).toEqual({ error: 'upstream_error' });
     expect(consoleError).toHaveBeenCalledWith('[transcribe] upstream error:', 'OpenAI 500');
   });
+
+  it('logs a non-Error rejection as a string, never the raw value', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const rejection = { apiKey: 'sk-secret' };
+    const transcriber = {
+      transcribe: vi.fn<Transcriber['transcribe']>(async () => {
+        throw rejection;
+      }),
+    };
+    const { app } = createTestApp({ transcriber });
+
+    const res = await postTranscribe(app, transcribeForm());
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'upstream_error' });
+    expect(consoleError).toHaveBeenCalledWith('[transcribe] upstream error:', '[object Object]');
+    expect(consoleError.mock.calls.flat()).not.toContain(rejection);
+  });
 });
 
 describe('JSON fallbacks', () => {
@@ -100,7 +118,7 @@ describe('JSON fallbacks', () => {
     }
   });
 
-  it('answers an unexpected error with a JSON 500', async () => {
+  it('answers an unexpected error with a JSON 500 that keeps CORS headers', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     // 回傳非字串讓 handler 的 rawText.trim() 丟 TypeError——發生在轉寫的 try/catch 之外。
     const transcriber = {
@@ -108,11 +126,15 @@ describe('JSON fallbacks', () => {
     };
     const { app } = createTestApp({ transcriber });
 
-    const res = await postTranscribe(app, transcribeForm());
+    const res = await postTranscribe(app, transcribeForm(), {
+      Authorization: `Bearer ${TEST_KEY}`,
+      Origin: ALLOWED_ORIGIN,
+    });
 
     expect(res.status).toBe(500);
     expect(res.headers.get('Content-Type')).toMatch(/^application\/json/);
     expect(await res.json()).toEqual({ error: 'upstream_error' });
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ALLOWED_ORIGIN);
     expect(consoleError).toHaveBeenCalledWith('[api] unhandled error:', expect.any(String));
   });
 });
