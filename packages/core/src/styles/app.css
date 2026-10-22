@@ -178,6 +178,30 @@ button {
   color: var(--oc-primary);
 }
 
+.oc-banner-backup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.oc-banner-action {
+  padding: 4px 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--oc-gradient);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.oc-banner-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 /* ---------- toolbar ---------- */
 .oc-toolbar {
   /* Containing block for the palette popover on narrow screens (see the media query). */
