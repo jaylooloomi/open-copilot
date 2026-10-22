@@ -122,7 +122,31 @@ describe('createApiClient().transcribe', () => {
 
     expect((await pending).status).toBe(0);
   });
+
+  it('keeps the timeout running while the response body is read', async () => {
+    vi.useFakeTimers();
+    const { fetchImpl } = fakeFetch((_url, init) => stalledBody(init, 200));
+    const client = createApiClient({ baseUrl: 'https://api.test', accessKey: 'k', fetchImpl, timeoutMs: 5000 });
+
+    const pending = errorOf(client.transcribe({ audio: audio(), seq: 1, prompt: '', filename: 'a.webm' }));
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect((await pending).status).toBe(0);
+  });
 });
+
+/** Headers arrive at once, but the body never finishes until the request is aborted. */
+function stalledBody(init: RequestInit, status: number): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"seq":'));
+      init.signal?.addEventListener('abort', () =>
+        controller.error(new DOMException('aborted', 'AbortError')),
+      );
+    },
+  });
+  return new Response(stream, { status, headers: { 'Content-Type': 'application/json' } });
+}
 
 describe('createApiClient().health', () => {
   it('is true only for 200 { ok: true } from GET /health, without the key', async () => {
@@ -149,6 +173,21 @@ describe('createApiClient().health', () => {
       const client = createApiClient({ baseUrl: 'https://api.test', accessKey: 'k', fetchImpl });
       expect(await client.health()).toBe(false);
     }
+  });
+});
+
+describe('createApiClient().health with a stalled body', () => {
+  it('gives up after timeoutMs', async () => {
+    vi.useFakeTimers();
+    const { fetchImpl } = fakeFetch((_url, init) => stalledBody(init, 200));
+    const client = createApiClient({ baseUrl: 'https://api.test', accessKey: 'k', fetchImpl, timeoutMs: 5000 });
+
+    let settled: boolean | undefined;
+    const pending = client.health().then((ok) => (settled = ok));
+    await vi.advanceTimersByTimeAsync(5000);
+    await pending;
+
+    expect(settled).toBe(false);
   });
 });
 

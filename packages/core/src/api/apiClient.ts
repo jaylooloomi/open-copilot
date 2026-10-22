@@ -43,13 +43,18 @@ export interface ApiClientOptions {
 
 export const REQUEST_TIMEOUT_MS = 30_000;
 
-const API_ERROR_CODES: readonly string[] = [
-  'unauthorized',
-  'payload_too_large',
-  'rate_limited',
-  'bad_request',
-  'upstream_error',
-];
+// `Record` over the union makes the compiler flag a code added to or removed from @oc/shared.
+const API_ERROR_CODE_SET: Record<ApiErrorCode, true> = {
+  unauthorized: true,
+  payload_too_large: true,
+  rate_limited: true,
+  bad_request: true,
+  upstream_error: true,
+};
+
+function isApiErrorCode(value: unknown): value is ApiErrorCode {
+  return typeof value === 'string' && Object.hasOwn(API_ERROR_CODE_SET, value);
+}
 
 export function createApiClient({
   baseUrl,
@@ -60,13 +65,20 @@ export function createApiClient({
 }: ApiClientOptions): ApiClient {
   const root = baseUrl.trim().replace(/\/+$/, '');
 
-  async function send(path: string, init: RequestInit): Promise<Response> {
+  /** Fetches and reads the JSON body under one deadline, so a stalled body also times out. */
+  async function send(path: string, init: RequestInit): Promise<{ res: Response; body: unknown }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return await fetchImpl(`${root}${path}`, { ...init, signal: controller.signal });
-    } catch (cause) {
-      throw new ApiError('Network error', 0, { cause });
+      let res: Response;
+      try {
+        res = await fetchImpl(`${root}${path}`, { ...init, signal: controller.signal });
+      } catch (cause) {
+        throw new ApiError('Network error', 0, { cause });
+      }
+      const body = await readJson(res);
+      if (controller.signal.aborted) throw new ApiError('Network error', 0);
+      return { res, body };
     } finally {
       clearTimeout(timer);
     }
@@ -75,9 +87,8 @@ export function createApiClient({
   return {
     async health() {
       try {
-        const res = await send('/health', { method: 'GET' });
+        const { res, body } = await send('/health', { method: 'GET' });
         if (!res.ok) return false;
-        const body = await readJson(res);
         return isRecord(body) && body.ok === true;
       } catch {
         return false;
@@ -89,17 +100,13 @@ export function createApiClient({
       form.append('audio', audio, filename);
       form.append('seq', String(seq));
       form.append('prompt', prompt);
-      const res = await send('/transcribe', {
+      const { res, body } = await send('/transcribe', {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessKey}` },
         body: form,
       });
-      const body = await readJson(res);
       if (!res.ok) {
-        const code =
-          isRecord(body) && typeof body.error === 'string' && API_ERROR_CODES.includes(body.error)
-            ? (body.error as ApiErrorCode)
-            : undefined;
+        const code = isRecord(body) && isApiErrorCode(body.error) ? body.error : undefined;
         throw new ApiError(`Request failed with status ${res.status}`, res.status, {
           code,
           retryAfterMs: parseRetryAfter(res.headers.get('Retry-After')),
