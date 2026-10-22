@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLevel, type LevelSource } from '../recording/levelStore';
 import { formatElapsed, LEVEL_BARS, levelToBars } from '../recording/recordingDisplay';
 
@@ -34,12 +34,17 @@ export function RecordingStatus({ recording, startedAt, levels, transcribing, no
 
 function RecordingTimer({ startedAt, now }: { startedAt: number; now: () => number }) {
   const [elapsed, setElapsed] = useState(() => now() - startedAt);
+  // Read the clock through a ref, so a caller passing an inline `now` does not restart the interval.
+  const nowRef = useRef(now);
   useEffect(() => {
-    setElapsed(now() - startedAt);
+    nowRef.current = now;
+  });
+  useEffect(() => {
+    setElapsed(nowRef.current() - startedAt);
     // Recomputed from the clock, so a late tick never lets the timer drift.
-    const id = setInterval(() => setElapsed(now() - startedAt), 250);
+    const id = setInterval(() => setElapsed(nowRef.current() - startedAt), 250);
     return () => clearInterval(id);
-  }, [startedAt, now]);
+  }, [startedAt]);
   return (
     <span className="oc-rec-timer" role="timer" aria-label="錄音時間">
       {formatElapsed(elapsed)}

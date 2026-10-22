@@ -35,6 +35,21 @@ describe('RecordingStatus', () => {
     expect(timer()).toHaveTextContent('01:05');
   });
 
+  it('keeps one interval when the parent passes a new now function on each render', () => {
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    const { rerender } = render(
+      <RecordingStatus recording startedAt={START} transcribing={0} now={() => Date.now()} />,
+    );
+    rerender(<RecordingStatus recording startedAt={START} transcribing={0} now={() => Date.now()} />);
+    rerender(<RecordingStatus recording startedAt={START} transcribing={0} now={() => Date.now() + 2_000} />);
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(timer()).toHaveTextContent('00:03');
+    setIntervalSpy.mockRestore();
+  });
+
   it('includes the time that already passed since startedAt', () => {
     render(<RecordingStatus recording startedAt={START - 5_000} transcribing={0} />);
     expect(timer()).toHaveTextContent('00:05');
