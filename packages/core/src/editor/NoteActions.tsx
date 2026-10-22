@@ -22,32 +22,44 @@ export function NoteActions({ note }: { note: Note }) {
   const platform = usePlatform();
   const [status, setStatus] = useState('');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const mounted = useRef(true);
+  /** Id of the latest action; an older action that settles later is not shown. */
+  const latest = useRef(0);
 
-  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      clearTimeout(timer.current);
+    };
+  }, []);
 
-  const show = (message: string) => {
+  const show = (id: number, message: string) => {
+    if (!mounted.current || id !== latest.current) return;
     clearTimeout(timer.current);
     setStatus(message);
     if (message) timer.current = setTimeout(() => setStatus(''), STATUS_CLEAR_MS);
   };
 
   const copy = async () => {
+    const id = ++latest.current;
     try {
       await copyNote(note);
-      show(ACTION_MESSAGES.copied);
+      show(id, ACTION_MESSAGES.copied);
     } catch {
-      show(ACTION_MESSAGES.copyFailed);
+      show(id, ACTION_MESSAGES.copyFailed);
     }
   };
 
   const runExport = async (format: ExportFormat) => {
+    const id = ++latest.current;
     try {
       await exportNote(note, format, platform);
       // PDF ends in the browser's print dialog, which is its own feedback.
-      show(format === 'pdf' ? '' : ACTION_MESSAGES.exported[format]);
+      show(id, format === 'pdf' ? '' : ACTION_MESSAGES.exported[format]);
     } catch (error) {
       // A FileSaver throws AbortError when the user cancels its dialog: not a failure.
-      show(isAbortError(error) ? '' : ACTION_MESSAGES.exportFailed);
+      show(id, isAbortError(error) ? '' : ACTION_MESSAGES.exportFailed);
     }
   };
 

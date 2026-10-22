@@ -16,12 +16,18 @@ const NOTE: Note = { id: 'n1', title: '週會', content: EMPTY_DOC, createdAt: 1
 function setup({ canPrint = true } = {}) {
   const { platform: base } = createTestPlatform();
   const platform = { ...base, canPrint };
-  render(
+  const view = render(
     <PlatformProvider platform={platform}>
       <NoteActions note={NOTE} />
     </PlatformProvider>,
   );
-  return { platform, user: userEvent.setup() };
+  return { platform, view, user: userEvent.setup() };
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => (resolve = r));
+  return { promise, resolve };
 }
 
 async function exportAs(user: ReturnType<typeof userEvent.setup>, label: string) {
@@ -86,6 +92,7 @@ describe('NoteActions', () => {
     const { user } = setup({ canPrint: false });
     await user.click(screen.getByRole('button', { name: '匯出' }));
     expect(screen.queryByRole('menuitem', { name: 'PDF' })).not.toBeInTheDocument();
+    expect(exportNote).not.toHaveBeenCalled();
   });
 
   it('reports a failed export', async () => {
@@ -117,5 +124,49 @@ describe('NoteActions', () => {
     expect(screen.getByRole('status')).toHaveTextContent('已複製全文');
     act(() => vi.advanceTimersByTime(1));
     expect(screen.getByRole('status')).toHaveTextContent('');
+  });
+
+  it('restarts the clear timer when a second action finishes', async () => {
+    vi.useFakeTimers();
+    vi.mocked(copyNote).mockResolvedValue();
+    setup();
+
+    fireEvent.click(screen.getByRole('button', { name: '複製' }));
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(STATUS_CLEAR_MS - 1000));
+
+    fireEvent.click(screen.getByRole('button', { name: '複製' }));
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(STATUS_CLEAR_MS - 1));
+    expect(screen.getByRole('status')).toHaveTextContent('已複製全文');
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.getByRole('status')).toHaveTextContent('');
+  });
+
+  it('shows only the result of the latest action', async () => {
+    const slowExport = deferred();
+    vi.mocked(exportNote).mockReturnValue(slowExport.promise);
+    vi.mocked(copyNote).mockResolvedValue();
+    const { user } = setup();
+
+    await exportAs(user, 'Word');
+    await user.click(screen.getByRole('button', { name: '複製' }));
+    expect(screen.getByRole('status')).toHaveTextContent('已複製全文');
+
+    await act(async () => slowExport.resolve());
+    expect(screen.getByRole('status')).toHaveTextContent('已複製全文');
+  });
+
+  it('schedules no timer when an action settles after unmount', async () => {
+    vi.useFakeTimers();
+    const slowCopy = deferred();
+    vi.mocked(copyNote).mockReturnValue(slowCopy.promise);
+    const { view } = setup();
+
+    fireEvent.click(screen.getByRole('button', { name: '複製' }));
+    view.unmount();
+    await act(async () => slowCopy.resolve());
+
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
