@@ -28,7 +28,7 @@ open-copilot 的網頁入口（Vite + React）。所有畫面與邏輯都在 `pa
 ## 部署限制
 
 - **必須放在網域根目錄**（例如 `https://notes.example.com/`），不可放在子路徑（例如 `https://example.com/notes/`）。Vite `base` 維持預設 `/`，`index.html` 以 `/assets/...` 絕對路徑載入程式；桌面版（Electron）與 Android（Capacitor）也共用同一份建置產物，不要為了子路徑修改 `base`。
-- **必須是 HTTPS**。建立筆記用的 `crypto.randomUUID()` 與錄音用的麥克風只在安全環境（HTTPS 或 `localhost`）可用；用 `http://<區網 IP>` 開啟時建立不了第一篇筆記，畫面一直停在「載入中…」，Console 顯示 `Failed to load notes TypeError: crypto.randomUUID is not a function`。Vercel 與 Cloudflare Pages 預設就是 HTTPS。
+- **必須是 HTTPS**。建立筆記用的 `crypto.randomUUID()` 與錄音用的麥克風只在安全環境（HTTPS 或 `localhost`）可用；用 `http://<區網 IP>` 開啟時建立不了第一篇筆記，畫面顯示「無法載入筆記，請再試一次。」，Console 顯示 `Failed to load notes TypeError: crypto.randomUUID is not a function`。Vercel 與 Cloudflare Pages 預設就是 HTTPS。
 - **瀏覽器至少要 Chrome／Edge 98、Firefox 104、Safari 15.4（iOS 15.4）**。`vite.config.ts` 的 `build.target` 是 `es2022`，只轉換語法，不會補上瀏覽器缺少的 API，所以最低版本取下列各項中最高的：
   - `src/main.tsx` 的頂層 `await`（語法）：Chrome／Edge 89、Firefox 89、Safari 15。
   - 建立筆記用的 `structuredClone()`：Chrome／Edge 98、Firefox 94、Safari 15.4。
@@ -37,9 +37,10 @@ open-copilot 的網頁入口（Vite + React）。所有畫面與邏輯都在 `pa
 
   低於最低版本時的症狀：
   - 不支援頂層 `await` 的瀏覽器（早於 Chrome／Edge 89、Firefox 89、Safari 15）停在空白頁，Console 顯示語法錯誤。
-  - Chrome／Edge 89–97、Firefox 89–94、Safari 15.0–15.3 能載入程式，但第一次開啟時建立不了第一篇筆記，畫面一直停在「載入中…」，Console 顯示 `Failed to load notes`。
+  - Chrome／Edge 89–97、Firefox 89–94、Safari 15.0–15.3 能載入程式，但第一次開啟時建立不了第一篇筆記，畫面顯示「無法載入筆記，請再試一次。」，Console 顯示 `Failed to load notes`。
   - Firefox 95–103 畫面正常，但在內文每輸入一個字，Console 就出現 `findLast is not a function`，內文的修改不會存檔，重新整理後就不見。
 - **沒有前端路由**。整個 App 只有 `/` 一頁，不需要設定 SPA rewrite：Cloudflare Pages 在產物沒有 `404.html` 時會把未知路徑回成 `index.html`；Vercel 對未知路徑回 404，兩者都不影響使用。日後若加入前端路由，Vercel 要另外設定把所有路徑 rewrite 到 `/index.html`。
+- **不要同時在兩個分頁編輯**（v1 限制）。每個分頁各自保留一份筆記並整篇寫回，分頁之間不同步：在較舊的分頁改任何東西，會蓋掉另一個分頁對同一篇筆記的修改；在空的資料庫同時開兩個分頁，也會各建一篇空白筆記。
 - **筆記只存在使用者的瀏覽器**（IndexedDB，依網域區分）。換網域或改用預覽網址開啟，會看到另一份筆記；清除網站資料會刪除筆記。正式環境請固定一個網域（建議綁自訂網域）。
 
 ## 部署到 Vercel

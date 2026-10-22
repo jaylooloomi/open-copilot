@@ -1,5 +1,6 @@
 :root {
   --oc-primary: #c026d3;
+  --oc-primary-hover: #a21caf;
   --oc-primary-end: #ec4899;
   --oc-gradient: linear-gradient(135deg, var(--oc-primary) 0%, var(--oc-primary-end) 100%);
   --oc-bg: #ffffff;
@@ -47,6 +48,33 @@ button {
   color: var(--oc-muted);
 }
 
+/* Shown instead of the app when the notes cannot be loaded. */
+.oc-load-error {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  height: 100%;
+  padding: 16px;
+  color: #991b1b;
+  text-align: center;
+}
+
+.oc-load-error p {
+  margin: 0;
+}
+
+.oc-load-retry {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 999px;
+  background: var(--oc-gradient);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 /* ---------- layout ---------- */
 .oc-app {
   display: flex;
@@ -92,7 +120,7 @@ button {
   flex: 1;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
 }
 
@@ -131,6 +159,7 @@ button {
   color: var(--oc-muted);
   font-size: 13px;
   cursor: not-allowed;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* ---------- banner ---------- */
@@ -183,15 +212,23 @@ button {
   background: transparent;
   color: var(--oc-text);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .oc-tool:hover:not(:disabled) {
   background: var(--oc-active-bg);
 }
 
-.oc-tool.is-active {
+/* Listed after the hover rule and as specific, so a toggle that is on keeps its filled look
+   (and its white icon stays visible) while the pointer is still over it after the click. */
+.oc-tool.is-active,
+.oc-tool.is-active:hover:not(:disabled) {
   background: var(--oc-primary);
   color: #ffffff;
+}
+
+.oc-tool.is-active:hover:not(:disabled) {
+  background: var(--oc-primary-hover);
 }
 
 .oc-tool:disabled {
@@ -202,11 +239,21 @@ button {
 .oc-block-select {
   height: 32px;
   padding: 0 8px;
-  border: 1px solid var(--oc-border);
+  border: none;
   border-radius: 8px;
   background: var(--oc-bg);
   color: var(--oc-text);
   font: inherit;
+  cursor: pointer;
+}
+
+.oc-block-select:hover {
+  background: var(--oc-hover);
+}
+
+.oc-block-select:focus-visible {
+  outline: 2px solid var(--oc-primary);
+  outline-offset: 1px;
 }
 
 .oc-palette {
@@ -244,6 +291,7 @@ button {
   border-radius: 50%;
   box-shadow: 0 0 0 1px var(--oc-border);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .oc-swatch[aria-pressed='true'] {
@@ -270,7 +318,9 @@ button {
 .oc-title {
   width: 100%;
   padding: 0 0 12px;
+  margin-bottom: 16px;
   border: none;
+  border-bottom: 1px solid var(--oc-border);
   outline: none;
   background: transparent;
   color: var(--oc-text);
@@ -519,7 +569,35 @@ button {
   }
 
   .oc-topbar {
+    align-items: flex-start;
     padding: 8px 12px;
+  }
+
+  /* Keep 錄製 and the AI chips on one row: the chips scroll sideways instead of wrapping. */
+  .oc-actionbar {
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .oc-record-btn {
+    flex-shrink: 0;
+    padding: 8px 14px;
+  }
+
+  .oc-ai-group {
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .oc-ai-group::-webkit-scrollbar {
+    display: none;
+  }
+
+  .oc-ai-btn {
+    flex-shrink: 0;
   }
 
   .oc-banner {

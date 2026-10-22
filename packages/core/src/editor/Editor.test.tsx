@@ -1,6 +1,7 @@
 import type { JSONContent } from '@oc/shared';
 import type { Editor as TiptapEditor } from '@tiptap/react';
 import { act, render, screen } from '@testing-library/react';
+import { Plugin } from '@tiptap/pm/state';
 import { useLayoutEffect } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { Editor } from './Editor';
@@ -14,7 +15,7 @@ const doc = (text?: string): JSONContent => ({
 function Harness(props: {
   noteId: string;
   content: JSONContent;
-  onChange: (content: JSONContent) => void;
+  onChange: (content: JSONContent, noteId: string) => void;
   editorRef?: { current: TiptapEditor | null };
 }) {
   const editor = useNoteEditor({
@@ -50,16 +51,19 @@ describe('Editor + useNoteEditor', () => {
       editorRef.current?.chain().setTextSelection(6).insertContent('!').run();
     });
 
-    expect(onChange).toHaveBeenLastCalledWith({
-      type: 'doc',
-      content: [
-        {
-          type: 'paragraph',
-          attrs: { textAlign: null },
-          content: [{ type: 'text', text: 'Hello!' }],
-        },
-      ],
-    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            attrs: { textAlign: null },
+            content: [{ type: 'text', text: 'Hello!' }],
+          },
+        ],
+      },
+      'a',
+    );
   });
 
   it('does not report edits while there is no note', () => {
@@ -88,7 +92,9 @@ describe('Editor + useNoteEditor', () => {
       editorRef.current?.commands.insertContent('x');
     });
 
-    rerender(<Harness noteId="b" content={doc('Second')} onChange={vi.fn()} editorRef={editorRef} />);
+    rerender(
+      <Harness noteId="b" content={doc('Second')} onChange={vi.fn()} editorRef={editorRef} />,
+    );
 
     expect(screen.getByRole('textbox', { name: '筆記內文' })).toHaveTextContent('Second');
     expect(editorRef.current?.can().undo()).toBe(false);
@@ -104,7 +110,7 @@ describe('Editor + useNoteEditor', () => {
     function LateWriter(props: {
       noteId: string;
       content: JSONContent;
-      onChange: (content: JSONContent) => void;
+      onChange: (content: JSONContent, noteId: string) => void;
     }) {
       const editor = useNoteEditor(props);
       if (!editors.includes(editor)) editors.push(editor);
@@ -134,16 +140,19 @@ describe('Editor + useNoteEditor', () => {
       editors.at(-1)?.chain().setTextSelection(7).insertContent('!').run();
     });
     expect(onChangeB).toHaveBeenCalledTimes(1);
-    expect(onChangeB).toHaveBeenLastCalledWith({
-      type: 'doc',
-      content: [
-        {
-          type: 'paragraph',
-          attrs: { textAlign: null },
-          content: [{ type: 'text', text: 'Note B!' }],
-        },
-      ],
-    });
+    expect(onChangeB).toHaveBeenLastCalledWith(
+      {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            attrs: { textAlign: null },
+            content: [{ type: 'text', text: 'Note B!' }],
+          },
+        ],
+      },
+      'b',
+    );
   });
 
   it('does not report a change when only the trailing paragraph is appended', () => {
@@ -185,6 +194,38 @@ describe('Editor + useNoteEditor', () => {
     const reported = onChange.mock.lastCall?.[0] as JSONContent;
     expect(reported.content?.[0]?.content?.[0]?.text).toBe('a!');
     expect(reported.content).toHaveLength(3);
+  });
+
+  it('reports the note id the edit belongs to', () => {
+    const onChange = vi.fn();
+    const editorRef = { current: null as TiptapEditor | null };
+    render(<Harness noteId="a" content={doc('Hello')} onChange={onChange} editorRef={editorRef} />);
+    act(() => {
+      editorRef.current?.chain().setTextSelection(6).insertContent('!').run();
+    });
+    expect(onChange.mock.lastCall?.[1]).toBe('a');
+  });
+
+  it('reports a real edit made only by a plugin appendTransaction', () => {
+    const onChange = vi.fn();
+    const editorRef = { current: null as TiptapEditor | null };
+    render(<Harness noteId="a" content={doc('Hello')} onChange={onChange} editorRef={editorRef} />);
+    const editor = editorRef.current as TiptapEditor;
+    act(() => {
+      editor.registerPlugin(
+        new Plugin({
+          appendTransaction: (trs, _old, state) =>
+            trs.some((tr) => tr.getMeta('test-insert')) ? state.tr.insertText('X', 1) : null,
+        }),
+      );
+    });
+    // A selection-only root transaction; the plugin's appended transaction edits the doc.
+    act(() => {
+      editor.view.dispatch(editor.state.tr.setMeta('test-insert', true));
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const reported = onChange.mock.lastCall?.[0] as JSONContent;
+    expect(reported.content?.[0]?.content?.[0]?.text).toBe('XHello');
   });
 
   it('ignores content prop changes for the same note (no reset while typing)', () => {

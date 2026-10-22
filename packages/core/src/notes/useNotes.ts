@@ -22,10 +22,27 @@ export interface UseNotesResult {
   notes: Note[];
   activeNote: Note | undefined;
   loading: boolean;
+  /** The notes could not be loaded; `loading` is false and there is no active note. */
+  loadError: boolean;
+  /** Clears `loadError` and loads the notes again. */
+  retryLoad(): void;
+  /**
+   * The last autosave failed. The unsaved note stays pending and is written again with the
+   * next edit, note switch or page hide; this clears once a save succeeds.
+   */
+  saveFailed: boolean;
+  /** Hides `saveFailed` until the next failure (the unsaved edit stays pending). */
+  dismissSaveError(): void;
   createNote(): Promise<Note>;
   selectNote(id: string): void;
   deleteNote(id: string): Promise<void>;
   updateActive(patch: NotePatch): void;
+  /**
+   * Edits the note with this id, active or not, without changing the active note; unknown ids
+   * are ignored. Use it where the caller knows which note an edit belongs to (an editor bound to
+   * one note), so an edit cannot land on another note while the active note is changing.
+   */
+  updateNote(id: string, patch: NotePatch): void;
 }
 
 export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): UseNotesResult {
@@ -35,11 +52,16 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeId, setActiveId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [saveFailed, setSaveFailed] = useState(false);
 
   // Refs mirror the state so callbacks always see the latest values synchronously.
   const notesRef = useRef<Note[]>([]);
   const activeIdRef = useRef<string | undefined>(undefined);
-  const pendingRef = useRef<Note | undefined>(undefined);
+  // Unsaved versions by note id: each edit replaces its note's entry, so edits to different
+  // notes inside one debounce window are all written.
+  const pendingRef = useRef(new Map<string, Note>());
 
   const commit = useCallback((next: Note[], nextActiveId: string | undefined) => {
     notesRef.current = next;
@@ -48,35 +70,54 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
     setActiveId(nextActiveId);
   }, []);
 
-  const saver = useMemo(
-    () =>
-      debounce(() => {
-        const note = pendingRef.current;
-        pendingRef.current = undefined;
-        if (note) {
-          storage.put(note).catch((error: unknown) => console.error('Failed to save note', error));
-        }
-      }, saveDelayMs),
-    [storage, saveDelayMs],
-  );
+  // Writes every pending note. A failed write stays pending, so the next run retries it.
+  const writePending = useCallback(() => {
+    const batch = [...pendingRef.current.values()];
+    pendingRef.current.clear();
+    for (const note of batch) {
+      storage.put(note).then(
+        () => setSaveFailed(false),
+        (error: unknown) => {
+          console.error('Failed to save note', error);
+          // Retry later only if this is still the latest version of a note that still
+          // exists: a newer edit carries the whole note and is written on its own.
+          const current = notesRef.current.find((n) => n.id === note.id);
+          if (current === note && !pendingRef.current.has(note.id)) {
+            pendingRef.current.set(note.id, note);
+          }
+          setSaveFailed(true);
+        },
+      );
+    }
+  }, [storage]);
+
+  const saver = useMemo(() => debounce(writePending, saveDelayMs), [writePending, saveDelayMs]);
+
+  /** Writes pending notes now; unlike saver.flush() it also retries failed writes. */
+  const flushSaves = useCallback(() => {
+    saver.cancel();
+    writePending();
+  }, [saver, writePending]);
 
   useEffect(() => {
-    const flush = () => saver.flush();
+    const flush = () => flushSaves();
     const flushWhenHidden = () => {
-      if (document.visibilityState === 'hidden') saver.flush();
+      if (document.visibilityState === 'hidden') flushSaves();
     };
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', flushWhenHidden);
     return () => {
       window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', flushWhenHidden);
-      saver.flush();
+      flushSaves();
     };
-  }, [saver]);
+  }, [flushSaves]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      setLoading(true);
+      setLoadError(false);
       let list = await storage.list();
       if (cancelled) return;
       if (list.length === 0) {
@@ -88,28 +129,41 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
       commit(list, list[0].id);
       setLoading(false);
     };
-    load().catch((error: unknown) => console.error('Failed to load notes', error));
+    load().catch((error: unknown) => {
+      console.error('Failed to load notes', error);
+      if (cancelled) return;
+      setLoadError(true);
+      setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
-  }, [storage, now, commit]);
+  }, [storage, now, commit, loadAttempt]);
+
+  const retryLoad = useCallback(() => {
+    setLoadError(false);
+    setLoading(true);
+    setLoadAttempt((n) => n + 1);
+  }, []);
+
+  const dismissSaveError = useCallback(() => setSaveFailed(false), []);
 
   const createNote = useCallback(async () => {
-    saver.flush();
+    flushSaves();
     const note = makeNote(now());
     await storage.put(note);
     commit(sortByUpdatedDesc([note, ...notesRef.current]), note.id);
     return note;
-  }, [storage, now, saver, commit]);
+  }, [storage, now, flushSaves, commit]);
 
   const selectNote = useCallback(
     (id: string) => {
       if (id === activeIdRef.current) return;
       if (!notesRef.current.some((n) => n.id === id)) return;
-      saver.flush();
+      flushSaves();
       commit(notesRef.current, id);
     },
-    [saver, commit],
+    [flushSaves, commit],
   );
 
   const deleteNote = useCallback(
@@ -120,11 +174,7 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
 
       // Take the note out of memory before any await: once it is gone, updateActive
       // cannot target it, so no later save can write the deleted note back.
-      const droppedEdit = pendingRef.current?.id === id;
-      if (droppedEdit) {
-        saver.cancel();
-        pendingRef.current = undefined;
-      }
+      const droppedEdit = pendingRef.current.delete(id);
       const previousActiveId = activeIdRef.current;
       let remaining = notesRef.current.filter((n) => n.id !== id);
       // Deleting the last note: show an empty replacement at once, so there is always an
@@ -139,42 +189,36 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
         await storage.remove(id);
       } catch (error) {
         // The note is still stored, so put it back in the list. The replacement goes
-        // unless it was edited meanwhile (an edit swaps in a new object).
+        // unless it was edited meanwhile (an edit swaps in a new object). Edits made meanwhile
+        // to the note that became active are written before the active note switches back.
+        flushSaves();
         const kept = notesRef.current.filter((n) => n !== replacement);
         const activeAfter =
           activeIdRef.current === nextActiveId ? previousActiveId : activeIdRef.current;
         commit(sortByUpdatedDesc([removed, ...kept]), activeAfter);
         if (droppedEdit) {
-          storage.put(removed).catch((e: unknown) => console.error('Failed to save note', e));
+          pendingRef.current.set(removed.id, removed);
+          flushSaves();
         }
         throw error;
       }
 
       if (replacement) {
         // Edits may have landed on the replacement during the remove: store its latest
-        // version, and drop a pending save of it so an older version cannot win.
+        // version (it replaces any pending older one).
         const latest = notesRef.current.find((n) => n.id === replacement.id);
         if (!latest) return;
-        if (pendingRef.current?.id === latest.id) {
-          saver.cancel();
-          pendingRef.current = undefined;
-        }
+        pendingRef.current.set(latest.id, latest);
         // The note is already deleted, so a failed store of the replacement must not reject:
-        // there is nothing to retry. Log it like a failed autosave; the replacement stays in
-        // memory and its next edit stores it (an empty list also gets a fresh note on load).
-        try {
-          await storage.put(latest);
-        } catch (error) {
-          console.error('Failed to save note', error);
-        }
+        // it is reported and retried like a failed autosave.
+        flushSaves();
       }
     },
-    [storage, now, saver, commit],
+    [storage, now, flushSaves, commit],
   );
 
-  const updateActive = useCallback(
-    (patch: NotePatch) => {
-      const id = activeIdRef.current;
+  const updateNote = useCallback(
+    (id: string, patch: NotePatch) => {
       const current = notesRef.current.find((n) => n.id === id);
       if (!current) return;
       const updated: Note = {
@@ -185,15 +229,36 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
       };
       commit(
         sortByUpdatedDesc(notesRef.current.map((n) => (n.id === updated.id ? updated : n))),
-        updated.id,
+        activeIdRef.current,
       );
-      pendingRef.current = updated;
+      pendingRef.current.set(updated.id, updated);
       saver();
     },
     [now, saver, commit],
   );
 
+  const updateActive = useCallback(
+    (patch: NotePatch) => {
+      const id = activeIdRef.current;
+      if (id !== undefined) updateNote(id, patch);
+    },
+    [updateNote],
+  );
+
   const activeNote = useMemo(() => notes.find((n) => n.id === activeId), [notes, activeId]);
 
-  return { notes, activeNote, loading, createNote, selectNote, deleteNote, updateActive };
+  return {
+    notes,
+    activeNote,
+    loading,
+    loadError,
+    retryLoad,
+    saveFailed,
+    dismissSaveError,
+    createNote,
+    selectNote,
+    deleteNote,
+    updateActive,
+    updateNote,
+  };
 }

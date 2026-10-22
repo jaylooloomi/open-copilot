@@ -1,4 +1,5 @@
 import type { JSONContent } from '@oc/shared';
+import type { Node as PmNode } from '@tiptap/pm/model';
 import { useEditor, type Editor as TiptapEditor } from '@tiptap/react';
 import { useMemo, useState } from 'react';
 import { createExtensions } from './extensions';
@@ -9,14 +10,13 @@ export interface UseNoteEditorOptions {
   /** Initial content; later changes for the same noteId are ignored. */
   content: JSONContent;
   /**
-   * Called with the whole document after each edit of the note given by the current render's
-   * `noteId`. It does not say which note changed: a consumer that routes the change by its own
-   * "active note" state (such as `useNotes.updateActive`) must keep that state in step with the
-   * rendered `noteId`. If the active note moves before React re-renders (an async rollback or
-   * create), an edit typed into the still-mounted editor in that gap goes to the new active note.
-   * Never called while `noteId` is undefined.
+   * Called with the whole document after each edit, and the id of the note the editor was
+   * created for. Route the change by that id (`useNotes.updateNote(noteId, ...)`), not by an
+   * "active note" state: the active note can move before React re-renders (an async create or
+   * rollback) while the old note's editor is still mounted. Never called while `noteId` is
+   * undefined.
    */
-  onChange(content: JSONContent): void;
+  onChange(content: JSONContent, noteId: string): void;
 }
 
 /**
@@ -50,18 +50,32 @@ export function useNoteEditor({ noteId, content, onChange }: UseNoteEditorOption
       },
       // useEditor always calls the latest onUpdate; drop updates from an editor that belongs
       // to a note other than the current one.
-      onUpdate: ({ editor, transaction }) => {
-        // Not an edit: StarterKit's TrailingNode appends an empty paragraph to a note that ends
-        // in a list, heading or quote on any transaction, even a click that only moves the
-        // selection. The paragraph is saved with the next real edit.
-        // Tiptap emits 'update' when any transaction of the batch changed the doc but passes only
-        // the root one, so this check assumes no extension makes a real edit through
-        // appendTransaction alone (none in createExtensions does); such an edit would be dropped.
-        if (!transaction.docChanged) return;
+      onUpdate: ({ editor, transaction, appendedTransactions }) => {
+        if (!transaction.docChanged) {
+          // Only plugins (appendTransaction) changed the doc. Not an edit when all they did was
+          // StarterKit's TrailingNode appending an empty paragraph to a note that ends in a list,
+          // heading or quote, which happens on any transaction, even a click that only moves the
+          // selection; that paragraph is saved with the next real edit. Any other plugin edit
+          // is reported.
+          if (!appendedTransactions.some((tr) => tr.docChanged)) return;
+          if (onlyAddsEmptyParagraph(transaction.doc, editor.state.doc)) return;
+        }
         // No note, no owner to report to.
-        if (noteId !== undefined && owners.get(editor) === noteId) onChange(editor.getJSON());
+        const owner = owners.get(editor);
+        if (noteId !== undefined && owner === noteId) onChange(editor.getJSON(), owner);
       },
     },
     [noteId],
   );
+}
+
+/** True when `after` is `before` plus one empty paragraph at the end (TrailingNode's edit). */
+function onlyAddsEmptyParagraph(before: PmNode, after: PmNode): boolean {
+  if (after.childCount !== before.childCount + 1) return false;
+  const last = after.lastChild;
+  if (!last || last.type.name !== 'paragraph' || last.content.size !== 0) return false;
+  for (let i = 0; i < before.childCount; i += 1) {
+    if (!after.child(i).eq(before.child(i))) return false;
+  }
+  return true;
 }

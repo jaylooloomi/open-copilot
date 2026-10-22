@@ -131,3 +131,41 @@ test('窄螢幕時筆記清單收成抽屜', async ({ page }) => {
   await page.getByRole('button', { name: '開啟筆記清單' }).click();
   await expect(list.getByRole('listitem')).toHaveCount(2);
 });
+
+test('滑鼠仍停在剛開啟的格式按鈕上時，按鈕維持填色、圖示看得見', async ({ page }) => {
+  await page.getByRole('textbox', { name: '筆記內文' }).click();
+  const bold = page.getByRole('button', { name: '粗體' });
+  await bold.click();
+  await expect(bold).toHaveAttribute('aria-pressed', 'true');
+  await bold.hover();
+  const { background, color } = await bold.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { background: style.backgroundColor, color: style.color };
+  });
+  expect(color).toBe('rgb(255, 255, 255)');
+  // Not the pale hover background (#fdf4ff) and not white: the white icon must stay visible.
+  expect(background).not.toBe('rgb(253, 244, 255)');
+  expect(background).not.toBe('rgb(255, 255, 255)');
+  expect(background).not.toBe('rgba(0, 0, 0, 0)');
+});
+
+test('新增筆記後游標停在新筆記的標題', async ({ page }) => {
+  await page.getByRole('button', { name: '新增筆記' }).click();
+  await expect(page.getByRole('list', { name: '筆記清單' }).getByRole('listitem')).toHaveCount(2);
+  await expect(page.getByRole('textbox', { name: '標題' })).toBeFocused();
+  await page.keyboard.type('直接輸入');
+  await expect(page.getByRole('textbox', { name: '標題' })).toHaveValue('直接輸入');
+});
+
+test('窄螢幕時錄製與 AI 按鈕排在同一列，頁面不會橫向捲動', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const record = await page.getByRole('button', { name: '錄製' }).boundingBox();
+  const summary = await page.getByRole('button', { name: 'AI 摘要' }).boundingBox();
+  expect(Math.abs(record!.y + record!.height / 2 - (summary!.y + summary!.height / 2))).toBeLessThan(
+    4,
+  );
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBe(0);
+});

@@ -1,3 +1,4 @@
+import { openDB } from 'idb';
 import { describe, expect, it } from 'vitest';
 import { openAppDb } from './db';
 
@@ -26,5 +27,15 @@ describe('openAppDb', () => {
     const second = await openAppDb(name);
     expect((await second.get('notes', 'n1'))?.title).toBe('kept');
     second.close();
+  });
+
+  it('closes itself when a newer version is opened elsewhere, so that upgrade is not blocked', async () => {
+    const name = `test-${crypto.randomUUID()}`;
+    await openAppDb(name);
+
+    // Without a versionchange handler on `old`, this open would wait forever.
+    const newer = await openDB(name, 2);
+    expect(newer.version).toBe(2);
+    newer.close();
   });
 });

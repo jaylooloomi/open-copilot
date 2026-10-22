@@ -1,6 +1,6 @@
 import { EMPTY_DOC } from '@oc/shared';
 import { Menu } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActionBar } from './components/ActionBar';
 import { Banner } from './components/Banner';
 import { NoteList } from './components/NoteList';
@@ -21,10 +21,14 @@ export function NotesApp() {
     notes,
     activeNote,
     loading,
+    loadError,
+    retryLoad,
+    saveFailed,
+    dismissSaveError,
     createNote,
     selectNote,
     deleteNote,
-    updateActive,
+    updateNote,
   } = useNotes(storage);
   const {
     open: drawerOpen,
@@ -33,13 +37,35 @@ export function NotesApp() {
     menuButtonRef,
   } = useNoteDrawer();
   const [storageError, setStorageError] = useState<string | undefined>(undefined);
+  const titleRef = useRef<HTMLInputElement>(null);
+  // A note just created from the 新增筆記 button: its title gets focus once it is shown.
+  const [focusTitleOf, setFocusTitleOf] = useState<string | undefined>(undefined);
 
   // Called unconditionally (rules of hooks); recreated whenever the active note changes.
   const editor = useNoteEditor({
     noteId: activeNote?.id,
     content: activeNote?.content ?? EMPTY_DOC,
-    onChange: (content) => updateActive({ content }),
+    // Routed by the note the editor belongs to, so an edit typed while the active note is
+    // changing cannot land on another note.
+    onChange: (content, noteId) => updateNote(noteId, { content }),
   });
+
+  useEffect(() => {
+    if (focusTitleOf === undefined || focusTitleOf !== activeNote?.id) return;
+    titleRef.current?.focus();
+    setFocusTitleOf(undefined);
+  }, [focusTitleOf, activeNote?.id]);
+
+  if (loadError) {
+    return (
+      <div className="oc-load-error" role="alert">
+        <p>無法載入筆記，請再試一次。</p>
+        <button type="button" className="oc-load-retry" onClick={retryLoad}>
+          重試
+        </button>
+      </div>
+    );
+  }
 
   if (loading || !activeNote) {
     return (
@@ -80,7 +106,10 @@ export function NotesApp() {
           }}
           onCreate={() => {
             setStorageError(undefined);
-            createNote().catch(reportFailure('新增筆記失敗，請再試一次。', 'Failed to create note'));
+            createNote().then(
+              (created) => setFocusTitleOf(created.id),
+              reportFailure('新增筆記失敗，請再試一次。', 'Failed to create note'),
+            );
             closeDrawer();
           }}
           onDelete={confirmDelete}
@@ -119,16 +148,24 @@ export function NotesApp() {
         <Toolbar editor={editor} />
         <div className="oc-document">
           <TitleInput
+            inputRef={titleRef}
             value={activeNote.title}
-            onChange={(title) => updateActive({ title })}
+            onChange={(title) => updateNote(activeNote.id, { title })}
             onEnter={() => editor.commands.focus('start')}
           />
           <Editor editor={editor} />
         </div>
       </main>
 
-      {storageError && (
+      {storageError ? (
         <StorageAlert message={storageError} onDismiss={() => setStorageError(undefined)} />
+      ) : (
+        saveFailed && (
+          <StorageAlert
+            message="筆記儲存失敗，變更尚未存檔。繼續編輯時會再試一次。"
+            onDismiss={dismissSaveError}
+          />
+        )
       )}
     </div>
   );

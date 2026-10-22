@@ -70,12 +70,17 @@ describe('useNotes', () => {
     expect(storage.put).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
     expect(storage.put).toHaveBeenCalledTimes(1);
-    expect(storage.put).toHaveBeenCalledWith(expect.objectContaining({ id: 'a', title: '會議紀錄' }));
+    expect(storage.put).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'a', title: '會議紀錄' }),
+    );
   });
 
   it('coalesces rapid edits into one write with the latest title and content', async () => {
     const { result, storage } = await setup([note('a', 1)]);
-    const content = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '內文' }] }] };
+    const content = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: '內文' }] }],
+    };
     act(() => result.current.updateActive({ title: 'x' }));
     act(() => result.current.updateActive({ title: 'xy' }));
     act(() => result.current.updateActive({ content }));
@@ -386,5 +391,130 @@ describe('useNotes', () => {
     } finally {
       visibility.mockRestore();
     }
+  });
+});
+
+describe('useNotes storage failures', () => {
+  it('reports a failed load instead of loading forever, and retries on request', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { storage } = createMemoryStorage([note('a', 1)]);
+    storage.list.mockRejectedValueOnce(new Error('idb closed'));
+    const { result } = renderHook(() => useNotes(storage));
+
+    await waitFor(() => expect(result.current.loadError).toBe(true));
+    expect(result.current.loading).toBe(false);
+    expect(result.current.activeNote).toBeUndefined();
+    expect(consoleError).toHaveBeenCalledWith('Failed to load notes', expect.any(Error));
+
+    act(() => result.current.retryLoad());
+    expect(result.current.loadError).toBe(false);
+    await waitFor(() => expect(result.current.activeNote?.id).toBe('a'));
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('reports a failed first-note store as a load error', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { storage } = createMemoryStorage();
+    storage.put.mockRejectedValueOnce(new Error('quota'));
+    const { result } = renderHook(() => useNotes(storage));
+    await waitFor(() => expect(result.current.loadError).toBe(true));
+    expect(result.current.notes).toEqual([]);
+  });
+
+  it('reports a failed autosave and retries it with the next edit', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { result, storage, notes } = await setup([note('a', 1)]);
+    storage.put.mockRejectedValueOnce(new Error('quota'));
+
+    act(() => result.current.updateActive({ title: 'first' }));
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(result.current.saveFailed).toBe(true);
+    expect(consoleError).toHaveBeenCalledWith('Failed to save note', expect.any(Error));
+    expect(notes.get('a')?.title).toBe('a');
+
+    // The failed note stays pending: a flush (page hidden) retries it.
+    await act(async () => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+    expect(notes.get('a')?.title).toBe('first');
+    expect(result.current.saveFailed).toBe(false);
+  });
+
+  it('a failed autosave does not overwrite a newer saved version', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { result, storage, notes, tick } = await setup([note('a', 1)]);
+    let rejectFirst!: (e: Error) => void;
+    storage.put.mockImplementationOnce(
+      () => new Promise<void>((_, reject) => (rejectFirst = reject)),
+    );
+
+    act(() => result.current.updateActive({ title: 'v1' }));
+    act(() => vi.advanceTimersByTime(500));
+    tick();
+    act(() => result.current.updateActive({ title: 'v2' }));
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(notes.get('a')?.title).toBe('v2');
+    await act(async () => {
+      rejectFirst(new Error('quota'));
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+    expect(notes.get('a')?.title).toBe('v2');
+  });
+
+  it('keeps pending edits of two notes when a delete is rolled back', async () => {
+    const { result, notes, storage, tick } = await setup([note('a', 1), note('b', 2)]);
+    const failing = deferred();
+    storage.remove.mockImplementationOnce(async () => {
+      await failing.promise;
+      throw new Error('idb fail');
+    });
+
+    let deleting!: Promise<void>;
+    act(() => {
+      deleting = result.current.deleteNote('b');
+    });
+    expect(result.current.activeNote?.id).toBe('a');
+    tick();
+    act(() => result.current.updateActive({ title: 'A edited' }));
+    await act(async () => {
+      failing.resolve();
+      await expect(deleting).rejects.toThrow('idb fail');
+    });
+    expect(result.current.activeNote?.id).toBe('b');
+    tick();
+    act(() => result.current.updateActive({ title: 'B edited' }));
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(notes.get('a')?.title).toBe('A edited');
+    expect(notes.get('b')?.title).toBe('B edited');
+  });
+
+  it('updateNote edits the note it names without changing the active note', async () => {
+    const { result, notes } = await setup([note('a', 1), note('b', 2)]);
+    expect(result.current.activeNote?.id).toBe('b');
+    act(() => result.current.updateNote('a', { title: 'late edit' }));
+    expect(result.current.activeNote?.id).toBe('b');
+    expect(result.current.notes.find((n) => n.id === 'a')?.title).toBe('late edit');
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(notes.get('a')?.title).toBe('late edit');
+    expect(notes.get('b')?.title).toBe('b');
+  });
+
+  it('updateNote ignores ids that are not in the list', async () => {
+    const { result, storage } = await setup([note('a', 1)]);
+    act(() => result.current.updateNote('gone', { title: 'x' }));
+    act(() => vi.advanceTimersByTime(500));
+    expect(storage.put).not.toHaveBeenCalled();
+    expect(result.current.notes.map((n) => n.title)).toEqual(['a']);
   });
 });

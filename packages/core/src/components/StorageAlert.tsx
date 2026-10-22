@@ -6,7 +6,7 @@ export interface StorageAlertProps {
 }
 
 /**
- * Tells the user a note could not be created or deleted. Render it outside <main>, which is
+ * Tells the user a note could not be created, deleted or saved. Render it outside <main>, which is
  * inert while the drawer is open; the CSS keeps it above the drawer, since a delete fails there.
  */
 export function StorageAlert({ message, onDismiss }: StorageAlertProps) {

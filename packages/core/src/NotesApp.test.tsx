@@ -88,6 +88,42 @@ describe('NotesApp', () => {
     await waitFor(() => expect(within(list()).getAllByRole('listitem')).toHaveLength(2));
     expect(titleInput()).toHaveValue('');
     expect(body()).not.toHaveTextContent('Alpha');
+    // Ready to type the new note's title.
+    await waitFor(() => expect(titleInput()).toHaveFocus());
+  });
+
+  it('reports a failed autosave and clears it once a later save succeeds', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { user, storage, notes } = await renderApp([note('a', 'A', 'Alpha', 1)]);
+    storage.put.mockRejectedValueOnce(new Error('quota'));
+
+    await user.type(titleInput(), '1');
+    expect(await screen.findByRole('alert', {}, { timeout: 2000 })).toHaveTextContent(
+      '筆記儲存失敗',
+    );
+    expect(consoleError).toHaveBeenCalledWith('Failed to save note', expect.any(Error));
+    expect(notes.get('a')?.title).toBe('A');
+
+    // The next edit writes the unsaved change too, and the alert goes away.
+    await user.type(titleInput(), '2');
+    await waitFor(() => expect(notes.get('a')?.title).toBe('A12'), { timeout: 2000 });
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  });
+
+  it('shows an error with a retry button when the notes cannot be loaded', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const ctx = createTestPlatform([note('a', 'A', 'Alpha', 1)]);
+    ctx.storage.list.mockRejectedValueOnce(new Error('idb closed'));
+    render(
+      <PlatformProvider platform={ctx.platform}>
+        <NotesApp />
+      </PlatformProvider>,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('無法載入筆記');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: '重試' }));
+    expect(await screen.findByRole('textbox', { name: '標題' })).toHaveValue('A');
   });
 
   it('switches between notes', async () => {
@@ -187,7 +223,7 @@ describe('NotesApp', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('does not report a failed delete when only storing the replacement note fails', async () => {
+  it('reports a failed save, not a failed delete, when only storing the replacement note fails', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { user, storage, notes } = await renderApp([note('a', 'A', 'Alpha', 1)]);
@@ -202,7 +238,8 @@ describe('NotesApp', () => {
     await watch.stop();
     expect(watch.reasons).toEqual([]);
     expect(notes.has('a')).toBe(false);
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('筆記儲存失敗');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('刪除筆記失敗');
     expect(within(list()).getAllByRole('listitem')).toHaveLength(1);
     expect(titleInput()).toHaveValue('');
   });

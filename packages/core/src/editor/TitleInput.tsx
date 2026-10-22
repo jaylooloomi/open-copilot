@@ -1,13 +1,17 @@
+import type { Ref } from 'react';
+
 export interface TitleInputProps {
   value: string;
   onChange(value: string): void;
   /** Called on Enter (not while composing Chinese input), e.g. to move focus to the body. */
   onEnter?(): void;
+  inputRef?: Ref<HTMLInputElement>;
 }
 
-export function TitleInput({ value, onChange, onEnter }: TitleInputProps) {
+export function TitleInput({ value, onChange, onEnter, inputRef }: TitleInputProps) {
   return (
     <input
+      ref={inputRef}
       type="text"
       className="oc-title"
       aria-label="標題"
