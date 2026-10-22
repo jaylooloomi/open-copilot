@@ -1056,10 +1056,13 @@ button {
     flex-shrink: 0;
   }
 
-  /* The AI chips scroll inside .oc-actionbar-end; the gear stays visible at its end. */
+  /* The AI chips scroll inside .oc-actionbar-end; the gear stays visible at its end. Sized from 0, it
+     takes only the space 錄製 and the recording status leave (the chips give way first), never less
+     than the gear. Sized from the chips' full width, it squeezed the status to nothing at 375px. */
   .oc-actionbar-end {
+    flex: 1 1 0;
     flex-wrap: nowrap;
-    min-width: 0;
+    min-width: 34px;
   }
 
   .oc-settings-btn {

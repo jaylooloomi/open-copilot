@@ -66,6 +66,12 @@ describe('app.css', () => {
     expect(narrow).toMatch(/\.oc-transcribing\s*\{[^}]*text-overflow:\s*ellipsis/);
   });
 
+  it('gives the AI chips only the space left beside the recording status on narrow screens', () => {
+    const narrow = css.slice(css.indexOf('@media (max-width: 767.98px)'));
+    // Sized from 0 rather than from the chips' full width, so they give way before the status does.
+    expect(narrow).toMatch(/\.oc-actionbar-end\s*\{[^}]*flex:\s*1 1 0[^}]*min-width:\s*34px/);
+  });
+
   it('lights level bars in the primary colour', () => {
     expect(css).toMatch(/\.oc-level-bar\.is-on\s*\{[^}]*background:\s*var\(--oc-primary\)/);
   });
