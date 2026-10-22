@@ -186,3 +186,53 @@ test('窄螢幕時錄製與 AI 按鈕排在同一列，頁面不會橫向捲動'
   );
   expect(overflow).toBe(0);
 });
+
+test('置中的清單項目，項目符號跟著文字一起置中', async ({ page }) => {
+  const body = page.getByRole('textbox', { name: '筆記內文' });
+  await body.click();
+  await page.getByRole('button', { name: '項目清單' }).click();
+  await page.keyboard.type('置中項目');
+  await page.getByRole('button', { name: '置中' }).click();
+
+  const li = body.locator('li').first();
+  await expect(li.locator('p')).toHaveAttribute('style', /text-align: center/);
+  const layout = await li.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el.querySelector('p')!);
+    const text = range.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    return {
+      position: getComputedStyle(el).listStylePosition,
+      textLeft: text.left,
+      textTop: text.top,
+      liLeft: box.left,
+      liTop: box.top,
+      liRight: box.right,
+    };
+  });
+  // The marker sits inside the item, just before the text, instead of at the far left edge.
+  expect(layout.position).toBe('inside');
+  // Marker and text share the first line (the paragraph is not pushed below the marker).
+  expect(layout.textTop - layout.liTop).toBeLessThan(4);
+  // The text itself is centred in the item.
+  const middle = (layout.liLeft + layout.liRight) / 2;
+  expect(layout.textLeft).toBeGreaterThan(middle - 120);
+});
+
+test('窄螢幕時 AI 按鈕列右緣淡出，提示可以橫向捲動', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const group = page.locator('.oc-ai-group');
+  const overflowing = await group.evaluate((el) => el.scrollWidth > el.clientWidth);
+  expect(overflowing).toBe(true);
+  const mask = await group.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return style.maskImage || style.webkitMaskImage;
+  });
+  expect(mask).toContain('linear-gradient');
+
+  // Scrolled to the end, the last chip is fully visible, clear of the faded edge.
+  await group.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+  const groupBox = (await group.boundingBox())!;
+  const last = (await group.locator('.oc-ai-btn').last().boundingBox())!;
+  expect(last.x + last.width).toBeLessThanOrEqual(groupBox.x + groupBox.width - 12);
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isExternalHttpUrl, shouldGrantPermission } from './security';
+import { isExternalHttpUrl, isSystemHandledUrl, shouldGrantPermission } from './security';
 
 const PAGE = 'app://bundle/index.html';
 
@@ -51,5 +51,23 @@ describe('isExternalHttpUrl', () => {
     expect(isExternalHttpUrl('file:///C:/Windows/System32/calc.exe')).toBe(false);
     expect(isExternalHttpUrl('javascript:alert(1)')).toBe(false);
     expect(isExternalHttpUrl('not a url')).toBe(false);
+  });
+});
+
+describe('isSystemHandledUrl', () => {
+  it('hands http, https, mailto and tel links to the system', () => {
+    expect(isSystemHandledUrl('https://example.com/a?b=1')).toBe(true);
+    expect(isSystemHandledUrl('http://localhost:8787/health')).toBe(true);
+    expect(isSystemHandledUrl('mailto:someone@example.com?subject=hi')).toBe(true);
+    expect(isSystemHandledUrl('tel:+886212345678')).toBe(true);
+  });
+
+  it('rejects every other scheme', () => {
+    expect(isSystemHandledUrl('javascript:alert(1)')).toBe(false);
+    expect(isSystemHandledUrl('file:///C:/Windows/System32/calc.exe')).toBe(false);
+    expect(isSystemHandledUrl('app://bundle/index.html')).toBe(false);
+    expect(isSystemHandledUrl('ms-settings:privacy')).toBe(false);
+    expect(isSystemHandledUrl('data:text/html,<script>1</script>')).toBe(false);
+    expect(isSystemHandledUrl('not a url')).toBe(false);
   });
 });

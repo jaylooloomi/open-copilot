@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { APP_ENTRY_URL, APP_SCHEME, isAppUrl, resolveAppPath } from './appProtocol';
 import { createSaveFileHandler, SAVE_FILE_CHANNEL } from './saveFile';
-import { isExternalHttpUrl, shouldGrantPermission } from './security';
+import { isSystemHandledUrl, shouldGrantPermission } from './security';
 
 // Must run before the app is ready. `standard` + `secure` give app://bundle a real origin and a
 // secure context (IndexedDB, crypto.randomUUID, getUserMedia, clipboard all need one).
@@ -82,15 +82,15 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  // Links in a note open in the system browser; the app window itself never leaves app://bundle.
+  // Links in a note (http/https/mailto/tel) go to the system handler; the app window itself never leaves app://bundle.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isExternalHttpUrl(url)) void shell.openExternal(url);
+    if (isSystemHandledUrl(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event) => {
     if (isAppUrl(event.url)) return;
     event.preventDefault();
-    if (isExternalHttpUrl(event.url)) void shell.openExternal(event.url);
+    if (isSystemHandledUrl(event.url)) void shell.openExternal(event.url);
   });
 
   void win.loadURL(APP_ENTRY_URL);

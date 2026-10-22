@@ -440,6 +440,33 @@ button {
   padding-left: 1.5em;
 }
 
+/* A centred or right-aligned item keeps its marker next to the text, not at the far left edge:
+   the marker moves inside and the first paragraph flows on the marker's line. Each :has() rule
+   stands alone, since an old WebView drops a whole selector list it cannot parse. */
+.oc-editor .ProseMirror li:has(> p:first-child[style*='text-align: center']) {
+  list-style-position: inside;
+  text-align: center;
+}
+
+.oc-editor .ProseMirror li:has(> p:first-child[style*='text-align: right']) {
+  list-style-position: inside;
+  text-align: right;
+}
+
+.oc-editor .ProseMirror li > p:first-child[style*='text-align: center'],
+.oc-editor .ProseMirror li > p:first-child[style*='text-align: right'] {
+  display: inline;
+}
+
+/* Later blocks of such an item (more paragraphs, nested lists) keep their own alignment. */
+.oc-editor .ProseMirror li:has(> p:first-child[style*='text-align: center']) > :not(:first-child) {
+  text-align: left;
+}
+
+.oc-editor .ProseMirror li:has(> p:first-child[style*='text-align: right']) > :not(:first-child) {
+  text-align: left;
+}
+
 .oc-editor .ProseMirror mark {
   padding: 0 1px;
   border-radius: 2px;
@@ -907,6 +934,11 @@ button {
     min-width: 0;
     overflow-x: auto;
     scrollbar-width: none;
+    /* Fade the right edge so a chip cut off there reads as "scroll for more"; the end padding
+       lets the last chip scroll clear of the fade. */
+    padding-right: 20px;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
   }
 
   .oc-ai-group::-webkit-scrollbar {

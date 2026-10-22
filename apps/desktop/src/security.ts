@@ -29,3 +29,17 @@ export function isExternalHttpUrl(url: string): boolean {
     return false;
   }
 }
+
+const SYSTEM_HANDLED_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
+/**
+ * Links in a note that the app hands to the operating system (browser, mail client, dialer):
+ * the same http/https/mailto/tel set the editor allows. Every other scheme is dropped.
+ */
+export function isSystemHandledUrl(url: string): boolean {
+  try {
+    return SYSTEM_HANDLED_PROTOCOLS.has(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
