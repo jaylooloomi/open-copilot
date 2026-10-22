@@ -84,6 +84,21 @@ describe('POST /transcribe with Groq (mocked upstream)', () => {
     expect(res.headers.get('Retry-After')).toBe('10');
   });
 
+  it('answers 413 payload_too_large when Groq rejects the audio as too large, calling Groq once', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { app, upstream } = createGroqApp(() =>
+      jsonResponse(413, { error: { message: 'Request Entity Too Large' } }),
+    );
+
+    const res = await postTranscribe(app, transcribeForm());
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: 'payload_too_large' });
+    expect(res.headers.get('Retry-After')).toBeNull();
+    expect(upstream.calls).toHaveLength(1);
+    expect(console.warn).toHaveBeenCalledWith('[transcribe] upstream rejected the request as too large');
+  });
+
   it.each([
     ['a server error', 500],
     ['a rejected API key', 401],

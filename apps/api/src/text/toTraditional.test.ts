@@ -7,6 +7,10 @@ describe('toTraditional', () => {
     expect(toTraditional('后来我们去开会')).toBe('後來我們去開會');
   });
 
+  it('converts glyphs only, not Taiwan vocabulary (tw, not twp)', () => {
+    expect(toTraditional('软件')).toBe('軟件');
+  });
+
   it('leaves traditional Chinese, ASCII and empty strings unchanged', () => {
     expect(toTraditional('這是繁體中文')).toBe('這是繁體中文');
     expect(toTraditional('OK, 123!')).toBe('OK, 123!');

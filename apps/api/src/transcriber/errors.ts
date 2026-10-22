@@ -21,6 +21,17 @@ export class UpstreamRateLimitError extends Error {
   }
 }
 
+/**
+ * 上游回 413：請求太大。Groq 免費額度在單次請求超過每分鐘 token 上限（TPM）時也回 413「Request too large」。
+ * 同樣的請求重送也不會成功，所以 app.ts 回 413 payload_too_large（不帶 Retry-After），不回可重試的 502。
+ */
+export class UpstreamPayloadTooLargeError extends Error {
+  constructor(options?: ErrorOptions) {
+    super('upstream rejected the request as too large', options);
+    this.name = 'UpstreamPayloadTooLargeError';
+  }
+}
+
 /** 解析上游的 Retry-After（秒數或 HTTP 日期），回傳 1–300 的整數秒；看不懂就回 10。 */
 export function parseRetryAfter(value: string | null | undefined, now: number = Date.now()): number {
   const raw = value?.trim() ?? '';
@@ -39,7 +50,8 @@ function clampSeconds(seconds: number): number {
 }
 
 /**
- * 把上游 SDK 的錯誤轉成 app.ts 認得的型別：429 → UpstreamRateLimitError，其他原樣回傳。
+ * 把上游 SDK 的錯誤轉成 app.ts 認得的型別：429 → UpstreamRateLimitError，
+ * 413 → UpstreamPayloadTooLargeError，其他原樣回傳。
  * 兩種轉寫服務都走 OpenAI SDK，所以都用 APIError 判斷。
  */
 export function toUpstreamError(err: unknown): unknown {
@@ -47,6 +59,9 @@ export function toUpstreamError(err: unknown): unknown {
     return new UpstreamRateLimitError(parseRetryAfter(err.headers?.get('retry-after')), {
       cause: err,
     });
+  }
+  if (err instanceof APIError && err.status === 413) {
+    return new UpstreamPayloadTooLargeError({ cause: err });
   }
   return err;
 }

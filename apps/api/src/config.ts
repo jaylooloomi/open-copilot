@@ -13,6 +13,11 @@ export interface AppConfig {
   port: number;
 }
 
+/**
+ * 預設 CORS 來源。設計規格第 7 節寫的 `http://localhost` 在 M3a 合約（overview 第 4 節）細分成
+ * `http://localhost:5173`（Vite 開發伺服器，瀏覽器送出的 Origin 會帶埠號）與 `https://localhost`
+ * （Capacitor Android 的 androidScheme 預設值）；不帶埠號的 `http://localhost` 沒有前端會用到。
+ */
 export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
   'http://localhost:5173',
   'https://localhost',

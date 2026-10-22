@@ -17,7 +17,7 @@ import type { NoteAssistant } from './ai/types';
 import { bearerAuth, type AuthEnv } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
 import { toTraditional } from './text/toTraditional';
-import { UpstreamRateLimitError } from './transcriber/errors';
+import { UpstreamPayloadTooLargeError, UpstreamRateLimitError } from './transcriber/errors';
 import type { Transcriber } from './transcriber/types';
 
 export interface AppDeps {
@@ -35,8 +35,11 @@ export const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 /** /ai/* 的 title 與 JSON 結構的額外空間；text 本身另以 AI_MAX_TEXT_CHARS 檢查。 */
 export const AI_BODY_OVERHEAD_BYTES = 64 * 1024;
 
-/** /ai/* 的原始 body 上限：text 每個字最多 4 個 UTF-8 位元組，再加上額外空間。 */
-export const AI_MAX_BODY_BYTES = AI_MAX_TEXT_CHARS * 4 + AI_BODY_OVERHEAD_BYTES;
+/**
+ * /ai/* 的原始 body 上限：text 每個字在 JSON 裡最多 12 個位元組（emoji 等 BMP 以外的字可能被寫成
+ * 兩個 \uXXXX 跳脫），再加上額外空間。這只擋掉離譜的 body；字數一律以 parseAiRequest 為準。
+ */
+export const AI_MAX_BODY_BYTES = AI_MAX_TEXT_CHARS * 12 + AI_BODY_OVERHEAD_BYTES;
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const SEQ_PATTERN = /^[1-9]\d*$/;
@@ -44,6 +47,7 @@ const SEQ_PATTERN = /^[1-9]\d*$/;
 /**
  * 上游呼叫失敗時的回應（/transcribe 與 /ai/* 共用）。
  * 用戶端仍在線且上游限流：回 429 並帶 Retry-After，前端等待後重送。
+ * 上游說請求太大（例如 Groq 超過每分鐘 token 上限）：回 413 payload_too_large，重送也沒用。
  * 已斷線時優先當成斷線處理，不送 Retry-After；其餘情況一律回 502。
  * 只記錄錯誤訊息，不記錄金鑰、音訊或筆記內容。
  */
@@ -52,6 +56,10 @@ function upstreamFailure(c: Context, err: unknown, signal: AbortSignal, tag: str
     console.warn(`[${tag}] upstream rate limited; retry after ${err.retryAfterSeconds}s`);
     c.header('Retry-After', String(err.retryAfterSeconds));
     return c.json({ error: 'rate_limited' } satisfies ApiErrorBody, 429);
+  }
+  if (!signal.aborted && err instanceof UpstreamPayloadTooLargeError) {
+    console.warn(`[${tag}] upstream rejected the request as too large`);
+    return c.json({ error: 'payload_too_large' } satisfies ApiErrorBody, 413);
   }
   if (signal.aborted) {
     // 回應已經沒人收；記一行說明，避免被誤認成上游故障。
@@ -186,10 +194,9 @@ export function createApp({
     } catch (err) {
       return upstreamFailure(c, err, signal, 'ai/todos');
     }
-    return c.json(
-      { items: items.map((item) => toTraditional(item)) } satisfies AiTodosResponse,
-      200,
-    );
+    // 先轉繁體再去重：模型可能同時給「开会」與「開會」，轉換後會變成重複項目。
+    const converted = [...new Set(items.map((item) => toTraditional(item)))];
+    return c.json({ items: converted } satisfies AiTodosResponse, 200);
   });
 
   // 未知路徑或方法（例如 GET /transcribe、多了路徑前綴的後端網址）也回 JSON，M3b 才能一律解析錯誤 body。
