@@ -155,7 +155,7 @@ export function NotesApp() {
 
   const closeDrawer = () => setDrawerOpen(false);
   const recording = recorder.state === 'recording' || recorder.state === 'stopping';
-  const backupDisabled = recording || backup.busy;
+  const listLocked = recording || backup.busy;
 
   // A failed create rejects without adding the note; deleteNote rejects only when the remove
   // failed, after putting the note back. Either way the user has to be told, and the rejection
@@ -238,7 +238,7 @@ export function NotesApp() {
           activeId={activeNote.id}
           // Also while a backup or import runs: deleting a note that importNotes is still writing
           // would let the final merge put it back in the list.
-          disabled={recording || backup.busy}
+          disabled={listLocked}
           onSelect={(id) => {
             selectNote(id);
             closeDrawer();
@@ -254,7 +254,7 @@ export function NotesApp() {
           onDelete={confirmDelete}
           footer={
             <BackupControls
-              disabled={backupDisabled}
+              disabled={listLocked}
               message={backup.message}
               onBackup={startBackup}
               onImportFile={startImport}
@@ -295,7 +295,7 @@ export function NotesApp() {
             onOpenSettings={() => setSettingsOpen(true)}
           />
         </header>
-        <Banner backupDue={backup.backupDue} backupDisabled={backupDisabled} onBackup={startBackup} />
+        <Banner backupDue={backup.backupDue} backupDisabled={listLocked} onBackup={startBackup} />
         {(recorder.error || recorder.notice) && (
           <div className="oc-recorder-alert" role="alert">
             <div className="oc-recorder-alert-text">
