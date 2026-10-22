@@ -1,3 +1,6 @@
+/** RMS below this counts as silence unless a caller passes its own threshold. */
+export const DEFAULT_SILENCE_THRESHOLD = 0.01;
+
 export interface SegmentPolicyOptions {
   /** No cut before this much audio (default 4000ms). */
   minMs?: number;
@@ -25,7 +28,7 @@ export class SegmentPolicy {
     this.minMs = options.minMs ?? 4000;
     this.maxMs = options.maxMs ?? 8000;
     this.silenceMs = options.silenceMs ?? 300;
-    this.threshold = options.threshold ?? 0.01;
+    this.threshold = options.threshold ?? DEFAULT_SILENCE_THRESHOLD;
     for (const [name, value] of Object.entries({
       minMs: this.minMs,
       maxMs: this.maxMs,

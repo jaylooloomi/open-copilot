@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { NO_SOUND_AFTER_MS, NO_SOUND_THRESHOLD, NoSoundDetector } from './noSoundDetector';
+import { DEFAULT_SILENCE_THRESHOLD } from './segmentPolicy';
 
 describe('NoSoundDetector', () => {
   it('uses the silence threshold of SegmentPolicy and 10 seconds', () => {
-    expect(NO_SOUND_THRESHOLD).toBe(0.01);
+    expect(NO_SOUND_THRESHOLD).toBe(DEFAULT_SILENCE_THRESHOLD);
+    expect(DEFAULT_SILENCE_THRESHOLD).toBe(0.01);
     expect(NO_SOUND_AFTER_MS).toBe(10_000);
   });
 
@@ -46,5 +48,12 @@ describe('NoSoundDetector', () => {
     const detector = new NoSoundDetector(0, { threshold: 0.1, afterMs: 1_000 });
     expect(detector.update(1_001, 0.05)).toBe(true);
     expect(detector.update(1_100, 0.1)).toBe(false);
+  });
+
+  it('rejects a negative or non-finite threshold or delay', () => {
+    expect(() => new NoSoundDetector(0, { afterMs: -1 })).toThrow(RangeError);
+    expect(() => new NoSoundDetector(0, { afterMs: Number.NaN })).toThrow(RangeError);
+    expect(() => new NoSoundDetector(0, { threshold: -0.1 })).toThrow(RangeError);
+    expect(() => new NoSoundDetector(0, { threshold: Number.POSITIVE_INFINITY })).toThrow(RangeError);
   });
 });
