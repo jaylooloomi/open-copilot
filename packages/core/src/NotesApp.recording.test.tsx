@@ -154,7 +154,16 @@ describe('NotesApp recording', () => {
     expect(fetchMock).toHaveBeenCalledTimes(sent);
 
     // The cursor is at the start, in front of the marker; ArrowRight selects it (it is an atom).
-    await user.keyboard('{ArrowRight}{Enter}');
+    // fireEvent, not user.keyboard: user-event sends no keyCode, and ProseMirror's arrow keys
+    // read keyCode, so it ignores that keydown. user-event then moves the DOM caret itself, and
+    // whether ProseMirror reads that back as the marker depends on when the async selectionchange
+    // arrives (ProseMirror distrusts one within 200 ms of focusing), so the test was flaky.
+    // With the keyCode a browser sends, ProseMirror selects the marker on the keydown itself.
+    const editorDom = document.activeElement as HTMLElement;
+    expect(editorDom).toHaveClass('ProseMirror');
+    fireEvent.keyDown(editorDom, { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 });
+    expect(screen.getByText('⚠ 第 1 段未轉寫・重試')).toHaveClass('ProseMirror-selectednode');
+    await user.keyboard('{Enter}');
 
     await waitFor(() => expect(body()).toHaveTextContent('鍵盤補上'));
     expect(screen.queryByText('⚠ 第 1 段未轉寫・重試')).not.toBeInTheDocument();
