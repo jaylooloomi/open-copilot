@@ -252,3 +252,28 @@ describe('toMarkdown task lists', () => {
     );
   });
 });
+
+describe('toMarkdown adjacent lists', () => {
+  it('separates a bullet list and a following task list so they stay two lists', () => {
+    expect(toMarkdown(note('', ul(item(p(text('a')))), tasks(task(false, p(text('b'))))))).toBe(
+      '- a\n\n<!-- -->\n\n- [ ] b\n',
+    );
+  });
+
+  it('separates two adjacent ordered lists but not a bullet list and an ordered list', () => {
+    expect(toMarkdown(note('', ol(1, item(p(text('a')))), ol(1, item(p(text('b'))))))).toBe(
+      '1. a\n\n<!-- -->\n\n1. b\n',
+    );
+    expect(toMarkdown(note('', ul(item(p(text('a')))), ol(1, item(p(text('b'))))))).toBe(
+      '- a\n\n1. b\n',
+    );
+  });
+
+  it('separates adjacent lists inside a list item', () => {
+    expect(
+      toMarkdown(
+        note('', ul(item(p(text('a')), ul(item(p(text('b')))), tasks(task(true, p(text('c'))))))),
+      ),
+    ).toBe('- a\n  - b\n\n  <!-- -->\n\n  - [x] c\n');
+  });
+});

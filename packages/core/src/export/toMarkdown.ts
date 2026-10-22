@@ -43,7 +43,33 @@ export function toMarkdown(note: Note): string {
 }
 
 function renderBlocks(nodes: JSONContent[]): string[] {
-  return nodes.map(renderBlock).filter((block) => block !== '');
+  const blocks: string[] = [];
+  let previous: JSONContent | undefined;
+  for (const node of nodes) {
+    const block = renderBlock(node);
+    if (block === '') continue;
+    if (previous && listsWouldMerge(previous, node)) blocks.push(LIST_SEPARATOR);
+    blocks.push(block);
+    previous = node;
+  }
+  return blocks;
+}
+
+/**
+ * Written between two adjacent lists that Markdown would otherwise read as one list. An HTML
+ * comment ends a list and renders as nothing.
+ */
+const LIST_SEPARATOR = '<!-- -->';
+
+/**
+ * Whether two adjacent lists use the same kind of marker and would merge into one list when only
+ * a blank line separates them: bullet and task lists both use `-`, ordered lists all use `.`.
+ */
+function listsWouldMerge(a: JSONContent, b: JSONContent): boolean {
+  const family = (node: JSONContent) =>
+    node.type === 'orderedList' ? 'ordered' : isList(node) ? 'dash' : undefined;
+  const kind = family(a);
+  return kind !== undefined && kind === family(b);
 }
 
 function renderBlock(node: JSONContent): string {
@@ -82,11 +108,14 @@ function renderList(list: JSONContent): string {
       if (task) marker = isTaskChecked(item) ? '- [x] ' : '- [ ] ';
       else if (ordered) marker = `${start + index}. `;
       let body = '';
+      let previous: JSONContent | undefined;
       for (const child of item.content ?? []) {
         const block = renderBlock(child);
         if (block === '') continue;
-        if (body !== '') body += canInterruptParagraph(child, block) ? '\n' : '\n\n';
+        if (previous && listsWouldMerge(previous, child)) body += `\n\n${LIST_SEPARATOR}\n\n`;
+        else if (body !== '') body += canInterruptParagraph(child, block) ? '\n' : '\n\n';
         body += block;
+        previous = child;
       }
       // GFM needs whitespace after `]` to read a task marker, so an empty item keeps `- [ ] ` untrimmed
       // (formatListItem would trim it to `- [ ]`, a bullet whose text is `[ ]`).
