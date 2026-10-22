@@ -19,7 +19,7 @@ export interface SegmentRecorderOptions {
    * are reported: never without an analyser or while the audio context is not running.
    */
   onLevel?(rms: number): void;
-  /** Minimum time between two onLevel calls (default 100ms). */
+  /** Time between two onLevel calls (default 100ms), less up to half a poll for timer drift. */
   levelMs?: number;
   policy?: SegmentPolicy;
   now?: () => number;
@@ -110,9 +110,11 @@ export class SegmentRecorder {
   }
 
   private reportLevel(now: number, level: number): void {
-    const { onLevel, levelMs = 100 } = this.options;
+    const { onLevel, levelMs = 100, pollMs = 50 } = this.options;
     if (!onLevel) return;
-    if (this.lastLevelAt !== null && now - this.lastLevelAt < levelMs) return;
+    // Half a poll of slack: a drifting timer that fires a little early must not push the report
+    // to the next poll, which would make the meter's cadence uneven.
+    if (this.lastLevelAt !== null && now - this.lastLevelAt < levelMs - pollMs / 2) return;
     this.lastLevelAt = now;
     try {
       onLevel(level);

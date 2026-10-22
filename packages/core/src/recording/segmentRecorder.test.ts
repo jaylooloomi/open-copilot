@@ -12,6 +12,7 @@ function setup(
     onLevel?: (rms: number) => void;
     levelMs?: number;
     policy?: SegmentPolicy;
+    now?: () => number;
   } = {},
 ) {
   const { stream, track, end } = createFakeStream();
@@ -27,6 +28,7 @@ function setup(
     onLevel: options.onLevel,
     levelMs: options.levelMs,
     policy: options.policy,
+    now: options.now,
     createAudioContext:
       options.audioContext === 'throws'
         ? () => {
@@ -243,6 +245,19 @@ describe('SegmentRecorder onLevel', () => {
     await recorder.stop();
   });
 
+  it('tolerates a poll that lands slightly early', async () => {
+    const onLevel = vi.fn();
+    // Real timers drift: the poll due at 150ms reads the clock at 149ms.
+    const now = () => (Date.now() === 150 ? 149 : Date.now());
+    const { recorder } = setup({ onLevel, now });
+    recorder.start();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(onLevel).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(100); // 150ms (read as 149): 99ms since the last report
+    expect(onLevel).toHaveBeenCalledTimes(2);
+    await recorder.stop();
+  });
+
   it('takes its own reporting interval', async () => {
     const onLevel = vi.fn();
     const { recorder } = setup({ onLevel, levelMs: 200 });
@@ -255,6 +270,8 @@ describe('SegmentRecorder onLevel', () => {
   it('reports nothing while the audio context is not running', async () => {
     const onLevel = vi.fn();
     const { recorder, audio } = setup({ onLevel });
+    // The fake resume() never sets the state to 'running', so the context stays suspended
+    // throughout. If the fake ever becomes realistic, this test must keep it suspended itself.
     (audio.context as unknown as { state: string }).state = 'suspended';
     recorder.start();
     await vi.advanceTimersByTimeAsync(1000);
