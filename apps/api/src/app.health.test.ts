@@ -13,6 +13,15 @@ describe('GET /health', () => {
     const { app } = createTestApp();
     const res = await app.request('/health', { headers: { Origin: ALLOWED_ORIGIN } });
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ALLOWED_ORIGIN);
+    // ACAO 依請求來源回顯，共用快取必須依 Origin 分開存。
+    expect(res.headers.get('Vary')).toContain('Origin');
+  });
+
+  it('omits Access-Control-Allow-Origin on a simple request from an unknown origin', async () => {
+    const { app } = createTestApp();
+    const res = await app.request('/health', { headers: { Origin: DENIED_ORIGIN } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
   });
 });
 

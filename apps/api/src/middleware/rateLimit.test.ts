@@ -66,4 +66,40 @@ describe('rateLimit', () => {
     clock += 60_000;
     expect((await hit(app)).status).toBe(200);
   });
+
+  it('starts a fresh window when the clock steps backwards', async () => {
+    const app = createLimitedApp(1);
+    expect((await hit(app)).status).toBe(200);
+    expect((await hit(app)).status).toBe(429);
+
+    // Wall clock stepped back 100 s (NTP correction, VM resume): the old
+    // window must not stay alive for windowMs plus the jump.
+    clock -= 100_000;
+    expect((await hit(app)).status).toBe(200);
+    const res = await hit(app);
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('60');
+  });
+
+  it('throws at construction for an invalid limit or windowMs', () => {
+    const now = () => clock;
+    for (const limit of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY]) {
+      expect(() => rateLimit({ limit, windowMs: 60_000, now })).toThrow(/limit/);
+    }
+    for (const windowMs of [Number.NaN, 0, -1, Number.POSITIVE_INFINITY]) {
+      expect(() => rateLimit({ limit: 1, windowMs, now })).toThrow(/windowMs/);
+    }
+  });
+
+  it('fails the request instead of sharing one bucket when no accessKey is set', async () => {
+    // Mis-wired: rateLimit mounted without bearerAuth in front of it.
+    const app = new Hono<AuthEnv>();
+    app.use('*', rateLimit({ limit: 1, windowMs: 60_000, now: () => clock }));
+    app.get('/', (c) => c.text('ok'));
+    app.onError((err, c) => c.text(err.message, 500));
+
+    const res = await app.request('/');
+    expect(res.status).toBe(500);
+    expect(await res.text()).toMatch(/accessKey/);
+  });
 });

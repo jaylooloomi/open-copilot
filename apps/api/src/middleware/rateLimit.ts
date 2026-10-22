@@ -18,14 +18,27 @@ interface Bucket {
  * 狀態只存在記憶體，僅適用單一實例部署。
  */
 export function rateLimit({ limit, windowMs, now = Date.now }: RateLimitOptions) {
+  // 接線錯誤要在啟動時就爆出來：NaN 的 windowMs 會讓金鑰永遠被鎖、Retry-After 變成 NaN。
+  if (!(Number.isInteger(limit) && limit >= 0)) {
+    throw new Error(`rateLimit limit must be a non-negative integer, got ${limit}`);
+  }
+  if (!(Number.isFinite(windowMs) && windowMs > 0)) {
+    throw new Error(`rateLimit windowMs must be a positive finite number, got ${windowMs}`);
+  }
+
   const buckets = new Map<string, Bucket>();
 
   return createMiddleware<AuthEnv>(async (c, next) => {
-    const key = c.get('accessKey') ?? 'anonymous';
+    // 必須掛在 bearerAuth 之後；沒有 accessKey 代表順序接錯，不能讓所有人默默共用一個桶。
+    const key: string | undefined = c.get('accessKey');
+    if (key === undefined) {
+      throw new Error('rateLimit requires bearerAuth to set accessKey first');
+    }
     const t = now();
 
     let bucket = buckets.get(key);
-    if (!bucket || t >= bucket.windowStart + windowMs) {
+    // 時鐘倒退（NTP 校正、VM 恢復）也開新窗，否則舊窗會多活「倒退的量」。
+    if (!bucket || t < bucket.windowStart || t >= bucket.windowStart + windowMs) {
       bucket = { windowStart: t, count: 0 };
       buckets.set(key, bucket);
     }
