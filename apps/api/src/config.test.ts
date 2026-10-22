@@ -32,6 +32,16 @@ describe('loadConfig', () => {
     expect(config.allowedOrigins).toEqual(['https://notes.example.com', 'app://bundle']);
   });
 
+  it('drops duplicate access keys and origins', () => {
+    const config = loadConfig({
+      ...base,
+      ACCESS_KEYS: 'dev-key, dev-key ,key-b',
+      ALLOWED_ORIGINS: 'app://bundle,app://bundle',
+    });
+    expect(config.accessKeys).toEqual(['dev-key', 'key-b']);
+    expect(config.allowedOrigins).toEqual(['app://bundle']);
+  });
+
   it('uses default origins and port when not set', () => {
     const config = loadConfig(base);
     expect(config).toEqual({

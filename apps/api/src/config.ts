@@ -17,11 +17,13 @@ export const DEFAULT_PORT = 8787;
 /** 短於這個長度的存取金鑰只發警告、不拒絕啟動（各里程碑的人工檢查用 dev-key）。 */
 export const MIN_ACCESS_KEY_LENGTH = 16;
 
+/** 逗號分隔、去空白、略過空項，並去除重複（保留第一次出現的順序）。 */
 function splitList(value: string | undefined): string[] {
-  return (value ?? '')
+  const items = (value ?? '')
     .split(',')
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
+  return [...new Set(items)];
 }
 
 /**
