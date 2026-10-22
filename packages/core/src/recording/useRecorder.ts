@@ -81,6 +81,11 @@ export interface UseRecorderResult {
   start(): Promise<void>;
   stop(): Promise<void>;
   retryGap(gapId: string): Promise<void>;
+  /**
+   * The note was deleted, so its markers can never be retried: drops the audio kept for them,
+   * in memory and in IndexedDB. Never rejects; failures are logged.
+   */
+  forgetNote(noteId: string): Promise<void>;
   dismissMessages(): void;
 }
 
@@ -169,6 +174,7 @@ export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
     start: controller.start,
     stop: controller.stop,
     retryGap: controller.retryGap,
+    forgetNote: controller.forgetNote,
     dismissMessages: controller.dismissMessages,
   };
 }
@@ -440,6 +446,15 @@ function createRecorderController(env: ControllerEnv) {
     }
   }
 
+  async function forgetNote(noteId: string): Promise<void> {
+    for (const [gapId, item] of pending) if (item.noteId === noteId) pending.delete(gapId);
+    try {
+      await env.queue().removeByNote(noteId);
+    } catch (error) {
+      console.error('Failed to drop the untranscribed audio of a deleted note', error);
+    }
+  }
+
   function dismissMessages(): void {
     env.setError(null);
     env.setNotice(null);
@@ -461,7 +476,7 @@ function createRecorderController(env: ControllerEnv) {
     stopTracks(current.stream);
   }
 
-  return { start, stop, retryGap, dismissMessages, onVisibilityChange, mount, dispose };
+  return { start, stop, retryGap, forgetNote, dismissMessages, onVisibilityChange, mount, dispose };
 }
 
 function stopTracks(stream: MediaStream): void {

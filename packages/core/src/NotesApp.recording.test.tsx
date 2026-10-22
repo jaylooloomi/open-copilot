@@ -133,6 +133,34 @@ describe('NotesApp recording', () => {
     expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).toEqual({ Authorization: 'Bearer key-2' });
   });
 
+  it('Enter on a selected gap marker retries it, so the keyboard can reach the retry', async () => {
+    installMicrophone();
+    let accepted = false;
+    const fetchMock = installBackend((seq) =>
+      accepted ? json({ seq, text: '鍵盤補上' }) : json({ error: 'unauthorized' }, 401),
+    );
+    const { user } = await renderApp();
+    await user.click(button('錄製'));
+    await user.click(await screen.findByRole('button', { name: '停止' }));
+    await screen.findByText('⚠ 第 1 段未轉寫・重試');
+    const dialog = await screen.findByRole('dialog', { name: '設定' });
+    await user.click(within(dialog).getByRole('button', { name: '取消' }));
+    accepted = true;
+    const sent = fetchMock.mock.calls.length;
+
+    // Enter in the title still moves to the body instead of retrying.
+    screen.getByRole('textbox', { name: '標題' }).focus();
+    await user.keyboard('{Enter}');
+    expect(fetchMock).toHaveBeenCalledTimes(sent);
+
+    // The cursor is at the start, in front of the marker; ArrowRight selects it (it is an atom).
+    await user.keyboard('{ArrowRight}{Enter}');
+
+    await waitFor(() => expect(body()).toHaveTextContent('鍵盤補上'));
+    expect(screen.queryByText('⚠ 第 1 段未轉寫・重試')).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(sent + 1);
+  });
+
   it('shows a refused microphone in an alert that can be dismissed', async () => {
     const mic = installMicrophone();
     mic.getUserMedia.mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'));

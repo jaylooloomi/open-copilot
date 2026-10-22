@@ -1,6 +1,7 @@
 import { EMPTY_DOC } from '@oc/shared';
 import { Menu, X } from 'lucide-react';
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { NodeSelection } from '@tiptap/pm/state';
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { ActionBar } from './components/ActionBar';
 import { Banner } from './components/Banner';
 import { NoteList } from './components/NoteList';
@@ -10,21 +11,33 @@ import { Editor } from './editor/Editor';
 import { TitleInput } from './editor/TitleInput';
 import { Toolbar } from './editor/Toolbar';
 import { useNoteEditor } from './editor/useNoteEditor';
+import { TRANSCRIPT_GAP_TYPE } from './export/common';
 import { displayTitle } from './notes/noteStore';
 import { useNotes } from './notes/useNotes';
 import { openAppDb } from './platform/db';
 import { usePlatform } from './platform/PlatformContext';
-import { createPendingQueue } from './recording/pendingQueue';
 import { useRecorder } from './recording/useRecorder';
 import { useSettings } from './settings/useSettings';
 import { useNoteDrawer } from './useNoteDrawer';
 import './styles/app.css';
 
-/** A second connection to the app database, for the recording queue (Platform stays as is). */
-function openRecorderDb() {
+let sharedRecorderDb: ReturnType<typeof openAppDb> | null = null;
+
+/**
+ * A second connection to the app database, for the recording queue (Platform stays as is). One
+ * per page and never closed, so StrictMode's double state initializers and remounts do not leave
+ * orphaned connections; openAppDb closes it itself when a newer version needs the database.
+ */
+function getRecorderDb(): ReturnType<typeof openAppDb> {
+  if (sharedRecorderDb) return sharedRecorderDb;
   const db = openAppDb();
-  // Failures surface where the queue is used; this only keeps them from being "unhandled".
-  db.catch((error: unknown) => console.error('Failed to open the recording queue', error));
+  sharedRecorderDb = db;
+  db.catch((error: unknown) => {
+    // Failures surface where the queue is used; this only keeps them from being "unhandled".
+    console.error('Failed to open the recording queue', error);
+    // The next mount tries again.
+    if (sharedRecorderDb === db) sharedRecorderDb = null;
+  });
   return db;
 }
 
@@ -55,7 +68,7 @@ export function NotesApp() {
   const [focusTitleOf, setFocusTitleOf] = useState<string | undefined>(undefined);
   const { settings, saveSettings } = useSettings();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [recorderDb] = useState(openRecorderDb);
+  const [recorderDb] = useState(getRecorderDb);
 
   // Called unconditionally (rules of hooks); recreated whenever the active note changes.
   const editor = useNoteEditor({
@@ -116,21 +129,12 @@ export function NotesApp() {
     if (window.confirm(`確定要刪除「${displayTitle(target)}」嗎？此動作無法復原。`)) {
       setStorageError(undefined);
       // Once the note is gone its ⚠ markers can never be retried, so drop their audio as well
-      // (only after the note itself was deleted; a failed delete keeps both).
-      deleteNote(id)
-        .then(
-          () =>
-            createPendingQueue(recorderDb)
-              .removeByNote(id)
-              .catch((error: unknown) =>
-                console.error('Failed to drop the untranscribed audio of a deleted note', error),
-              ),
-          reportFailure('刪除筆記失敗，請再試一次。', 'Failed to delete note'),
-        )
-        // Catches a synchronous throw while building the queue, which the .catch above cannot.
-        .catch((error: unknown) =>
-          console.error('Failed to drop the untranscribed audio of a deleted note', error),
-        );
+      // (only after the note itself was deleted; a failed delete keeps both). forgetNote never
+      // rejects.
+      deleteNote(id).then(
+        () => recorder.forgetNote(id),
+        reportFailure('刪除筆記失敗，請再試一次。', 'Failed to delete note'),
+      );
     }
   };
 
@@ -140,14 +144,36 @@ export function NotesApp() {
     else if (recorder.state === 'recording') void recorder.stop();
   };
 
+  const retryGap = (gapId: string) => {
+    if (recorder.state === 'needsSetup') setSettingsOpen(true);
+    else void recorder.retryGap(gapId);
+  };
+
   // The ⚠ 第 N 段未轉寫・重試 marker is the retry button.
   const onDocumentClick = (event: MouseEvent<HTMLDivElement>) => {
     const gap = event.target instanceof Element ? event.target.closest('[data-transcript-gap]') : null;
     const gapId = gap?.getAttribute('data-transcript-gap');
     if (!gapId) return;
     event.preventDefault();
-    if (recorder.state === 'needsSetup') setSettingsOpen(true);
-    else void recorder.retryGap(gapId);
+    retryGap(gapId);
+  };
+
+  // Keyboard users select the marker (arrow keys select it as a whole) and press Enter or Space.
+  // Capture phase, so ProseMirror does not first replace the selected marker with a line break.
+  const onDocumentKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+    if (event.nativeEvent.isComposing) return;
+    if (!(event.target instanceof Node) || !editor.view.dom.contains(event.target)) return;
+    const { selection } = editor.state;
+    if (!(selection instanceof NodeSelection) || selection.node.type.name !== TRANSCRIPT_GAP_TYPE) {
+      return;
+    }
+    const gapId = String(selection.node.attrs.gapId ?? '');
+    if (!gapId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    retryGap(gapId);
   };
 
   return (
@@ -223,7 +249,11 @@ export function NotesApp() {
           </div>
         )}
         <Toolbar editor={editor} note={activeNote} />
-        <div className="oc-document" onClick={onDocumentClick}>
+        <div
+          className="oc-document"
+          onClick={onDocumentClick}
+          onKeyDownCapture={onDocumentKeyDownCapture}
+        >
           <TitleInput
             inputRef={titleRef}
             value={activeNote.title}

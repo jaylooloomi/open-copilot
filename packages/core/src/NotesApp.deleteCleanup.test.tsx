@@ -7,15 +7,21 @@ import { PlatformProvider } from './platform/PlatformContext';
 import { createTestPlatform } from './test/memoryStorage';
 
 // The queue cleanup after a delete must never surface as an unhandled rejection, even if
-// building the queue itself throws synchronously.
+// the queue throws synchronously.
 const queueBroken = vi.hoisted(() => ({ value: false }));
 vi.mock('./recording/pendingQueue', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./recording/pendingQueue')>();
   return {
     ...actual,
     createPendingQueue: (...args: Parameters<typeof actual.createPendingQueue>) => {
-      if (queueBroken.value) throw new Error('queue unavailable');
-      return actual.createPendingQueue(...args);
+      const queue = actual.createPendingQueue(...args);
+      return {
+        ...queue,
+        removeByNote: (noteId: string) => {
+          if (queueBroken.value) throw new Error('queue unavailable');
+          return queue.removeByNote(noteId);
+        },
+      };
     },
   };
 });
@@ -26,7 +32,7 @@ afterEach(() => {
 });
 
 describe('NotesApp delete cleanup', () => {
-  it('logs instead of rejecting when the pending queue cannot be built', async () => {
+  it('logs instead of rejecting when the pending queue throws', async () => {
     const note: Note = { id: 'n1', title: '待刪', content: EMPTY_DOC, createdAt: 1, updatedAt: 1 };
     const ctx = createTestPlatform([note]);
     vi.spyOn(window, 'confirm').mockReturnValue(true);

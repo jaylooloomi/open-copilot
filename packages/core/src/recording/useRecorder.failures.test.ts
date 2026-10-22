@@ -309,4 +309,50 @@ describe('useRecorder: failures', () => {
     expect(ctx.result.current.notice).toBeNull();
     expect(ctx.result.current.error).toBeNull();
   });
+
+  it('forgetNote drops the kept audio of a deleted note from memory and IndexedDB', async () => {
+    const ctx = await setupRecorder();
+    ctx.transcribe.mockRejectedValue(new ApiError('down', 503));
+    await recordSegments(ctx, 1);
+    await waitFor(() => expect(ctx.editor.getHTML()).toBe(`<p>${GAP_1}</p>`));
+    const queue = createPendingQueue(ctx.db);
+    await queue.add({
+      gapId: 'other',
+      noteId: 'n2',
+      seq: 1,
+      blob: new Blob(['y']),
+      mimeType: 'audio/webm',
+      prompt: '',
+    });
+
+    await act(async () => {
+      await ctx.result.current.forgetNote('n1');
+    });
+
+    expect(await queue.get('gap-1')).toBeUndefined();
+    expect(await queue.get('other')).toBeDefined();
+    // The audio is gone from memory too: a retry has nothing left to send.
+    ctx.transcribe.mockReset();
+    ctx.transcribe.mockResolvedValue({ seq: 1, text: '不該出現' });
+    await act(async () => {
+      await ctx.result.current.retryGap('gap-1');
+    });
+    expect(ctx.transcribe).not.toHaveBeenCalled();
+    expect(ctx.result.current.error).toBe(RECORDER_MESSAGES.audioMissing);
+  });
+
+  it('forgetNote logs instead of rejecting when IndexedDB fails', async () => {
+    const ctx = await setupRecorder();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    ctx.db.close();
+
+    await act(async () => {
+      await expect(ctx.result.current.forgetNote('n1')).resolves.toBeUndefined();
+    });
+
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to drop the untranscribed audio of a deleted note',
+      expect.anything(),
+    );
+  });
 });
