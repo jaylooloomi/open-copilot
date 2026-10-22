@@ -22,6 +22,10 @@ h4 { font-size: 13pt; margin: 12pt 0 6pt; }
 p { margin: 0 0 6pt; }
 ul, ol { margin: 0 0 6pt; padding-left: 1.5em; }
 li > p { margin: 0; }
+ul[data-type="taskList"] { list-style: none; padding-left: 0.25em; }
+ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 6pt; }
+ul[data-type="taskList"] li > label { flex: none; }
+ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
 mark { padding: 0 1px; border-radius: 2px; }
 /* Browsers skip background colours when printing unless told otherwise. */
 * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

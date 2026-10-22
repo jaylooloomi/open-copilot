@@ -85,4 +85,12 @@ describe('app.css', () => {
   it('lights level bars in the primary colour', () => {
     expect(css).toMatch(/\.oc-level-bar\.is-on\s*\{[^}]*background:\s*var\(--oc-primary\)/);
   });
+
+  it('shows task list items with the checkbox beside the text and no bullet', () => {
+    expect(css).toMatch(/\.oc-editor \.ProseMirror ul\[data-type='taskList'\]\s*\{[^}]*list-style:\s*none/);
+    expect(css).toMatch(/\.oc-editor \.ProseMirror ul\[data-type='taskList'\] li\s*\{[^}]*display:\s*flex/);
+    expect(css).toMatch(
+      /\.oc-editor \.ProseMirror ul\[data-type='taskList'\] li\[data-checked='true'\] > div\s*\{[^}]*text-decoration:\s*line-through/,
+    );
+  });
 });
