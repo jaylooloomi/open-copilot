@@ -409,6 +409,59 @@ button {
   color: var(--oc-danger);
 }
 
+/* ---------- storage errors ---------- */
+/* Fixed above the drawer (z-index 40): a failed delete happens inside it. */
+.oc-storage-alert {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 8px 8px 8px 16px;
+  border: 1px solid #fecaca;
+  border-radius: var(--oc-radius);
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 14px;
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
+  transform: translateX(-50%);
+}
+
+.oc-storage-alert p {
+  margin: 0;
+}
+
+.oc-alert-dismiss {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 6px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.oc-alert-dismiss:hover {
+  background: #fee2e2;
+}
+
+.oc-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---------- narrow screens: note list becomes a drawer ---------- */
 @media (max-width: 767.98px) {
   .oc-menu-btn {
@@ -434,15 +487,18 @@ button {
     width: min(80vw, 300px);
     visibility: hidden;
     transform: translateX(-100%);
+    /* Closing: stay visible while sliding out, then leave the Tab order. */
     transition:
       transform 0.2s ease,
-      visibility 0.2s;
+      visibility 0s linear 0.2s;
     box-shadow: 0 0 24px rgba(17, 24, 39, 0.2);
   }
 
   .oc-app[data-drawer-open='true'] .oc-sidebar {
     visibility: visible;
     transform: translateX(0);
+    /* Opening: visible at once, so NotesApp can move focus into the drawer right away. */
+    transition: transform 0.2s ease;
   }
 
   .oc-backdrop {

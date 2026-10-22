@@ -1,5 +1,5 @@
 import type { JSONContent, Note } from '@oc/shared';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NotesApp } from './NotesApp';
@@ -36,7 +36,23 @@ const list = () => screen.getByRole('list', { name: '筆記清單' });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
+
+/** Collects unhandled promise rejections until the returned stop() is called. */
+function watchUnhandledRejections() {
+  const reasons: unknown[] = [];
+  const onUnhandled = (reason: unknown) => reasons.push(reason);
+  process.on('unhandledRejection', onUnhandled);
+  return {
+    reasons,
+    async stop() {
+      // Unhandled rejections are reported after the microtask queue drains.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      process.off('unhandledRejection', onUnhandled);
+    },
+  };
+}
 
 describe('NotesApp', () => {
   it('starts with one empty note when storage is empty', async () => {
@@ -147,5 +163,120 @@ describe('NotesApp', () => {
 
     await user.click(within(list()).getByRole('button', { name: /^A/ }));
     expect(app).toHaveAttribute('data-drawer-open', 'false');
+  });
+
+  it('keeps the note and reports the failure when deleting it fails', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { user, storage } = await renderApp([
+      note('a', 'A', 'Alpha', 1),
+      note('b', 'B', 'Beta', 2),
+    ]);
+    storage.remove.mockRejectedValueOnce(new Error('idb fail'));
+    const watch = watchUnhandledRejections();
+
+    await user.click(screen.getByRole('button', { name: '刪除「B」' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('刪除筆記失敗');
+    await watch.stop();
+    expect(watch.reasons).toEqual([]);
+    expect(consoleError).toHaveBeenCalledWith('Failed to delete note', expect.any(Error));
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(2);
+    expect(titleInput()).toHaveValue('B');
+
+    await user.click(screen.getByRole('button', { name: '關閉錯誤訊息' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('reports the failure when creating a note fails, and clears it on a successful retry', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { user, storage } = await renderApp([note('a', 'A', 'Alpha', 1)]);
+    storage.put.mockRejectedValueOnce(new Error('quota'));
+    const watch = watchUnhandledRejections();
+
+    await user.click(screen.getByRole('button', { name: '新增筆記' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('新增筆記失敗');
+    await watch.stop();
+    expect(watch.reasons).toEqual([]);
+    expect(consoleError).toHaveBeenCalledWith('Failed to create note', expect.any(Error));
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(1);
+    expect(titleInput()).toHaveValue('A');
+
+    await user.click(screen.getByRole('button', { name: '新增筆記' }));
+    await waitFor(() => expect(within(list()).getAllByRole('listitem')).toHaveLength(2));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('moves focus into the open drawer, keeps it there, and closes on Escape', async () => {
+    const { user } = await renderApp([note('a', 'A', 'Alpha', 1), note('b', 'B', 'Beta', 2)]);
+    const app = document.querySelector('.oc-app');
+    const sidebar = document.getElementById('oc-sidebar');
+    const main = screen.getByRole('main');
+    expect(main).not.toHaveAttribute('inert');
+
+    await user.click(screen.getByRole('button', { name: '開啟筆記清單' }));
+
+    // Focus lands on the active note, and the page behind the drawer is out of reach.
+    expect(within(list()).getByRole('button', { name: /^B/ })).toHaveFocus();
+    expect(main).toHaveAttribute('inert');
+    await user.tab();
+    expect(sidebar).toContainElement(document.activeElement as HTMLElement);
+
+    await user.keyboard('{Escape}');
+
+    expect(app).toHaveAttribute('data-drawer-open', 'false');
+    expect(main).not.toHaveAttribute('inert');
+    expect(screen.getByRole('button', { name: '開啟筆記清單' })).toHaveFocus();
+  });
+
+  it('returns focus to the menu button when a note is chosen from the drawer', async () => {
+    const { user } = await renderApp([note('a', 'A', 'Alpha', 1), note('b', 'B', 'Beta', 2)]);
+
+    await user.click(screen.getByRole('button', { name: '開啟筆記清單' }));
+    await user.keyboard('{Tab}{Tab}{Enter}');
+
+    expect(titleInput()).toHaveValue('A');
+    expect(document.querySelector('.oc-app')).toHaveAttribute('data-drawer-open', 'false');
+    expect(screen.getByRole('button', { name: '開啟筆記清單' })).toHaveFocus();
+  });
+
+  it('offers screen reader users a dismiss button inside the open drawer', async () => {
+    const { user } = await renderApp([note('a', 'A', 'Alpha', 1)]);
+    expect(screen.queryByRole('button', { name: '關閉' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '開啟筆記清單' }));
+    const dismiss = screen.getByRole('button', { name: '關閉' });
+    expect(document.getElementById('oc-sidebar')).toContainElement(dismiss);
+    // Keyboard users close with Escape; the button stays out of the Tab order.
+    expect(dismiss).toHaveAttribute('tabindex', '-1');
+
+    await user.click(dismiss);
+    expect(document.querySelector('.oc-app')).toHaveAttribute('data-drawer-open', 'false');
+  });
+
+  it('closes the drawer when the window grows past the drawer breakpoint', async () => {
+    const listeners = new Set<() => void>();
+    const query = {
+      matches: true,
+      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+    };
+    const matchMedia = vi.fn(() => query);
+    vi.stubGlobal('matchMedia', matchMedia);
+    const { user } = await renderApp([note('a', 'A', 'Alpha', 1)]);
+
+    await user.click(screen.getByRole('button', { name: '開啟筆記清單' }));
+    expect(matchMedia).toHaveBeenCalledWith('(max-width: 767.98px)');
+    expect(screen.getByRole('main')).toHaveAttribute('inert');
+
+    act(() => {
+      query.matches = false;
+      for (const listener of listeners) listener();
+    });
+
+    expect(document.querySelector('.oc-app')).toHaveAttribute('data-drawer-open', 'false');
+    expect(screen.getByRole('main')).not.toHaveAttribute('inert');
+    expect(listeners.size).toBe(0);
   });
 });
