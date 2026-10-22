@@ -1,10 +1,14 @@
 import type OpenAI from 'openai';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { APIError } from 'openai';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { blockRealNetwork, createFakeUpstream, jsonResponse } from '../test/fakeUpstream';
+import { UpstreamRateLimitError } from './errors';
 import {
   OPENAI_BASE_URL,
   OPENAI_MAX_RETRIES,
   OPENAI_TIMEOUT_MS,
   PROMPT_PREFIX,
+  PROMPT_TAIL_CHARS,
   TRANSCRIBE_MODEL,
   buildPrompt,
   createOpenAIClient,
@@ -103,5 +107,68 @@ describe('createOpenAIClient environment isolation', () => {
     expect(client.organization).toBeNull();
     expect(client.project).toBeNull();
     expect(client.apiKey).toBe('sk-test');
+  });
+});
+
+describe('createOpenAITranscriber (M6)', () => {
+  beforeEach(() => {
+    blockRealNetwork();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps only the last 80 characters of a long prompt', async () => {
+    const { client, create } = createFakeClient(async () => ({ text: '好' }));
+    const transcriber = createOpenAITranscriber('sk-test', client);
+    const tail = '乙'.repeat(PROMPT_TAIL_CHARS);
+
+    await transcriber.transcribe({ file, prompt: '甲'.repeat(120) + tail });
+
+    expect((create.mock.calls[0]![0] as { prompt: string }).prompt).toBe(PROMPT_PREFIX + tail);
+  });
+
+  it('turns an upstream 429 into UpstreamRateLimitError carrying Retry-After', async () => {
+    const upstream429 = APIError.generate(
+      429,
+      { error: { message: 'Rate limit reached' } },
+      undefined,
+      new Headers({ 'retry-after': '12' }),
+    );
+    const { client } = createFakeClient(async () => {
+      throw upstream429;
+    });
+    const transcriber = createOpenAITranscriber('sk-test', client);
+
+    const err = await transcriber.transcribe({ file, prompt: '' }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(UpstreamRateLimitError);
+    expect((err as UpstreamRateLimitError).retryAfterSeconds).toBe(12);
+    expect((err as UpstreamRateLimitError).cause).toBe(upstream429);
+  });
+
+  it('sends the request to api.openai.com through an injected fetch', async () => {
+    const upstream = createFakeUpstream(() => jsonResponse(200, { text: '你好' }));
+    const transcriber = createOpenAITranscriber(
+      'sk-test',
+      createOpenAIClient('sk-test', { fetch: upstream.fetch }),
+    );
+
+    await expect(transcriber.transcribe({ file, prompt: '前文' })).resolves.toBe('你好');
+
+    expect(upstream.calls).toEqual([
+      {
+        url: 'https://api.openai.com/v1/audio/transcriptions',
+        authorization: 'Bearer sk-test',
+        fields: {
+          file: 'file:segment-1.webm',
+          model: 'gpt-4o-mini-transcribe',
+          language: 'zh',
+          prompt: `${PROMPT_PREFIX}前文`,
+          response_format: 'json',
+        },
+      },
+    ]);
   });
 });
