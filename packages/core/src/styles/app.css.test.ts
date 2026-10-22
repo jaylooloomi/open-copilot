@@ -34,6 +34,18 @@ describe('app.css', () => {
     expect(css).toMatch(/\.oc-record-btn\s*\{[^}]*min-width:[^}]*justify-content:\s*center/);
   });
 
+  it('dims disabled backup buttons and gives them no hover colour', () => {
+    expect(css).toMatch(/\.oc-backup-btn:disabled\s*\{[^}]*opacity:\s*0\.5/);
+    expect(css).toMatch(/\.oc-backup-btn:hover:not\(:disabled\)\s*\{/);
+  });
+
+  it('keeps the backup buttons at the bottom of the scrolling sidebar, however long the list', () => {
+    // .oc-sidebar scrolls (overflow-y: auto); the footer must not scroll out of view with the notes.
+    expect(css).toMatch(
+      /\.oc-notelist-footer\s*\{[^}]*position:\s*sticky[^}]*bottom:\s*0[^}]*background:\s*var\(--oc-surface\)/,
+    );
+  });
+
   it('drops the toolbar group dividers on narrow screens, where groups wrap onto new rows', () => {
     // A divider would otherwise hang at the end of a wrapped row with nothing after it.
     const narrow = css.slice(css.indexOf('@media (max-width: 767.98px)'));
