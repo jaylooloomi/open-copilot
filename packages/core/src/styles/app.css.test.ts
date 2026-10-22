@@ -114,6 +114,26 @@ describe('app.css', () => {
     );
   });
 
+  it('starts the text of a task item at its top, level with the checkbox', () => {
+    // Inside the flex item the paragraph's default 1em margin would push the text a line below the box.
+    expect(css).toMatch(
+      /\.oc-editor \.ProseMirror ul\[data-type='taskList'\] > li > div > :first-child\s*\{[^}]*margin-top:\s*0/,
+    );
+    expect(css).toMatch(
+      /\.oc-editor \.ProseMirror ul\[data-type='taskList'\] > li > div > :last-child\s*\{[^}]*margin-bottom:\s*0/,
+    );
+  });
+
+  it('fades the edges of the scrolling AI chips on phones so a cut chip reads as more to scroll', () => {
+    expect(narrowBlock(css)).toMatch(/\.oc-ai-group\s*\{[^}]*mask-image:\s*linear-gradient/);
+  });
+
+  it('shows 複製 and 匯出 as icons while the AI side panel narrows the toolbar on desktop', () => {
+    expect(css).toMatch(
+      /@media \(min-width: 768px\) and \(max-width: 1366px\)\s*\{\s*\.oc-app:has\(\.oc-ai-panel\) \.oc-note-actions \.oc-action-btn > span\s*\{[^}]*clip-path:\s*inset\(50%\)/,
+    );
+  });
+
   it('styles only the direct items of a task list, not a plain list nested inside one', () => {
     const task = selectorLists(css).filter((s) => s.includes("ul[data-type='taskList'] li"));
     expect(task).toEqual([]);

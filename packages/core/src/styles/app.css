@@ -579,6 +579,20 @@ button {
   min-width: 0;
 }
 
+/* The item's content is a flex item, so its paragraph's default 1em margins stay inside it and would
+   push the text a line below the checkbox. Spacing between items goes on the items instead. */
+.oc-editor .ProseMirror ul[data-type='taskList'] > li > div > :first-child {
+  margin-top: 0;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li > div > :last-child {
+  margin-bottom: 0;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li + li {
+  margin-top: 0.25em;
+}
+
 .oc-editor .ProseMirror ul[data-type='taskList'] > li[data-checked='true'] > div > p {
   color: var(--oc-muted);
   text-decoration: line-through;
@@ -1215,11 +1229,16 @@ button {
     padding: 8px 14px;
   }
 
+  /* The chips scroll sideways with no scrollbar: the faded edges show a cut chip is more to scroll,
+     and snapping keeps a chip's start at the left edge instead of half of it. */
   .oc-ai-group {
     flex-wrap: nowrap;
     min-width: 0;
     overflow-x: auto;
     scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent);
   }
 
   .oc-ai-group::-webkit-scrollbar {
@@ -1228,6 +1247,7 @@ button {
 
   .oc-ai-btn {
     flex-shrink: 0;
+    scroll-snap-align: start;
   }
 
   /* The AI chips scroll inside .oc-actionbar-end; the gear stays visible at its end. Sized from 0, it
@@ -1324,6 +1344,20 @@ button {
 
   .oc-title {
     font-size: 22px;
+  }
+}
+
+/* Up to about 1366px the AI side panel leaves the toolbar too narrow for one row, and the note would
+   jump down a row whenever the panel opens. 複製 and 匯出 keep their icons; their labels stay as the
+   buttons' accessible names. A rule of its own: an old WebView without :has() only wraps the row. */
+@media (min-width: 768px) and (max-width: 1366px) {
+  .oc-app:has(.oc-ai-panel) .oc-note-actions .oc-action-btn > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 

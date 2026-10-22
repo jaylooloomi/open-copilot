@@ -32,6 +32,8 @@ export interface AiPanelProps {
   onInsertTodos(items: TodoItem[]): void;
   /** Why inserting is not possible right now (e.g. while recording); shown as the buttons' title. */
   insertDisabledReason?: string;
+  /** Why a new request is not possible right now (recording, empty note, no backend); disables 重試. */
+  retryDisabledReason?: string;
   /** Hides the panel from focus and assistive technology, e.g. while the note drawer is open. */
   inert?: boolean;
   /** navigator.clipboard.writeText by default; injectable for tests. */
@@ -46,18 +48,30 @@ export function AiPanel({
   onInsertSummary,
   onInsertTodos,
   insertDisabledReason,
+  retryDisabledReason,
   inert,
   copyText = defaultCopyText,
 }: AiPanelProps) {
   const titleId = useId();
+  const panelRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
+  // Focus moves to the title on open and back to where it was (e.g. the AI button) on close, unless
+  // it has already moved on outside the panel, e.g. into the note after an insert.
   useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const panel = panelRef.current;
     headingRef.current?.focus();
+    return () => {
+      const active = document.activeElement;
+      const focusLost = !active || active === document.body || (panel?.contains(active) ?? false);
+      if (focusLost && opener?.isConnected) opener.focus();
+    };
   }, []);
 
   return (
     <aside
+      ref={panelRef}
       className="oc-ai-panel"
       aria-labelledby={titleId}
       inert={inert}
@@ -87,7 +101,13 @@ export function AiPanel({
               {state.message}
             </p>
             <div className="oc-ai-panel-actions">
-              <button type="button" className="oc-action-btn" onClick={onRetry}>
+              <button
+                type="button"
+                className="oc-action-btn"
+                disabled={retryDisabledReason !== undefined}
+                title={retryDisabledReason}
+                onClick={onRetry}
+              >
                 {AI_PANEL_TEXT.retry}
               </button>
             </div>

@@ -40,10 +40,11 @@ export interface UseAiAssistantResult {
   panel: AiPanelState | null;
   /** The privacy notice must be shown; the request waits for acceptPrivacy(). */
   privacyPending: boolean;
-  /** Opens the panel for `kind` with the note's title and text (after the privacy notice the first time). */
+  /**
+   * Opens the panel for `kind` with the note's title and text (after the privacy notice the first time).
+   * 重試 calls it again with the note as it is now, so there is no separate retry.
+   */
   request(kind: AiKind, input: AiRequest): void;
-  /** Sends the last request again. */
-  retry(): void;
   /** 我知道了: remembers the notice and sends the waiting request. */
   acceptPrivacy(): void;
   /** Closes the notice without sending anything. */
@@ -68,7 +69,6 @@ export function useAiAssistant({
   // Mirrors `pending` so two calls before a re-render cannot both send the waiting request.
   const pendingRef = useRef<AiCall | null>(null);
   const requestId = useRef(0);
-  const lastCall = useRef<AiCall | null>(null);
 
   const setPending = useCallback((call: AiCall | null) => {
     pendingRef.current = call;
@@ -85,7 +85,6 @@ export function useAiAssistant({
 
   const run = ({ kind, input }: AiCall) => {
     const id = ++requestId.current;
-    lastCall.current = { kind, input };
     setPanel({ requestId: id, kind, status: 'loading' });
     const client = deps.createClient(settings);
     const result: Promise<AiPanelState> =
@@ -121,9 +120,6 @@ export function useAiAssistant({
     request(kind, input) {
       if (deps.privacy.isAcknowledged()) run({ kind, input });
       else setPending({ kind, input });
-    },
-    retry() {
-      if (lastCall.current) run(lastCall.current);
     },
     acceptPrivacy() {
       const call = pendingRef.current;

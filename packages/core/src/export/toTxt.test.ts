@@ -140,4 +140,18 @@ describe('toTxt task lists', () => {
       '☐\n☑\n☐ 項目\n☐ 項目',
     );
   });
+
+  it('puts a blank line between a list and a heading after it, so the heading does not read as an item', () => {
+    const doc = note(
+      '週會',
+      ul(item(p(text('項目一'))), item(p(text('項目二')))),
+      h(2, '待辦事項'),
+      tasks(task(true, p(text('寄出報價單')))),
+    );
+    expect(toTxt(doc)).toBe('週會\n\n- 項目一\n- 項目二\n\n待辦事項\n☑ 寄出報價單');
+  });
+
+  it('keeps a heading after a paragraph on the next line', () => {
+    expect(toTxt(note('', p(text('一段')), h(2, '標題'), p(text('內容'))))).toBe('一段\n標題\n內容');
+  });
 });

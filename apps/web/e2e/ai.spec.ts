@@ -25,6 +25,26 @@ async function writeNote(page: Page, title: string, text: string) {
   await page.keyboard.type(text);
 }
 
+/** How many rows the formatting toolbar's groups take. */
+async function toolbarRows(page: Page): Promise<number> {
+  return page.locator('.oc-toolbar').evaluate(
+    (toolbar) => new Set([...toolbar.children].map((child) => Math.round(child.getBoundingClientRect().top))).size,
+  );
+}
+
+/** Per task item: the checkbox's vertical centre minus that of the first line of the item's text. */
+async function checkboxOffsets(page: Page): Promise<number[]> {
+  return page.locator('ul[data-type="taskList"] > li').evaluateAll((items) =>
+    items.map((li) => {
+      const box = li.querySelector('input')!.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(li.querySelector(':scope > div > p')!);
+      const line = range.getClientRects()[0]!;
+      return (box.top + box.bottom) / 2 - (line.top + line.bottom) / 2;
+    }),
+  );
+}
+
 test('AI 摘要：第一次先顯示隱私說明，摘要插入到筆記開頭', async ({ page }) => {
   await configure(page, { acknowledged: false });
   const requests: { body: unknown; authorization?: string }[] = [];
@@ -87,6 +107,8 @@ test('待辦事項：勾選清單插入筆記結尾，匯出 Markdown 為 - [ ] 
   const panel = page.getByRole('complementary', { name: '待辦事項' });
   await expect(panel.getByRole('checkbox', { name: '預約會議室' })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  // Opening the side panel narrows the note, but the toolbar keeps to one row so the note does not jump.
+  expect(await toolbarRows(page)).toBe(1);
   await panel.getByRole('checkbox', { name: '預約會議室' }).check();
   await panel.getByRole('button', { name: '插入到筆記結尾' }).click();
   await expect(panel).toBeHidden();
@@ -97,6 +119,8 @@ test('待辦事項：勾選清單插入筆記結尾，匯出 Markdown 為 - [ ] 
   await expect(items).toHaveCount(2);
   await expect(items.nth(0).locator('input[type="checkbox"]')).not.toBeChecked();
   await expect(items.nth(1).locator('input[type="checkbox"]')).toBeChecked();
+  // Each checkbox sits level with the first line of its text.
+  for (const offset of await checkboxOffsets(page)) expect(Math.abs(offset)).toBeLessThanOrEqual(4);
 
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: '匯出' }).click();

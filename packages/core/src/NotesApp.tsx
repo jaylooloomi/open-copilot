@@ -142,7 +142,7 @@ export function NotesApp() {
   // characters), so it reruns only when the body changes, not on every recorder tick or title edit.
   // It sits above the loading early return (rules of hooks); the text depends on the content alone.
   const activeContent = activeNote?.content;
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- aiNoteText drops the title, so the content is the only input.
+  // Keyed on the content alone on purpose: aiNoteText drops the title, so the content is its only input.
   const aiText = useMemo(() => (activeNote ? aiNoteText(activeNote) : ''), [activeContent]);
 
   // Once the notes are loaded from storage, drop the kept audio of markers no saved note has any
@@ -193,12 +193,22 @@ export function NotesApp() {
   // AI 摘要 / 待辦事項 wait while a recording is still adding to the note.
   const aiBlocked = recording || recordStarting;
   const aiDisabled = aiDisabledReason({ recording: aiBlocked, configured: isConfigured(settings), text: aiText });
-  const requestAi = (kind: AiKind) => ai.request(kind, { title: activeNote.title, text: aiText });
+  const requestAi = (kind: AiKind) => {
+    // The buttons are disabled then too; this also covers a click that lands before the re-render.
+    if (aiDisabled !== undefined) return;
+    ai.request(kind, { title: activeNote.title, text: aiText });
+  };
+  // After an insert the panel closes and the cursor goes back to the note, where the text landed.
+  // view.focus() is synchronous, so the panel sees focus already outside it and leaves it there.
+  const afterInsert = () => {
+    ai.close();
+    if (!editor.isDestroyed) editor.view.focus();
+  };
   const insertSummary = (summary: string) => {
-    if (insertSummaryAtStart(editor, summary)) ai.close();
+    if (insertSummaryAtStart(editor, summary)) afterInsert();
   };
   const insertTodos = (items: TodoItem[]) => {
-    if (insertTodosAtEnd(editor, items)) ai.close();
+    if (insertTodosAtEnd(editor, items)) afterInsert();
   };
 
   // A failed create rejects without adding the note; deleteNote rejects only when the remove
@@ -420,6 +430,8 @@ export function NotesApp() {
           onInsertSummary={insertSummary}
           onInsertTodos={insertTodos}
           insertDisabledReason={aiBlocked ? AI_DISABLED_REASONS.recording : undefined}
+          // 重試 sends a new request, so it follows the same rules as AI 摘要 / 待辦事項.
+          retryDisabledReason={aiDisabled}
         />
       )}
 

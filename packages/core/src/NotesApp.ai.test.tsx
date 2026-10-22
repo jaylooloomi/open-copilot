@@ -187,6 +187,39 @@ describe('NotesApp AI', () => {
     expect(JSON.parse(String(init?.body)).text).toContain('再補一句。');
   });
 
+  it('disables 重試 once the note has been emptied while the error is shown', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fetchMock = installBackend({ '/ai/summary': [json({ error: 'ai_unavailable' }, 503)] });
+    const { user } = await renderApp({ acknowledged: true });
+
+    await user.click(button('AI 摘要'));
+    await within(await screen.findByRole('complementary', { name: 'AI 摘要' })).findByRole('alert');
+    const { editor } = body() as HTMLElement & { editor: TiptapEditor };
+    act(() => {
+      editor.commands.clearContent(true);
+    });
+
+    const retry = await within(screen.getByRole('complementary', { name: 'AI 摘要' })).findByRole('button', {
+      name: '重試',
+    });
+    await waitFor(() => expect(retry).toBeDisabled());
+    expect(retry).toHaveAttribute('title', AI_DISABLED_REASONS.empty);
+    await user.click(retry);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts the cursor back in the note after inserting', async () => {
+    installBackend({ '/ai/summary': [json({ summary: '摘要一句。' })] });
+    const { user } = await renderApp({ acknowledged: true });
+
+    await user.click(button('AI 摘要'));
+    const panel = await screen.findByRole('complementary', { name: 'AI 摘要' });
+    await within(panel).findByText('摘要一句。');
+    await user.click(within(panel).getByRole('button', { name: '插入到筆記開頭' }));
+
+    await waitFor(() => expect(body()).toHaveFocus());
+  });
+
   it('opens the settings when the access key is rejected', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     installBackend({ '/ai/todos': [json({ error: 'unauthorized' }, 401)] });

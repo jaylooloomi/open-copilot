@@ -15,16 +15,26 @@ import {
 /**
  * Plain text: the title, a blank line, then one line per paragraph or list item.
  * Lists keep their `- ` / `1. ` markers, task items start with ☐ / ☑, and links become
- * `text (href)`; every other kind of formatting is dropped.
+ * `text (href)`; every other kind of formatting is dropped. A heading right after a list gets a blank
+ * line before it, so it reads as a new section rather than as one more list item.
  */
 export function toTxt(note: Note): string {
   const title = note.title.trim();
-  const body = (note.content.content ?? [])
-    .map(renderBlock)
+  const blocks = note.content.content ?? [];
+  const body = blocks
+    .map((block, index) => {
+      const text = renderBlock(block);
+      const previous = blocks[index - 1];
+      return block.type === 'heading' && previous && isList(previous) ? `\n${text}` : text;
+    })
     .join('\n')
     // Drop blank lines at both ends (e.g. the empty paragraph Tiptap keeps after a final list).
     .replace(/^\n+|\n+$/g, '');
   return [title, body].filter((part) => part !== '').join('\n\n');
+}
+
+function isList(node: JSONContent): boolean {
+  return node.type === 'bulletList' || node.type === 'orderedList' || node.type === TASK_LIST_TYPE;
 }
 
 function renderBlock(node: JSONContent): string {

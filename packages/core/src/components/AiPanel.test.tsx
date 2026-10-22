@@ -133,4 +133,46 @@ describe('AiPanel', () => {
     expect(insert).toHaveAttribute('title', '錄音中無法使用 AI 功能');
     expect(screen.getByRole('button', { name: AI_PANEL_TEXT.copy })).toBeEnabled();
   });
+
+  it('disables 重試 with the reason as title while AI requests are not possible', async () => {
+    const { user, onRetry } = setup(
+      { requestId: 1, kind: 'summary', status: 'error', message: 'AI 處理失敗，請稍後再試' },
+      { retryDisabledReason: '錄音中無法使用 AI 功能' },
+    );
+    const retry = screen.getByRole('button', { name: AI_PANEL_TEXT.retry });
+    expect(retry).toBeDisabled();
+    expect(retry).toHaveAttribute('title', '錄音中無法使用 AI 功能');
+    await user.click(retry);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it('gives focus back to the element that had it when the panel closes', () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+    const handlers = { onClose: vi.fn(), onRetry: vi.fn(), onInsertSummary: vi.fn(), onInsertTodos: vi.fn() };
+    const { unmount } = render(<AiPanel state={{ requestId: 1, kind: 'summary', status: 'loading' }} {...handlers} />);
+    expect(screen.getByRole('heading', { name: 'AI 摘要' })).toHaveFocus();
+
+    unmount();
+
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it('leaves focus alone on close when it has already moved out of the panel', () => {
+    const opener = document.createElement('button');
+    const elsewhere = document.createElement('input');
+    document.body.append(opener, elsewhere);
+    opener.focus();
+    const handlers = { onClose: vi.fn(), onRetry: vi.fn(), onInsertSummary: vi.fn(), onInsertTodos: vi.fn() };
+    const { unmount } = render(<AiPanel state={{ requestId: 1, kind: 'summary', status: 'loading' }} {...handlers} />);
+    elsewhere.focus();
+
+    unmount();
+
+    expect(elsewhere).toHaveFocus();
+    opener.remove();
+    elsewhere.remove();
+  });
 });

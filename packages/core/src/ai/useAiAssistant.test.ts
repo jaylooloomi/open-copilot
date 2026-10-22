@@ -100,7 +100,7 @@ describe('useAiAssistant', () => {
     expect(result.current.panel).toBeNull();
   });
 
-  it('shows the error message and retries the same request', async () => {
+  it('shows the error message, and a new request after it replaces the error', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const f = fakeDeps();
     f.summarize
@@ -112,9 +112,10 @@ describe('useAiAssistant', () => {
     expect(result.current.panel).toMatchObject({ kind: 'summary', status: 'error', message: AI_MESSAGES.unavailable });
     expect(onUnauthorized).not.toHaveBeenCalled();
 
-    await act(async () => result.current.retry());
+    const edited = { ...INPUT, text: `${INPUT.text}（已修改）` };
+    await act(async () => result.current.request('summary', edited));
     expect(f.summarize).toHaveBeenCalledTimes(2);
-    expect(f.summarize).toHaveBeenLastCalledWith(INPUT);
+    expect(f.summarize).toHaveBeenLastCalledWith(edited);
     expect(result.current.panel).toMatchObject({ status: 'done', summary: '摘要' });
   });
 
@@ -188,16 +189,6 @@ describe('useAiAssistant', () => {
     act(() => result.current.acceptPrivacy());
 
     expect(f.privacy.acknowledge).not.toHaveBeenCalled();
-    expect(f.createClient).not.toHaveBeenCalled();
-    expect(result.current.panel).toBeNull();
-  });
-
-  it('does nothing for retry() before any request', () => {
-    const f = fakeDeps();
-    const { result } = setup(f);
-
-    act(() => result.current.retry());
-
     expect(f.createClient).not.toHaveBeenCalled();
     expect(result.current.panel).toBeNull();
   });
