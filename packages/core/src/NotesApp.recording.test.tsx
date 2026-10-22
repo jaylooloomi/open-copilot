@@ -161,6 +161,7 @@ describe('NotesApp recording', () => {
     // fireEvent with keyCode 39, as browsers send it, so ProseMirror's own arrow handling selects
     // the marker. user-event's {ArrowRight} has no keyCode: it only moves the DOM selection, which
     // ProseMirror reads back later, and under load that raced with focus handling and with Enter.
+    expect(document.activeElement).toBe(body());
     fireEvent.keyDown(body(), { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 });
     expect(screen.getByText('⚠ 第 1 段未轉寫・重試')).toHaveClass('ProseMirror-selectednode');
     await user.keyboard('{Enter}');
