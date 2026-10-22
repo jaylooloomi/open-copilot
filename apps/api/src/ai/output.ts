@@ -13,8 +13,8 @@ export class AiOutputError extends Error {
 }
 
 // 開頭的清單符號與勾選框：「- 」「* 」「• 」「1. 」「1) 」「1、」以及「[ ]」「[x]」「☐」「☑」。
-// 數字後面必須接空白（「、」除外），所以「2026.10.30 前交報告」不會被誤刪。
-const LIST_MARKER = /^(?:[-*•]\s+|\d+(?:[.)]\s+|、\s*))?(?:\[[ xX]?\]\s*|[☐☑]\s*)?/;
+// 符號與數字後面必須接空白或結尾（「、」除外），所以「2026.10.30 前交報告」不會被誤刪，只有符號的項目會被丟掉。
+const LIST_MARKER = /^(?:[-*•](?:\s+|$)|\d+(?:[.)](?:\s+|$)|、\s*))?(?:\[[ xX]?\]\s*|[☐☑]\s*)?/;
 
 /** /ai/summary 的模型輸出：去掉頭尾空白；空白或沒有內容時丟 AiOutputError。 */
 export function normalizeSummary(content: string | null | undefined): string {

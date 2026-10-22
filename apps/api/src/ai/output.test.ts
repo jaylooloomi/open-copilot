@@ -61,6 +61,16 @@ describe('parseTodoItems', () => {
     ]);
   });
 
+  it('drops items that are only a list marker', () => {
+    expect(parseTodoItems('{"items":["- ","* ","•","2. ","3)","4、","打電話給王經理"]}')).toEqual([
+      '打電話給王經理',
+    ]);
+  });
+
+  it('keeps an item that is only a number or a dash word', () => {
+    expect(parseTodoItems('{"items":["2026","-5 度以下要加熱"]}')).toEqual(['2026', '-5 度以下要加熱']);
+  });
+
   it('keeps dates and numbers that are part of the task', () => {
     expect(parseTodoItems('{"items":["2026.10.30 前交報告","3 月 5 日前寄出"]}')).toEqual([
       '2026.10.30 前交報告',
