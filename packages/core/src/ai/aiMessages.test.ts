@@ -55,6 +55,24 @@ describe('aiDisabledReason', () => {
     expect(aiDisabledReason({ ...ready, text: '[未轉寫片段]\n報價單' })).toBeUndefined();
   });
 
+  it('treats a body of only empty list and task items as empty', () => {
+    const emptyItem = (): JSONContent => ({ type: 'listItem', content: [p()] });
+    const text = aiNoteText(
+      note(
+        '週會',
+        { type: 'bulletList', content: [emptyItem()] },
+        { type: 'orderedList', content: [emptyItem(), emptyItem()] },
+        { type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: false }, content: [p()] }] },
+        { type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: true }, content: [p()] }] },
+      ),
+    );
+    expect(aiDisabledReason({ ...ready, text })).toBe(AI_DISABLED_REASONS.empty);
+    expect(aiDisabledReason({ ...ready, text: '- \n☐ [未轉寫片段]\n10.' })).toBe(AI_DISABLED_REASONS.empty);
+    expect(aiDisabledReason({ ...ready, text: '- 寄出報價單' })).toBeUndefined();
+    expect(aiDisabledReason({ ...ready, text: '2026' })).toBeUndefined();
+    expect(aiDisabledReason({ ...ready, text: '-5' })).toBeUndefined();
+  });
+
   it('uses zh-TW reasons', () => {
     expect(AI_DISABLED_REASONS).toEqual({
       recording: '錄音中無法使用 AI 功能',

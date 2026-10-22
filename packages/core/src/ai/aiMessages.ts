@@ -1,6 +1,6 @@
 import { AI_MAX_TEXT_CHARS, type Note } from '@oc/shared';
 import { ApiError } from '../api/apiClient';
-import { TRANSCRIPT_GAP_TEXT } from '../export/common';
+import { TASK_CHECKED, TASK_UNCHECKED, TRANSCRIPT_GAP_TEXT } from '../export/common';
 import { toTxt } from '../export/toTxt';
 
 /** What the AI panel says when a request fails. */
@@ -41,12 +41,22 @@ export interface AiAvailability {
   text: string;
 }
 
+/** A line that is blank or only a list / task marker (`- `, `1. `, ☐, ☑) once gap markers are removed. */
+const EMPTY_LINE = new RegExp(String.raw`^\s*(?:-|\d+\.|${TASK_UNCHECKED}|${TASK_CHECKED})?\s*$`);
+
+/** Whether aiNoteText holds anything to summarise: gap markers and empty list items alone do not count. */
+function hasContent(text: string): boolean {
+  return text
+    .replaceAll(TRANSCRIPT_GAP_TEXT, '')
+    .split('\n')
+    .some((line) => !EMPTY_LINE.test(line));
+}
+
 /** The reason the AI buttons are disabled, or undefined when they can be used. */
 export function aiDisabledReason({ recording, configured, text }: AiAvailability): string | undefined {
   if (recording) return AI_DISABLED_REASONS.recording;
   if (!configured) return AI_DISABLED_REASONS.notConfigured;
-  // Gap markers alone are no content to summarise.
-  if (text.replaceAll(TRANSCRIPT_GAP_TEXT, '').trim() === '') return AI_DISABLED_REASONS.empty;
+  if (!hasContent(text)) return AI_DISABLED_REASONS.empty;
   return undefined;
 }
 
