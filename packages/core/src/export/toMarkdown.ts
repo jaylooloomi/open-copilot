@@ -1,6 +1,7 @@
 import type { JSONContent, Note } from '@oc/shared';
 import {
   formatListItem,
+  linkRuns,
   listStart,
   nodeText,
   TRANSCRIPT_GAP_TEXT,
@@ -29,7 +30,7 @@ const PUNCTUATION_EDGES = /^([\s\p{P}\p{S}]*)([\s\S]*?)([\s\p{P}\p{S}]*)$/u;
 
 /**
  * Markdown: `# title`, body headings one level lower (`##`–`####`), `**bold**`, `*italic*`,
- * `<u>underline</u>`, `- ` / `1. ` lists. Colour, highlight and alignment are dropped.
+ * `<u>underline</u>`, `[text](href)` links, `- ` / `1. ` lists. Colour, highlight and alignment are dropped.
  */
 export function toMarkdown(note: Note): string {
   const blocks = renderBlocks(note.content.content ?? []);
@@ -100,12 +101,27 @@ function canInterruptParagraph(node: JSONContent, block: string): boolean {
   return !/^(?:-|\d+\.)$/.test(block.split('\n', 1)[0]);
 }
 
+/** Inline content; each link becomes `[text](href)` around its own marked text. */
+function renderInline(nodes: JSONContent[] = []): string {
+  return linkRuns(nodes)
+    .map(({ href, nodes: run }) => {
+      const inner = renderMarked(run);
+      return href && inner !== '' ? `[${inner}](${linkDestination(href)})` : inner;
+    })
+    .join('');
+}
+
+/** A link destination CommonMark reads back unchanged: no spaces or angle brackets, parentheses escaped. */
+function linkDestination(href: string): string {
+  return href.replace(/[\s<>]/g, (c) => encodeURIComponent(c)).replace(/[()\\]/g, '\\$&');
+}
+
 /**
- * Renders inline content, opening and closing delimiters only where the set of marks changes.
+ * Renders inline content outside links, opening and closing delimiters only where the set of marks changes.
  * Spaces (and, around `**` / `*`, punctuation) at the edges of a text node are written outside the
  * delimiters, so every `**` / `*` touches a letter and CommonMark accepts it.
  */
-function renderInline(nodes: JSONContent[] = []): string {
+function renderMarked(nodes: JSONContent[]): string {
   let out = '';
   let open: MdMark[] = [];
   /** Escaped spaces and punctuation to write between the next closing and opening delimiters. */

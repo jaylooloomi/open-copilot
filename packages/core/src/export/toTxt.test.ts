@@ -74,6 +74,19 @@ describe('toTxt', () => {
     expect(toTxt({ ...note(''), content: EMPTY_DOC })).toBe('');
   });
 
+  it('writes a link as "text (href)" unless the text already is the address', () => {
+    const link = (href: string): Mark => ({ type: 'link', attrs: { href, target: '_blank' } });
+    const doc = note(
+      '',
+      p(text('看'), text('官網', link('https://example.com')), text('與'), text('文件', link('https://example.com'), { type: 'bold' })),
+      p(text('https://example.com', link('https://example.com')), text(' a@b.co', link('mailto:a@b.co'))),
+      p(text('壞', link('javascript:alert(1)'))),
+    );
+    expect(toTxt(doc)).toBe(
+      '看官網 (https://example.com)與文件 (https://example.com)\nhttps://example.com a@b.co\n壞',
+    );
+  });
+
   it('writes [未轉寫片段] for transcript gaps and the text of unknown nodes', () => {
     const doc = note(
       '',

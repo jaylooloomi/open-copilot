@@ -81,6 +81,19 @@ export function printPdf(note: Note): void {
     iframe.remove();
     throw error;
   }
+  // Safari / WebKit may never fire afterprint on the frame. Once print() has returned, the page
+  // getting focus back means the dialog is gone, so put the title back then. The frame itself stays
+  // (it is invisible) until afterprint or the next export: some browsers still read it after print()
+  // returns.
+  if (restoreTitle) {
+    const restoreOnFocus = () => restoreTitle?.();
+    const restore = restoreTitle;
+    window.addEventListener('focus', restoreOnFocus, { once: true });
+    restoreTitle = () => {
+      window.removeEventListener('focus', restoreOnFocus);
+      restore();
+    };
+  }
 }
 
 function printDocument(note: Note): string {

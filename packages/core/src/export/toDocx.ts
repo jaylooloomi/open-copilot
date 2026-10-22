@@ -2,6 +2,7 @@ import type { JSONContent, Note } from '@oc/shared';
 import {
   AlignmentType,
   Document,
+  ExternalHyperlink,
   HeadingLevel,
   LevelFormat,
   Packer,
@@ -11,9 +12,10 @@ import {
   type ILevelsOptions,
   type IParagraphOptions,
   type IRunOptions,
+  type ParagraphChild,
 } from 'docx';
 import { UNTITLED_NOTE } from '../notes/noteStore';
-import { listStart, nodeText, TRANSCRIPT_GAP_TEXT, TRANSCRIPT_GAP_TYPE } from './common';
+import { linkRuns, listStart, nodeText, TRANSCRIPT_GAP_TEXT, TRANSCRIPT_GAP_TYPE } from './common';
 
 type Mark = NonNullable<JSONContent['marks']>[number];
 type ParagraphFormat = Pick<IParagraphOptions, 'numbering' | 'indent'>;
@@ -26,6 +28,12 @@ const LEVELS = 9;
 const QUOTE_INDENT = 720;
 const BULLET_SYMBOLS = ['•', '◦', '▪'];
 const ORDERED_FORMATS = [LevelFormat.DECIMAL, LevelFormat.LOWER_LETTER, LevelFormat.LOWER_ROMAN];
+/**
+ * Characters XML 1.0 cannot hold (C0 controls other than tab/newline/CR, U+FFFE/U+FFFF, lone
+ * surrogates). The docx library writes text as is, so one of these makes Word reject the file.
+ */
+const XML_INVALID =
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
 const HEADINGS = {
   1: HeadingLevel.HEADING_1,
@@ -47,11 +55,12 @@ interface Context {
 
 /**
  * Word document keeping bold, italic, underline, strike-through, text colour, highlight (as run shading),
- * alignment, heading levels, bullet/numbered lists and indented blockquotes. The title becomes Word's Title style.
+ * links, alignment, heading levels, bullet/numbered lists and indented blockquotes. The title becomes
+ * Word's Title style. Text is stripped of characters XML cannot hold.
  */
 export async function toDocx(note: Note): Promise<Blob> {
   const context: Context = { orderedLists: [] };
-  const title = note.title.trim();
+  const title = xmlSafe(note.title).trim();
   const children: Paragraph[] = [];
   if (title) {
     children.push(new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun(title)] }));
@@ -149,15 +158,23 @@ function textParagraph(node: JSONContent, options: IParagraphOptions): Paragraph
   });
 }
 
-function inlineRuns(nodes: JSONContent[]): TextRun[] {
+function inlineRuns(nodes: JSONContent[]): ParagraphChild[] {
+  return linkRuns(nodes).flatMap(({ href, nodes: run }): ParagraphChild[] => {
+    const runs = textRuns(run, href ? { style: 'Hyperlink' } : {});
+    return href && runs.length > 0 ? [new ExternalHyperlink({ link: href, children: runs })] : runs;
+  });
+}
+
+function textRuns(nodes: JSONContent[], extra: IRunOptions): TextRun[] {
   const runs: TextRun[] = [];
   for (const node of nodes) {
     if (node.type === 'text') {
-      if (node.text) runs.push(new TextRun({ text: node.text, ...runFormat(node.marks ?? []) }));
+      const value = xmlSafe(node.text ?? '');
+      if (value) runs.push(new TextRun({ ...extra, text: value, ...runFormat(node.marks ?? []) }));
     } else if (node.type === 'hardBreak') {
       runs.push(new TextRun({ break: 1 }));
     } else if (node.type === TRANSCRIPT_GAP_TYPE) {
-      runs.push(new TextRun(TRANSCRIPT_GAP_TEXT));
+      runs.push(new TextRun({ ...extra, text: TRANSCRIPT_GAP_TEXT }));
     } else {
       runs.push(...plainRuns(nodeText(node)));
     }
@@ -166,7 +183,7 @@ function inlineRuns(nodes: JSONContent[]): TextRun[] {
 }
 
 function plainRuns(text: string): TextRun[] {
-  return text
+  return xmlSafe(text)
     .split('\n')
     .map((line, index) => new TextRun(index === 0 ? { text: line } : { text: line, break: 1 }));
 }
@@ -184,6 +201,10 @@ function runFormat(marks: Mark[]): IRunOptions {
     ...(color ? { color } : {}),
     ...(fill ? { shading: { type: ShadingType.CLEAR, color: 'auto', fill } } : {}),
   };
+}
+
+function xmlSafe(text: string): string {
+  return text.replace(XML_INVALID, '');
 }
 
 /** `#rgb`, `#rrggbb` or `rgb(r, g, b)` → `RRGGBB`; anything else (e.g. `red`) → undefined. */

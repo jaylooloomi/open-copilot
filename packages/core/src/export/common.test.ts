@@ -1,6 +1,14 @@
 import type { JSONContent } from '@oc/shared';
 import { describe, expect, it } from 'vitest';
-import { formatListItem, listStart, nodeText, TRANSCRIPT_GAP_TEXT } from './common';
+import {
+  formatListItem,
+  linkHref,
+  linkRuns,
+  linkShowsHref,
+  listStart,
+  nodeText,
+  TRANSCRIPT_GAP_TEXT,
+} from './common';
 
 const text = (value: string): JSONContent => ({ type: 'text', text: value });
 const p = (...content: JSONContent[]): JSONContent => ({ type: 'paragraph', content });
@@ -53,5 +61,37 @@ describe('formatListItem', () => {
   it('leaves blank lines unindented and trims an empty item', () => {
     expect(formatListItem('- ', 'a\n\nb')).toBe('- a\n\n  b');
     expect(formatListItem('1. ', '')).toBe('1.');
+  });
+});
+
+describe('links', () => {
+  const linked = (value: string, href: unknown): JSONContent => ({
+    type: 'text',
+    text: value,
+    marks: [{ type: 'link', attrs: { href } }],
+  });
+
+  it('keeps only http, https, mailto and tel hrefs', () => {
+    expect(linkHref(linked('a', ' https://x.tw '))).toBe('https://x.tw');
+    expect(linkHref(linked('a', 'MAILTO:a@b.co'))).toBe('MAILTO:a@b.co');
+    expect(linkHref(linked('a', 'javascript:alert(1)'))).toBeUndefined();
+    expect(linkHref(linked('a', null))).toBeUndefined();
+    expect(linkHref(text('a'))).toBeUndefined();
+  });
+
+  it('groups neighbouring nodes that share a link, and nodes outside links', () => {
+    const runs = linkRuns([text('a'), text('b'), linked('c', 'https://x'), linked('d', 'https://x'), linked('e', 'https://y')]);
+    expect(runs.map((run) => [run.href, run.nodes.map((n) => n.text).join('')])).toEqual([
+      [undefined, 'ab'],
+      ['https://x', 'cd'],
+      ['https://y', 'e'],
+    ]);
+  });
+
+  it('tells when the link text already shows the address', () => {
+    expect(linkShowsHref('https://x.tw', 'https://x.tw')).toBe(true);
+    expect(linkShowsHref('www.x.tw', 'http://www.x.tw')).toBe(true);
+    expect(linkShowsHref(' a@b.co', 'mailto:a@b.co')).toBe(true);
+    expect(linkShowsHref('官網', 'https://x.tw')).toBe(false);
   });
 });

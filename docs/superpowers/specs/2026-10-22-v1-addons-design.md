@@ -157,6 +157,6 @@
 ## 8. 契約變更
 
 1. `SegmentPolicy` 預設值改為 8000／12000。
-2. `apps/api` 設定新增 `TRANSCRIBE_PROVIDER`、`GROQ_API_KEY`、`GROQ_TRANSCRIBE_MODEL`、`GROQ_LLM_MODEL`；`ApiErrorCode` 新增 `ai_unavailable`。
+2. `apps/api` 設定新增 `TRANSCRIBE_PROVIDER`（`groq`、`openai`、`windows`）、`GROQ_API_KEY`、`GROQ_TRANSCRIBE_MODEL`、`GROQ_LLM_MODEL`；`ApiErrorCode` 新增 `ai_unavailable`。`TRANSCRIBE_PROVIDER` 未設定時依序選擇：有 `GROQ_API_KEY` 用 `groq`，否則有 `OPENAI_API_KEY` 用 `openai`，否則在 Windows 上用 `windows`，都不符合就啟動失敗（見 1.2a）。
 3. 上游 429 改為回 429，不再是 502。
 4. 新增 `SegmentRecorder` 的 `onLevel` 回呼、`backup/*` 模組，以及 AI 端點的型別（`packages/shared/src/ai.ts`）。

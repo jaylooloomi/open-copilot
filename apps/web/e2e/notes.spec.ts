@@ -67,6 +67,18 @@ test('新增筆記、輸入標題與內文，重新整理後內容仍在', async
   await expect(list.getByRole('listitem')).toHaveCount(2);
 });
 
+test('在標題按 Enter 後立刻打字，字會進內文而不是標題', async ({ page }) => {
+  const title = page.getByRole('textbox', { name: '標題' });
+  const body = page.getByRole('textbox', { name: '筆記內文' });
+  await title.fill('標題A');
+  // No pause between Enter and typing: focus must already be in the body when the next key arrives.
+  await title.press('Enter');
+  await page.keyboard.type('X1');
+  await expect(title).toHaveValue('標題A');
+  await expect(body).toContainText('X1');
+  await expect(body).toBeFocused();
+});
+
 test('輸入後立刻重新整理，最後的輸入也不會遺失', async ({ page }) => {
   // No waiting for the 500ms debounce: the pagehide flush must persist the edit.
   await page.getByRole('textbox', { name: '標題' }).fill('立刻重整');

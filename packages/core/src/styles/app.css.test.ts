@@ -22,4 +22,10 @@ describe('app.css', () => {
     const mixed = selectorLists(css).filter((list) => list.includes(':has(') && list.includes(','));
     expect(mixed).toEqual([]);
   });
+
+  it('drops the toolbar group dividers on narrow screens, where groups wrap onto new rows', () => {
+    // A divider would otherwise hang at the end of a wrapped row with nothing after it.
+    const narrow = css.slice(css.indexOf('@media (max-width: 767.98px)'));
+    expect(narrow).toMatch(/\.oc-tool-group\s*\{[^}]*border-right:\s*none/);
+  });
 });

@@ -1,9 +1,17 @@
 import type { JSONContent, Note } from '@oc/shared';
-import { formatListItem, listStart, nodeText } from './common';
+import {
+  formatListItem,
+  hasInlineChildren,
+  linkRuns,
+  linkShowsHref,
+  listStart,
+  nodeText,
+} from './common';
 
 /**
  * Plain text: the title, a blank line, then one line per paragraph or list item.
- * Lists keep their `- ` / `1. ` markers; every other kind of formatting is dropped.
+ * Lists keep their `- ` / `1. ` markers and links become `text (href)`; every other kind of
+ * formatting is dropped.
  */
 export function toTxt(note: Note): string {
   const title = note.title.trim();
@@ -21,9 +29,20 @@ function renderBlock(node: JSONContent): string {
     case 'orderedList':
       return renderList(node);
     default:
-      // Paragraphs and headings are their inline text; unknown blocks are their text content.
-      return nodeText(node);
+      // Paragraphs, headings and unknown blocks are their text content, with link addresses kept.
+      if (typeof node.text === 'string' || !node.content?.length) return nodeText(node);
+      if (hasInlineChildren(node)) return inlineText(node.content);
+      return node.content.map(renderBlock).join('\n');
   }
+}
+
+function inlineText(nodes: JSONContent[]): string {
+  return linkRuns(nodes)
+    .map(({ href, nodes: run }) => {
+      const text = run.map(nodeText).join('');
+      return href && text.trim() !== '' && !linkShowsHref(text, href) ? `${text} (${href})` : text;
+    })
+    .join('');
 }
 
 function renderList(list: JSONContent): string {

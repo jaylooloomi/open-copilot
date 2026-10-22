@@ -647,6 +647,13 @@ button {
     opacity: 1;
   }
 
+  /* The toolbar wraps here; a divider would hang at the end of a row, so the gap separates groups. */
+  .oc-tool-group {
+    padding-right: 0;
+    margin-right: 6px;
+    border-right: none;
+  }
+
   .oc-topbar {
     align-items: flex-start;
     padding: 8px 12px;

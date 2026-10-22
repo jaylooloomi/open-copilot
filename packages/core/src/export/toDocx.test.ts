@@ -309,6 +309,49 @@ describe('toDocx', () => {
     expect(paragraphs.map((x) => [x.text, x.list?.format ?? null])).toEqual([['第一段', 'bullet']]);
   });
 
+  it('drops characters XML 1.0 cannot hold, so Word can open the file', async () => {
+    const blob = await toDocx(
+      note(
+        '標\u0001題',
+        p(text('a\u000Bb\u0001c￾d\uD800e')),
+        { type: 'callout', content: [p(text('x\u001Fy'))] },
+      ),
+    );
+    const zip = await JSZip.loadAsync(blob);
+    for (const path of ['word/document.xml', 'docProps/core.xml']) {
+      const xml = await zip.file(path)!.async('string');
+      const parsed = new DOMParser().parseFromString(xml, 'application/xml');
+      expect(parsed.getElementsByTagName('parsererror')).toHaveLength(0);
+    }
+    const { paragraphs, coreXml } = await readDocx(blob);
+    expect(paragraphs.map((x) => x.text)).toEqual(['標題', 'abcde', 'xy']);
+    expect(coreXml).toContain('<dc:title>標題</dc:title>');
+  });
+
+  it('writes links as Word hyperlinks to their href, and only text for unsafe links', async () => {
+    const link = (href: string): Mark => ({ type: 'link', attrs: { href, target: '_blank' } });
+    const blob = await toDocx(
+      note(
+        '',
+        p(
+          text('看 '),
+          text('官網', link('https://example.com/a?b=1&c=2')),
+          text(' 與 '),
+          text('壞', link('javascript:alert(1)')),
+        ),
+      ),
+    );
+    const zip = await JSZip.loadAsync(blob);
+    const documentXml = await zip.file('word/document.xml')!.async('string');
+    const rels = await zip.file('word/_rels/document.xml.rels')!.async('string');
+    expect(documentXml).toMatch(/<w:hyperlink [^>]*r:id="[^"]+"[^>]*>(?:(?!<\/w:hyperlink>)[\s\S])*官網/);
+    expect(documentXml).not.toMatch(/<w:hyperlink [^>]*>(?:(?!<\/w:hyperlink>)[\s\S])*壞/);
+    expect(rels).toContain('Target="https://example.com/a?b=1&amp;c=2"');
+    expect(rels).not.toContain('javascript:');
+    const { paragraphs } = await readDocx(blob);
+    expect(paragraphs[0].text).toBe('看 官網 與 壞');
+  });
+
   it('never writes a negative start number', async () => {
     const { paragraphs } = await readDocx(await toDocx(note('', ol(-3, item(p(text('一')))))));
     expect(paragraphs[0].list?.start).toBe('0');

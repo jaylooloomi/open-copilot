@@ -106,6 +106,30 @@ describe('printPdf', () => {
     expect(document.title).toBe('open-copilot');
   });
 
+  it('restores the tab title when the page regains focus after print() returns without afterprint', () => {
+    // Safari / WebKit may never fire afterprint on the frame; focus coming back to the page ends the print.
+    stubFramePrint();
+    printPdf(note('A', p('a')));
+    expect(document.title).toBe('A');
+
+    window.dispatchEvent(new Event('focus'));
+    expect(document.title).toBe('open-copilot');
+
+    // The frame stays until afterprint or the next export, and later focus events change nothing.
+    document.title = 'other';
+    window.dispatchEvent(new Event('focus'));
+    expect(document.title).toBe('other');
+  });
+
+  it('does not touch the tab title on focus once afterprint has restored it', () => {
+    stubFramePrint();
+    printPdf(note('A', p('a')));
+    afterPrint(frames()[0]);
+    document.title = 'renamed';
+    window.dispatchEvent(new Event('focus'));
+    expect(document.title).toBe('renamed');
+  });
+
   it('restores the tab title and removes the iframe when print() throws', () => {
     const append = document.body.appendChild.bind(document.body);
     vi.spyOn(document.body, 'appendChild').mockImplementation((node) => {

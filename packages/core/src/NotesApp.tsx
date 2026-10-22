@@ -151,7 +151,12 @@ export function NotesApp() {
             inputRef={titleRef}
             value={activeNote.title}
             onChange={(title) => updateNote(activeNote.id, { title })}
-            onEnter={() => editor.commands.focus('start')}
+            onEnter={() => {
+              // Move DOM focus now: focus() alone waits a frame, so a key typed right after Enter
+              // would still land in the title.
+              editor.view.focus();
+              editor.commands.focus('start');
+            }}
           />
           <Editor editor={editor} />
         </div>

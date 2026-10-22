@@ -189,6 +189,20 @@ describe('toMarkdown', () => {
     );
   });
 
+  it('writes links as [text](href), keeping marks inside and dropping unsafe hrefs', () => {
+    const link = (href: string): Mark => ({ type: 'link', attrs: { href, target: '_blank' } });
+    const site = link('https://example.com/a b(1)');
+    expect(
+      toMarkdown(
+        note(
+          '',
+          p(text('看'), text('官網', site), text('首頁', site, bold), text('，'), text('壞', link('javascript:alert(1)'))),
+        ),
+      ),
+    ).toBe('看[官網**首頁**](https://example.com/a%20b\\(1\\))，壞\n');
+    expect(toMarkdown(note('', p(text('[a]', link('mailto:a@b.co')))))).toBe('[\\[a\\]](mailto:a@b.co)\n');
+  });
+
   it('keeps a transcript gap literal when (…) follows it', () => {
     expect(toMarkdown(note('', p(text('前'), gap, text('(見附件)'))))).toBe(
       '前\\[未轉寫片段\\](見附件)\n',
