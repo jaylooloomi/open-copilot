@@ -108,6 +108,33 @@ describe('TranscriptInserter', () => {
     );
   });
 
+  it('handles a horizontal rule selected as the first block when recording starts', () => {
+    const e = makeEditor('<hr><p>B</p>');
+    e.commands.setNodeSelection(0);
+    const inserter = new TranscriptInserter(e, e.state.selection.to);
+    inserter.insertText('一');
+    inserter.insertGap('g1', 1);
+    inserter.insertText('三');
+    expect(e.getText()).toContain('一');
+    expect(e.getText()).toContain('三');
+    expect(e.getHTML()).toContain('data-transcript-gap="g1"');
+    expect(e.getHTML()).toContain('<hr>');
+  });
+
+  it('keeps inserting after the anchor paragraph that followed a horizontal rule is deleted', () => {
+    const e = makeEditor('<p>A</p><hr><p>B</p><p>C</p>');
+    const inserter = new TranscriptInserter(e, 7); // inside B
+    e.commands.deleteRange({ from: 4, to: 7 }); // remove paragraph B
+    inserter.insertText('一');
+    inserter.insertGap('g1', 1);
+    inserter.insertText('二');
+    const text = e.getText();
+    expect(text).toContain('一');
+    expect(text.indexOf('二')).toBeGreaterThan(text.indexOf('一'));
+    expect(e.getHTML()).toContain('data-transcript-gap="g1"');
+    expect(e.getHTML()).toContain('<hr>');
+  });
+
   it('ignores empty text and stops after destroy()', () => {
     const e = makeEditor();
     const inserter = new TranscriptInserter(e, 2);

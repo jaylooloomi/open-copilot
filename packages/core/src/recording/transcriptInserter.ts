@@ -69,7 +69,8 @@ export class TranscriptInserter {
     }
     // The textblock does not accept this node (a gap inside a code block). Never split the
     // user's block: put the node in a new paragraph right after it and continue from there.
-    const after = $pos.after();
+    // At document level (no textblock anywhere to anchor in) insert the paragraph right here.
+    const after = $pos.depth > 0 ? $pos.after() : pos;
     const paragraph = state.schema.nodes.paragraph?.createAndFill(null, node);
     const $after = state.doc.resolve(after);
     if (paragraph && $after.parent.canReplaceWith($after.index(), $after.index(), paragraph.type)) {
@@ -86,9 +87,15 @@ export class TranscriptInserter {
   }
 }
 
-/** Clamps pos into the document and moves it into a textblock (e.g. after a select-all). */
+/**
+ * Clamps pos into the document and moves it into a textblock (e.g. after a select-all). Only text
+ * positions are searched: Selection.near() may return a NodeSelection on an atom block such as a
+ * horizontal rule, whose position is still at document level.
+ */
 function textPosition(editor: Editor, pos: number): number {
   const { doc } = editor.state;
   const $pos = doc.resolve(Math.max(0, Math.min(pos, doc.content.size)));
-  return $pos.parent.inlineContent ? $pos.pos : Selection.near($pos, -1).from;
+  if ($pos.parent.inlineContent) return $pos.pos;
+  const found = Selection.findFrom($pos, -1, true) ?? Selection.findFrom($pos, 1, true);
+  return found ? found.from : $pos.pos;
 }
