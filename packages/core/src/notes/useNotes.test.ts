@@ -518,3 +518,58 @@ describe('useNotes storage failures', () => {
     expect(result.current.notes.map((n) => n.title)).toEqual(['a']);
   });
 });
+
+describe('useNotes importNotes', () => {
+  it('adds new notes, replaces older ones, stores them and keeps the active note', async () => {
+    const { result, storage } = await setup([note('a', 100), note('b', 200)]);
+    expect(result.current.activeNote?.id).toBe('b');
+
+    let summary: Awaited<ReturnType<typeof result.current.importNotes>> | undefined;
+    await act(async () => {
+      summary = await result.current.importNotes([note('a', 300, 'A2'), note('b', 150, 'old'), note('c', 50)]);
+    });
+
+    expect(summary).toEqual({ imported: 2, skipped: 1, replacedActive: false });
+    expect(result.current.notes.map((n) => [n.id, n.title])).toEqual([
+      ['a', 'A2'],
+      ['b', 'b'],
+      ['c', 'c'],
+    ]);
+    expect(storage.put.mock.calls.map(([n]) => n.id)).toEqual(['a', 'c']);
+    expect(result.current.activeNote?.id).toBe('b');
+  });
+
+  it('reports when the active note was replaced', async () => {
+    const { result } = await setup([note('a', 100), note('b', 200)]);
+    let summary: Awaited<ReturnType<typeof result.current.importNotes>> | undefined;
+    await act(async () => {
+      summary = await result.current.importNotes([note('b', 999, 'B2')]);
+    });
+    expect(summary).toEqual({ imported: 1, skipped: 0, replacedActive: true });
+    expect(result.current.activeNote).toMatchObject({ id: 'b', title: 'B2' });
+  });
+
+  it('writes a pending edit before importing', async () => {
+    const { result, storage } = await setup([note('a', 100)]);
+    act(() => result.current.updateActive({ title: 'edited' }));
+    expect(storage.put).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await result.current.importNotes([]);
+    });
+
+    expect(storage.put).toHaveBeenCalledWith(expect.objectContaining({ id: 'a', title: 'edited' }));
+  });
+
+  it('keeps the notes stored before a failed write and rejects', async () => {
+    const { result, storage } = await setup([note('a', 100), note('b', 200)]);
+    storage.put.mockImplementationOnce(async () => undefined).mockRejectedValueOnce(new Error('disk full'));
+
+    await act(async () => {
+      await expect(result.current.importNotes([note('x', 50), note('y', 60)])).rejects.toThrow('disk full');
+    });
+
+    expect(result.current.notes.map((n) => n.id)).toEqual(['b', 'a', 'x']);
+    expect(result.current.activeNote?.id).toBe('b');
+  });
+});
