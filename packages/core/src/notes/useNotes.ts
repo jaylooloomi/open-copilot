@@ -114,21 +114,52 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
 
   const deleteNote = useCallback(
     async (id: string) => {
+      const removed = notesRef.current.find((n) => n.id === id);
+      // Unknown id, or this note is already being deleted.
+      if (!removed) return;
+
       // Take the note out of memory before any await: once it is gone, updateActive
       // cannot target it, so no later save can write the deleted note back.
-      if (pendingRef.current?.id === id) {
+      const droppedEdit = pendingRef.current?.id === id;
+      if (droppedEdit) {
         saver.cancel();
         pendingRef.current = undefined;
       }
-      const remaining = notesRef.current.filter((n) => n.id !== id);
-      const nextActiveId = activeIdRef.current === id ? remaining[0]?.id : activeIdRef.current;
+      const previousActiveId = activeIdRef.current;
+      let remaining = notesRef.current.filter((n) => n.id !== id);
+      // Deleting the last note: show an empty replacement at once, so there is always an
+      // active note. It is stored once the remove has succeeded.
+      const replacement = remaining.length === 0 ? makeNote(now()) : undefined;
+      if (replacement) remaining = [replacement];
+      const nextActiveId =
+        replacement?.id ?? (previousActiveId === id ? remaining[0]?.id : previousActiveId);
       commit(remaining, nextActiveId);
-      await storage.remove(id);
-      // Deleted the last note: replace it unless a note was created meanwhile.
-      if (notesRef.current.length === 0) {
-        const fresh = makeNote(now());
-        await storage.put(fresh);
-        commit(sortByUpdatedDesc([fresh, ...notesRef.current]), activeIdRef.current ?? fresh.id);
+
+      try {
+        await storage.remove(id);
+      } catch (error) {
+        // The note is still stored, so put it back in the list. The replacement goes
+        // unless it was edited meanwhile (an edit swaps in a new object).
+        const kept = notesRef.current.filter((n) => n !== replacement);
+        const activeAfter =
+          activeIdRef.current === nextActiveId ? previousActiveId : activeIdRef.current;
+        commit(sortByUpdatedDesc([removed, ...kept]), activeAfter);
+        if (droppedEdit) {
+          storage.put(removed).catch((e: unknown) => console.error('Failed to save note', e));
+        }
+        throw error;
+      }
+
+      if (replacement) {
+        // Edits may have landed on the replacement during the remove: store its latest
+        // version, and drop a pending save of it so an older version cannot win.
+        const latest = notesRef.current.find((n) => n.id === replacement.id);
+        if (!latest) return;
+        if (pendingRef.current?.id === latest.id) {
+          saver.cancel();
+          pendingRef.current = undefined;
+        }
+        await storage.put(latest);
       }
     },
     [storage, now, saver, commit],

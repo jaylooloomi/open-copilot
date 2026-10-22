@@ -183,42 +183,145 @@ describe('useNotes', () => {
     expect(result.current.notes.map((n) => n.id)).toEqual(['a']);
   });
 
-  it('edits made while deleting the last note never write it back', async () => {
+  it('shows the replacement at once while the last note is being deleted', async () => {
     const { result, storage, notes } = await setup([note('a', 1)]);
     const removed = deferred();
-    const putStarted = deferred();
-    const saved = deferred();
     storage.remove.mockImplementationOnce(async (id: string) => {
       await removed.promise;
       notes.delete(id);
-    });
-    storage.put.mockImplementationOnce(async (n: Note) => {
-      putStarted.resolve();
-      await saved.promise;
-      notes.set(n.id, structuredClone(n));
     });
 
     let deleting!: Promise<void>;
     act(() => {
       deleting = result.current.deleteNote('a');
     });
-    act(() => result.current.updateActive({ title: 'typed during remove' }));
+    const fresh = result.current.activeNote;
+    expect(fresh).toMatchObject({ title: '', content: EMPTY_DOC });
+    expect(fresh?.id).not.toBe('a');
+    expect(result.current.notes).toEqual([fresh]);
+
     await act(async () => {
       removed.resolve();
-      await putStarted.promise;
-    });
-    act(() => result.current.updateActive({ title: 'typed during save' }));
-    await act(async () => {
-      saved.resolve();
       await deleting;
+    });
+    expect(result.current.activeNote).toBe(fresh);
+    expect([...notes.values()]).toEqual([fresh]);
+  });
+
+  it('edits made while deleting the last note land on the replacement, never on it', async () => {
+    const { result, storage, notes } = await setup([note('a', 1)]);
+    const removed = deferred();
+    storage.remove.mockImplementationOnce(async (id: string) => {
+      await removed.promise;
+      notes.delete(id);
+    });
+
+    let deleting!: Promise<void>;
+    act(() => {
+      deleting = result.current.deleteNote('a');
+    });
+    const freshId = result.current.activeNote?.id ?? '';
+    act(() => result.current.updateActive({ title: 'typed during remove' }));
+    // The debounced save of that edit runs before the remove finishes.
+    act(() => vi.advanceTimersByTime(500));
+    act(() => result.current.updateActive({ title: 'typed again' }));
+    await act(async () => {
+      removed.resolve();
+      await deleting;
+    });
+
+    // The replacement's latest version is stored by the time deleteNote resolves.
+    expect(notes.get(freshId)?.title).toBe('typed again');
+    act(() => vi.advanceTimersByTime(1000));
+    expect(storage.put).not.toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }));
+    expect([...notes.keys()]).toEqual([freshId]);
+    expect(notes.get(freshId)?.title).toBe('typed again');
+    expect(result.current.notes.map((n) => n.title)).toEqual(['typed again']);
+  });
+
+  it('deleting the same note twice removes it once and leaves one replacement', async () => {
+    const { result, storage, notes } = await setup([note('a', 1)]);
+    await act(async () => {
+      await Promise.all([result.current.deleteNote('a'), result.current.deleteNote('a')]);
+    });
+
+    expect(storage.remove).toHaveBeenCalledTimes(1);
+    expect(result.current.notes).toHaveLength(1);
+    expect(notes.size).toBe(1);
+  });
+
+  it('deleteNote ignores ids that are not in the list', async () => {
+    const { result, storage } = await setup([note('a', 1)]);
+    await act(async () => {
+      await result.current.deleteNote('missing');
+    });
+
+    expect(storage.remove).not.toHaveBeenCalled();
+    expect(result.current.notes.map((n) => n.id)).toEqual(['a']);
+  });
+
+  it('a failed remove puts the note back and rejects', async () => {
+    const { result, storage, notes } = await setup([note('a', 1), note('b', 2)]);
+    storage.remove.mockRejectedValueOnce(new Error('idb fail'));
+    await act(async () => {
+      await expect(result.current.deleteNote('b')).rejects.toThrow('idb fail');
+    });
+
+    expect(result.current.notes.map((n) => n.id)).toEqual(['b', 'a']);
+    expect(result.current.activeNote?.id).toBe('b');
+    expect([...notes.keys()].sort()).toEqual(['a', 'b']);
+  });
+
+  it('a failed remove saves the edit it had dropped', async () => {
+    const { result, storage, notes } = await setup([note('a', 1), note('b', 2)]);
+    storage.remove.mockRejectedValueOnce(new Error('idb fail'));
+    act(() => result.current.updateActive({ title: 'unsaved' }));
+    await act(async () => {
+      await expect(result.current.deleteNote('b')).rejects.toThrow('idb fail');
     });
     act(() => vi.advanceTimersByTime(1000));
 
-    expect(storage.put).not.toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }));
-    const fresh = result.current.activeNote;
-    expect(fresh).toMatchObject({ title: '' });
-    expect(result.current.notes).toEqual([fresh]);
-    expect([...notes.values()]).toEqual([fresh]);
+    expect(result.current.activeNote).toMatchObject({ id: 'b', title: 'unsaved' });
+    expect(notes.get('b')?.title).toBe('unsaved');
+  });
+
+  it('a failed remove of the last note restores it and drops the unused replacement', async () => {
+    const { result, storage, notes } = await setup([note('a', 1)]);
+    storage.remove.mockRejectedValueOnce(new Error('idb fail'));
+    await act(async () => {
+      await expect(result.current.deleteNote('a')).rejects.toThrow('idb fail');
+    });
+
+    expect(result.current.notes.map((n) => n.id)).toEqual(['a']);
+    expect(result.current.activeNote?.id).toBe('a');
+    expect(storage.put).not.toHaveBeenCalled();
+    expect([...notes.keys()]).toEqual(['a']);
+  });
+
+  it('a failed remove of the last note keeps a replacement that was edited meanwhile', async () => {
+    const { result, storage, notes } = await setup([note('a', 1)]);
+    const failing = deferred();
+    storage.remove.mockImplementationOnce(async () => {
+      await failing.promise;
+      throw new Error('idb fail');
+    });
+
+    let deleting!: Promise<void>;
+    act(() => {
+      deleting = result.current.deleteNote('a');
+    });
+    const freshId = result.current.activeNote?.id ?? '';
+    act(() => result.current.updateActive({ title: 'new text' }));
+    await act(async () => {
+      failing.resolve();
+      await expect(deleting).rejects.toThrow('idb fail');
+    });
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(result.current.notes.map((n) => n.id)).toEqual([freshId, 'a']);
+    expect(result.current.activeNote?.id).toBe('a');
+    expect(notes.get(freshId)?.title).toBe('new text');
+    expect(notes.has('a')).toBe(true);
   });
 
   it('flushes the pending save on unmount', async () => {
@@ -233,5 +336,31 @@ describe('useNotes', () => {
     act(() => result.current.updateActive({ title: 'hidden' }));
     window.dispatchEvent(new Event('pagehide'));
     expect(storage.put).toHaveBeenCalledWith(expect.objectContaining({ title: 'hidden' }));
+  });
+
+  it('flushes the pending save when the document becomes hidden', async () => {
+    const { result, storage } = await setup([note('a', 1)]);
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      act(() => result.current.updateActive({ title: 'backgrounded' }));
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(storage.put).toHaveBeenCalledWith(expect.objectContaining({ title: 'backgrounded' }));
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
+  it('keeps the save debounced when the document becomes visible', async () => {
+    const { result, storage } = await setup([note('a', 1)]);
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    try {
+      act(() => result.current.updateActive({ title: 'still here' }));
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(storage.put).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(500));
+      expect(storage.put).toHaveBeenCalledWith(expect.objectContaining({ title: 'still here' }));
+    } finally {
+      visibility.mockRestore();
+    }
   });
 });
