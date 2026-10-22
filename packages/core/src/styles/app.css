@@ -145,6 +145,70 @@ button {
   cursor: not-allowed;
 }
 
+/* ---------- recording status: timer, level meter, 轉寫中 N 段 ---------- */
+.oc-rec-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  color: var(--oc-muted);
+  font-size: 13px;
+}
+
+.oc-rec-timer {
+  color: var(--oc-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.oc-level-meter {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+
+.oc-level-bar {
+  width: 4px;
+  border-radius: 1px;
+  background: var(--oc-border);
+}
+
+.oc-level-bar:nth-child(1) {
+  height: 20%;
+}
+
+.oc-level-bar:nth-child(2) {
+  height: 40%;
+}
+
+.oc-level-bar:nth-child(3) {
+  height: 60%;
+}
+
+.oc-level-bar:nth-child(4) {
+  height: 80%;
+}
+
+.oc-level-bar:nth-child(5) {
+  height: 100%;
+}
+
+.oc-level-bar.is-on {
+  background: var(--oc-primary);
+}
+
+.oc-no-sound {
+  margin: 12px 16px 0;
+  padding: 8px 14px;
+  border: 1px solid #fde68a;
+  border-radius: var(--oc-radius);
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 14px;
+}
+
 .oc-ai-group {
   display: flex;
   flex-wrap: wrap;
@@ -1002,7 +1066,39 @@ button {
     flex-shrink: 0;
   }
 
+  /* About 140px is left beside 錄製 and the gear at 375px: a smaller status fits there, and if it
+     still does not, only the 轉寫中 N 段 text is cut, never the timer, the meter or the gear. */
+  .oc-rec-status {
+    flex-shrink: 1;
+    min-width: 0;
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  .oc-rec-timer,
+  .oc-level-meter {
+    flex-shrink: 0;
+  }
+
+  .oc-level-meter {
+    gap: 1px;
+  }
+
+  .oc-level-bar {
+    width: 3px;
+  }
+
+  .oc-transcribing {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .oc-banner {
+    margin: 8px 12px 0;
+  }
+
+  .oc-no-sound {
     margin: 8px 12px 0;
   }
 

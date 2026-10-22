@@ -51,4 +51,22 @@ describe('app.css', () => {
     const narrow = css.slice(css.indexOf('@media (max-width: 767.98px)'));
     expect(narrow).toMatch(/\.oc-tool-group\s*\{[^}]*border-right:\s*none/);
   });
+
+  it('keeps the recording timer one width as its digits change', () => {
+    expect(css).toMatch(/\.oc-rec-timer\s*\{[^}]*font-variant-numeric:\s*tabular-nums/);
+  });
+
+  it('keeps the recording status on one line beside the record button', () => {
+    expect(css).toMatch(/\.oc-rec-status\s*\{[^}]*flex-shrink:\s*0[^}]*white-space:\s*nowrap/);
+  });
+
+  it('lets only the 轉寫中 N 段 text give way on narrow screens, so the gear stays on screen', () => {
+    const narrow = css.slice(css.indexOf('@media (max-width: 767.98px)'));
+    expect(narrow).toMatch(/\.oc-rec-status\s*\{[^}]*flex-shrink:\s*1[^}]*min-width:\s*0/);
+    expect(narrow).toMatch(/\.oc-transcribing\s*\{[^}]*text-overflow:\s*ellipsis/);
+  });
+
+  it('lights level bars in the primary colour', () => {
+    expect(css).toMatch(/\.oc-level-bar\.is-on\s*\{[^}]*background:\s*var\(--oc-primary\)/);
+  });
 });

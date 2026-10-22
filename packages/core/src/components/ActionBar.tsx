@@ -1,5 +1,7 @@
 import { LoaderCircle, Lock, Mic, Settings, Square } from 'lucide-react';
+import type { LevelSource } from '../recording/levelStore';
 import type { RecorderState } from '../recording/useRecorder';
+import { RecordingStatus } from './RecordingStatus';
 
 export const AI_FEATURES = ['AI 摘要', '待辦事項', 'AI 助理', 'AI 對話'] as const;
 
@@ -17,6 +19,12 @@ export interface ActionBarProps {
   onOpenSettings(): void;
   /** Disables 錄製 / 請先設定, e.g. while a backup or import runs. Ignored while recording. */
   recordDisabled?: boolean;
+  /** When the running recording started (useRecorder's startedAt); the timer counts from it. */
+  startedAt?: number | null;
+  /** Microphone level for the meter (useRecorder's levels). */
+  levels?: LevelSource;
+  /** 轉寫中 N 段 (useRecorder's transcribing); hidden at 0. */
+  transcribing?: number;
 }
 
 function RecordIcon({ state }: { state: RecorderState }) {
@@ -25,7 +33,15 @@ function RecordIcon({ state }: { state: RecorderState }) {
   return <Mic size={18} aria-hidden="true" />;
 }
 
-export function ActionBar({ recordState, onRecord, onOpenSettings, recordDisabled = false }: ActionBarProps) {
+export function ActionBar({
+  recordState,
+  onRecord,
+  onOpenSettings,
+  recordDisabled = false,
+  startedAt = null,
+  levels,
+  transcribing = 0,
+}: ActionBarProps) {
   // Stopping a running recording is always allowed.
   const disabled = recordState === 'stopping' || (recordDisabled && recordState !== 'recording');
   return (
@@ -40,6 +56,12 @@ export function ActionBar({ recordState, onRecord, onOpenSettings, recordDisable
         <RecordIcon state={recordState} />
         <span>{RECORD_LABELS[recordState]}</span>
       </button>
+      <RecordingStatus
+        recording={recordState === 'recording'}
+        startedAt={startedAt}
+        levels={levels}
+        transcribing={transcribing}
+      />
       <div className="oc-actionbar-end">
         <div className="oc-ai-group">
           {AI_FEATURES.map((label) => (

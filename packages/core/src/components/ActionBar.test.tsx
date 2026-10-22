@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { createLevelStore } from '../recording/levelStore';
 import type { RecorderState } from '../recording/useRecorder';
 import { ActionBar } from './ActionBar';
 
@@ -66,5 +67,45 @@ describe('ActionBar', () => {
     }
     const aiButtons = Array.from(document.querySelectorAll('.oc-ai-btn')).map((b) => b.textContent);
     expect(aiButtons).toEqual(labels);
+  });
+
+  it('shows the timer, level meter and transcribing count right after the record button while recording', () => {
+    const levels = createLevelStore();
+    levels.set(0.5);
+    render(
+      <ActionBar
+        recordState="recording"
+        startedAt={Date.now()}
+        levels={levels}
+        transcribing={1}
+        onRecord={vi.fn()}
+        onOpenSettings={vi.fn()}
+      />,
+    );
+    const status = screen.getByRole('button', { name: '停止' }).nextElementSibling;
+    expect(status).toHaveClass('oc-rec-status');
+    expect(screen.getByRole('timer', { name: '錄音時間' })).toHaveTextContent('00:00');
+    expect(document.querySelector('.oc-level-meter')).toHaveAttribute('data-level', '5');
+    expect(screen.getByText('轉寫中 1 段')).toBeInTheDocument();
+  });
+
+  it('drops the timer and meter while stopping but keeps the transcribing count', () => {
+    render(
+      <ActionBar
+        recordState="stopping"
+        startedAt={null}
+        transcribing={2}
+        onRecord={vi.fn()}
+        onOpenSettings={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument();
+    expect(document.querySelector('.oc-level-meter')).toBeNull();
+    expect(screen.getByText('轉寫中 2 段')).toBeInTheDocument();
+  });
+
+  it('shows no recording status when idle', () => {
+    setup('idle');
+    expect(document.querySelector('.oc-rec-status')).toBeNull();
   });
 });
