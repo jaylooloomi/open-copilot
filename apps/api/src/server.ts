@@ -1,10 +1,20 @@
 import { serve } from '@hono/node-server';
 import { createApp } from './app';
-import { accessKeyWarning, loadConfig } from './config';
+import { accessKeyWarning, loadConfig, type AppConfig } from './config';
 import { createShutdown } from './shutdown';
 import { createTranscriber } from './transcriber/createTranscriber';
 
-const config = loadConfig(process.env);
+/** 設定錯誤只印一行說明（訊息不含金鑰、不印 stack），並以 exit code 1 結束。 */
+function loadConfigOrExit(): AppConfig {
+  try {
+    return loadConfig(process.env);
+  } catch (err) {
+    console.error(`[config] ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}
+
+const config = loadConfigOrExit();
 
 const keyWarning = accessKeyWarning(config.accessKeys);
 if (keyWarning) console.warn(keyWarning);
@@ -17,6 +27,10 @@ const app = createApp({
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   console.log(`open-copilot api listening on http://localhost:${info.port}`);
+  // 只印服務與模型，不印金鑰。
+  console.log(
+    `[transcribe] provider ${config.transcriber.provider}, model ${config.transcriber.model}`,
+  );
 });
 
 // Docker 中 node 是 PID 1，不處理 SIGTERM 的話 docker stop 會等 10 秒後強制終止。
