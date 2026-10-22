@@ -74,9 +74,11 @@ export function useBackup({
 
   const backup = () =>
     run(async () => {
-      const at = now();
-      const data = new Blob([serializeBackup(createBackup(notes, at))], { type: BACKUP_MIME });
+      let at: number;
       try {
+        // Building the payload is inside the try too, so a failure is reported, never rejected.
+        at = now();
+        const data = new Blob([serializeBackup(createBackup(notes, at))], { type: BACKUP_MIME });
         await fileSaver.save(backupFilename(new Date(at)), data);
       } catch (error) {
         // The user cancelled the save dialog: not a failure and not a backup.

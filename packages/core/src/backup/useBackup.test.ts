@@ -8,6 +8,7 @@ import {
   BACKUP_FAILED_MESSAGE,
   IMPORT_FAILED_MESSAGE,
   NOT_A_BACKUP_MESSAGE,
+  READ_FAILED_MESSAGE,
   useBackup,
   type UseBackupOptions,
 } from './useBackup';
@@ -120,6 +121,21 @@ describe('useBackup backup', () => {
     expect(result.current.busy).toBe(false);
   });
 
+  it('reports a failure to build the backup instead of rejecting', async () => {
+    const { result, save, onError } = setup();
+    const failure = new Error('cannot serialize');
+    vi.spyOn(JSON, 'stringify').mockImplementationOnce(() => {
+      throw failure;
+    });
+
+    await act(() => result.current.backup());
+
+    expect(onError).toHaveBeenCalledWith(BACKUP_FAILED_MESSAGE, failure);
+    expect(save).not.toHaveBeenCalled();
+    expect(localStorage.getItem(LAST_BACKUP_KEY)).toBeNull();
+    expect(result.current.busy).toBe(false);
+  });
+
   it('ignores a second start while one is running', async () => {
     const { result, save } = setup();
     let release!: () => void;
@@ -175,6 +191,21 @@ describe('useBackup import', () => {
     await act(() => result.current.importFile(jsonFile(serializeBackup(createBackup([note('x', 'X')], NOW)))));
 
     expect(onError).toHaveBeenCalledWith(IMPORT_FAILED_MESSAGE, failure);
+    expect(result.current.message).toBeUndefined();
+  });
+
+  it('reports a file that cannot be read without importing anything', async () => {
+    const { result, importNotes, onError } = setup();
+    const failure = new DOMException('unreadable', 'NotReadableError');
+    vi.spyOn(FileReader.prototype, 'readAsText').mockImplementationOnce(function (this: FileReader) {
+      Object.defineProperty(this, 'error', { value: failure });
+      queueMicrotask(() => this.onerror?.(new ProgressEvent('error') as ProgressEvent<FileReader>));
+    });
+
+    await act(() => result.current.importFile(jsonFile('{}')));
+
+    expect(onError).toHaveBeenCalledWith(READ_FAILED_MESSAGE, failure);
+    expect(importNotes).not.toHaveBeenCalled();
     expect(result.current.message).toBeUndefined();
   });
 });
