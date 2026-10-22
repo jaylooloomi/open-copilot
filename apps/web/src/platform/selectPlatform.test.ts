@@ -14,6 +14,22 @@ vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform } }));
 vi.mock('@capacitor/filesystem', () => ({ Directory: { Cache: 'CACHE' }, Filesystem: { writeFile } }));
 vi.mock('@capacitor/share', () => ({ Share: { share } }));
 
+// The guard adds 'pause' and 'visibilitychange' listeners to the real jsdom document, and
+// selectPlatform drops its remover (production installs it once per page). Keep each remover
+// so afterEach can take the guard off again.
+const guardRemovers = vi.hoisted(() => [] as Array<() => void>);
+vi.mock('./backgroundMicGuard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./backgroundMicGuard')>();
+  return {
+    ...actual,
+    installBackgroundMicGuard: (...args: Parameters<typeof actual.installBackgroundMicGuard>) => {
+      const remove = actual.installBackgroundMicGuard(...args);
+      guardRemovers.push(remove);
+      return remove;
+    },
+  };
+});
+
 /** jsdom has no navigator.mediaDevices; install one that hands out a single fake mic track. */
 function installFakeMicrophone() {
   const track = Object.assign(new EventTarget(), {
@@ -34,6 +50,7 @@ function installFakeMicrophone() {
 // selectPlatform opens the default 'open-copilot' DB and Platform has no close(),
 // so give every test a fresh fake IndexedDB instead of sharing notes across tests.
 afterEach(() => {
+  for (const remove of guardRemovers.splice(0)) remove();
   globalThis.indexedDB = new IDBFactory();
   Reflect.deleteProperty(navigator, 'mediaDevices');
   // Back to the vi.fn() implementations above, dropping unused mockReturnValueOnce values.
@@ -118,6 +135,7 @@ describe('selectPlatform', () => {
 
     expect(mic.getUserMedia).toHaveBeenCalledWith({ audio: true });
     expect(mic.track.stop).toHaveBeenCalledTimes(1);
+    expect(guardRemovers).toHaveLength(1);
   });
 
   it('leaves getUserMedia alone in browsers', async () => {

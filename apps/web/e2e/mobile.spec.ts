@@ -16,6 +16,9 @@ test('手機尺寸：點選單鈕打開筆記清單抽屜，點背景關閉', as
 
   await page.getByRole('button', { name: '開啟筆記清單' }).tap();
   await expect(list).toBeVisible();
+  // The open drawer must not make the page scroll sideways either.
+  const width = page.viewportSize()!.width;
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
 
   // The drawer is at most 300px wide; the backdrop covers the rest of the screen.
   await page.locator('.oc-backdrop').tap({ position: { x: 380, y: 450 } });
@@ -31,7 +34,8 @@ test('手機尺寸：畫面不會左右捲動，錄製、設定、匯出都在�
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
 
   for (const control of [
-    page.locator('.oc-record-btn'),
+    // Its label changes with the recording state, so match the class and still require a button.
+    page.locator('.oc-record-btn').and(page.getByRole('button')),
     page.getByRole('button', { name: '設定', exact: true }),
     page.getByRole('button', { name: '匯出', exact: true }),
   ]) {
