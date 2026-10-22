@@ -163,6 +163,21 @@ describe('transcription provider', () => {
     expect(message).not.toContain('sk-test');
   });
 
+  it('does not echo a TRANSCRIBE_PROVIDER value that looks like a pasted key', () => {
+    for (const pasted of ['gsk_abcdefghijklmnop', 'sk-proj-abc', 'abcdefghijklmnopqrstuvwxyz']) {
+      let message = '';
+      try {
+        loadConfig({ ...base, TRANSCRIBE_PROVIDER: pasted });
+      } catch (err) {
+        message = (err as Error).message;
+      }
+      expect(message).toBe(
+        'TRANSCRIBE_PROVIDER must be "groq" or "openai", got an unrecognized value (not shown)',
+      );
+      expect(message).not.toContain(pasted);
+    }
+  });
+
   it('lets GROQ_TRANSCRIBE_MODEL override the Groq model', () => {
     expect(loadConfig({ ...base, GROQ_TRANSCRIBE_MODEL: ' whisper-large-v3 ' }).transcriber.model).toBe(
       'whisper-large-v3',

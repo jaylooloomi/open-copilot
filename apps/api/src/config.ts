@@ -90,7 +90,10 @@ function loadTranscriberConfig(env: Record<string, string | undefined>): Transcr
   } else {
     const normalized = rawProvider.toLowerCase();
     if (normalized !== 'groq' && normalized !== 'openai') {
-      throw new Error(`TRANSCRIBE_PROVIDER must be "groq" or "openai", got "${rawProvider}"`);
+      // 若誤把金鑰貼進 TRANSCRIBE_PROVIDER，不要讓它出現在啟動日誌裡。
+      const looksLikeKey = rawProvider.length > 16 || /^(gsk_|sk-)/i.test(rawProvider);
+      const shown = looksLikeKey ? 'an unrecognized value (not shown)' : `"${rawProvider}"`;
+      throw new Error(`TRANSCRIBE_PROVIDER must be "groq" or "openai", got ${shown}`);
     }
     provider = normalized;
   }
