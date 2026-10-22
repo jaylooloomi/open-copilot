@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type FocusEvent, type ReactNode } from 'react';
 import type { Swatch } from './palettes';
 
 export interface ColorPaletteProps {
@@ -10,10 +10,21 @@ export interface ColorPaletteProps {
   onClear(): void;
 }
 
+/**
+ * Keyboard users may have tabbed into the popover; hand focus back to the toggle
+ * before the popover unmounts so it does not fall to <body>. Mouse users keep focus
+ * in the editor, and callbacks that already moved focus elsewhere are left alone.
+ */
+function keepFocusOnToggle(root: HTMLElement | null, toggle: HTMLElement | null) {
+  const active = document.activeElement;
+  if (active && active !== toggle && root?.contains(active)) toggle?.focus();
+}
+
 export function ColorPalette({ label, icon, colors, current, onPick, onClear }: ColorPaletteProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const popoverId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -22,12 +33,7 @@ export function ColorPalette({ label, icon, colors, current, onPick, onClear }: 
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      // Keyboard users may have tabbed into the popover; hand focus back to the
-      // toggle before it unmounts. Mouse users keep focus in the editor.
-      const active = document.activeElement;
-      if (active && active !== toggleRef.current && rootRef.current?.contains(active)) {
-        toggleRef.current?.focus();
-      }
+      keepFocusOnToggle(rootRef.current, toggleRef.current);
       setOpen(false);
     };
     document.addEventListener('mousedown', onMouseDown);
@@ -40,19 +46,27 @@ export function ColorPalette({ label, icon, colors, current, onPick, onClear }: 
 
   const choose = (action: () => void) => {
     action();
+    keepFocusOnToggle(rootRef.current, toggleRef.current);
     setOpen(false);
   };
 
+  // Close when keyboard focus leaves the palette (e.g. Tab past 清除). A null
+  // relatedTarget means focus left the window or the focused node unmounted.
+  const onBlur = (event: FocusEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget;
+    if (open && next && !rootRef.current?.contains(next)) setOpen(false);
+  };
+
   return (
-    <div className="oc-palette" ref={rootRef}>
+    <div className="oc-palette" ref={rootRef} onBlur={onBlur}>
       <button
         ref={toggleRef}
         type="button"
         className="oc-tool"
         aria-label={label}
         title={label}
-        aria-haspopup="true"
         aria-expanded={open}
+        aria-controls={open ? popoverId : undefined}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setOpen((value) => !value)}
       >
@@ -60,7 +74,7 @@ export function ColorPalette({ label, icon, colors, current, onPick, onClear }: 
         <span className="oc-palette-indicator" style={{ background: current ?? 'transparent' }} />
       </button>
       {open && (
-        <div className="oc-palette-popover" role="group" aria-label={`${label}色盤`}>
+        <div id={popoverId} className="oc-palette-popover" role="group" aria-label={`${label}色盤`}>
           {colors.map((swatch) => (
             <button
               key={swatch.value}
