@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLevelStore } from '../recording/levelStore';
 import type { RecorderState } from '../recording/useRecorder';
 import { ActionBar } from './ActionBar';
@@ -15,6 +15,10 @@ function setup(recordState: RecorderState = 'idle') {
 }
 
 describe('ActionBar', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it.each([
     ['idle', '錄製', true],
     ['needsSetup', '請先設定', true],
@@ -70,12 +74,15 @@ describe('ActionBar', () => {
   });
 
   it('shows the timer, level meter and transcribing count right after the record button while recording', () => {
+    vi.useFakeTimers();
+    const fixedNow = new Date('2026-10-22T10:00:00Z').getTime();
+    vi.setSystemTime(fixedNow);
     const levels = createLevelStore();
     levels.set(0.5);
     render(
       <ActionBar
         recordState="recording"
-        startedAt={Date.now()}
+        startedAt={fixedNow - 65_000}
         levels={levels}
         transcribing={1}
         onRecord={vi.fn()}
@@ -84,7 +91,7 @@ describe('ActionBar', () => {
     );
     const status = screen.getByRole('button', { name: '停止' }).nextElementSibling;
     expect(status).toHaveClass('oc-rec-status');
-    expect(screen.getByRole('timer', { name: '錄音時間' })).toHaveTextContent('00:00');
+    expect(screen.getByRole('timer', { name: '錄音時間' })).toHaveTextContent('01:05');
     expect(document.querySelector('.oc-level-meter')).toHaveAttribute('data-level', '5');
     expect(screen.getByText('轉寫中 1 段')).toBeInTheDocument();
   });
