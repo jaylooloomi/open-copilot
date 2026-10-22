@@ -1,6 +1,8 @@
 import { act } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../api/apiClient';
 import { CONFIGURED, createTestEditor, settle, setupRecorder } from '../test/recorderHarness';
+import { TranscriptInserter } from './transcriptInserter';
 import { RECORDER_MESSAGES } from './useRecorder';
 
 describe('useRecorder: recording', () => {
@@ -181,5 +183,97 @@ describe('useRecorder: recording', () => {
 
     expect(recorders[0].stop).toHaveBeenCalled();
     expect(track.stop).toHaveBeenCalled();
+  });
+  it('retries a segment after a retryable error and inserts the transcript', async () => {
+    const { result, editor, recorders, calls, deps } = await setupRecorder();
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => recorders[0].emit(1));
+
+    calls[0].reject(new ApiError('down', 503));
+    await settle();
+    expect(deps.sleep).toHaveBeenCalledWith(1000);
+    expect(calls).toHaveLength(2);
+    expect(calls[1].input.seq).toBe(1);
+
+    calls[1].resolve('重試成功');
+    await settle();
+    expect(editor.getText()).toBe('重試成功');
+  });
+
+  it('skips a segment that fails without retry and still inserts the next one', async () => {
+    const { result, editor, recorders, calls, deps } = await setupRecorder();
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => {
+      recorders[0].emit(1);
+      recorders[0].emit(2);
+    });
+
+    calls[1].resolve('第二段');
+    calls[0].reject(new ApiError('bad request', 400));
+    await settle();
+
+    expect(deps.sleep).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(2);
+    expect(editor.getText()).toBe('第二段');
+  });
+
+  it('keeps inserting the rest of a released batch when one insert throws', async () => {
+    const { result, editor, recorders, calls } = await setupRecorder();
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => {
+      recorders[0].emit(1);
+      recorders[0].emit(2);
+    });
+    const original = TranscriptInserter.prototype.insertText;
+    const spy = vi
+      .spyOn(TranscriptInserter.prototype, 'insertText')
+      .mockImplementationOnce(() => {
+        throw new Error('schema edge case');
+      })
+      .mockImplementation(function (this: TranscriptInserter, text: string) {
+        return original.call(this, text);
+      });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    calls[1].resolve('第二段');
+    calls[0].resolve('第一段');
+    await settle();
+
+    expect(editor.getText()).toBe('第二段');
+    spy.mockRestore();
+    consoleError.mockRestore();
+  });
+
+  it('gives the microphone back when it unmounts while the permission prompt is up', async () => {
+    const { result, deps, recorders, stream, track, unmount, editor } = await setupRecorder();
+    let grant!: () => void;
+    deps.getUserMedia.mockImplementationOnce(
+      () =>
+        new Promise<MediaStream>((resolve) => {
+          grant = () => resolve(stream);
+        }),
+    );
+
+    let started!: Promise<void>;
+    act(() => {
+      started = result.current.start();
+    });
+    unmount();
+    // The editor belongs to a parent component and outlives this hook.
+    expect(editor.isDestroyed).toBe(false);
+    await act(async () => {
+      grant();
+      await started;
+    });
+
+    expect(track.stop).toHaveBeenCalled();
+    expect(recorders).toHaveLength(0);
+    expect(deps.createClient).not.toHaveBeenCalled();
   });
 });

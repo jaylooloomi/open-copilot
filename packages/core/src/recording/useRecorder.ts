@@ -119,7 +119,11 @@ export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
   });
   const controller = controllerRef.current;
 
-  useEffect(() => () => controller.dispose(), [controller]);
+  useEffect(() => {
+    // Set here as well as in dispose() so that StrictMode's unmount and remount works.
+    controller.mount();
+    return () => controller.dispose();
+  }, [controller]);
 
   const state: RecorderState =
     phase !== 'idle' ? phase : isConfigured(options.settings) ? 'idle' : 'needsSetup';
@@ -130,6 +134,8 @@ export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
 function createRecorderController(env: ControllerEnv) {
   let session: Session | null = null;
   let starting = false;
+  /** False after unmount, so a start() still waiting on the microphone does not record. */
+  let mounted = true;
 
   const deps = (): RecorderDeps => ({ ...defaultRecorderDeps, ...env.options().deps });
 
@@ -153,6 +159,7 @@ function createRecorderController(env: ControllerEnv) {
       // into the note that is still on screen.
       const now = env.options();
       if (
+        !mounted ||
         now.noteId !== noteId ||
         now.editor !== editor ||
         editor.isDestroyed ||
@@ -260,15 +267,24 @@ function createRecorderController(env: ControllerEnv) {
   /** Inserts every result that is now next in line. */
   function release(current: Session, seq: number, result: SegmentResult): void {
     for (const item of current.buffer.put(seq, result)) {
-      if (item.kind === 'text') {
+      if (item.kind !== 'text') continue;
+      // One failing insert must not drop the rest of the batch, which has already left the buffer.
+      try {
         current.inserter.insertText(item.text);
         current.transcript += item.text;
+      } catch (error) {
+        console.error('Failed to insert a transcript', error);
       }
     }
   }
 
   /** Unmount: stop the microphone; uploads still finish but insert nothing. */
+  function mount(): void {
+    mounted = true;
+  }
+
   function dispose(): void {
+    mounted = false;
     const current = session;
     if (!current) return;
     session = null;
@@ -277,7 +293,7 @@ function createRecorderController(env: ControllerEnv) {
     stopTracks(current.stream);
   }
 
-  return { start, stop, dispose };
+  return { start, stop, mount, dispose };
 }
 
 function stopTracks(stream: MediaStream): void {
