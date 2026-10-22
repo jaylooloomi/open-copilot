@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { expect, test, type FileChooser, type Page } from '@playwright/test';
+import { devices, expect, test, type FileChooser, type Page } from '@playwright/test';
 
 interface StoredNote {
   id: string;
@@ -9,21 +9,43 @@ interface StoredNote {
   updatedAt: number;
 }
 
-/** Reads what the app has persisted in IndexedDB (database "open-copilot", store "notes"). */
+/**
+ * Reads what the app has persisted in IndexedDB (database "open-copilot", store "notes").
+ * Resolves to [] when the app has not created the database yet, and never creates it itself:
+ * an empty v1 database would make the app skip its upgrade and miss its stores.
+ */
 function savedNotes(page: Page): Promise<StoredNote[]> {
   return page.evaluate(
     () =>
       new Promise<StoredNote[]>((resolve, reject) => {
+        let missing = false;
         const open = indexedDB.open('open-copilot');
-        open.onerror = () => reject(open.error);
+        open.onupgradeneeded = () => {
+          missing = true;
+          open.transaction?.abort();
+        };
+        open.onerror = () => (missing ? resolve([]) : reject(open.error));
         open.onsuccess = () => {
           const db = open.result;
-          const request = db.transaction('notes', 'readonly').objectStore('notes').getAll();
-          request.onerror = () => reject(request.error);
-          request.onsuccess = () => {
+          if (!db.objectStoreNames.contains('notes')) {
             db.close();
-            resolve(request.result as StoredNote[]);
-          };
+            resolve([]);
+            return;
+          }
+          try {
+            const request = db.transaction('notes', 'readonly').objectStore('notes').getAll();
+            request.onerror = () => {
+              db.close();
+              reject(request.error);
+            };
+            request.onsuccess = () => {
+              db.close();
+              resolve(request.result as StoredNote[]);
+            };
+          } catch (error) {
+            db.close();
+            reject(error);
+          }
         };
       }),
   );
@@ -74,10 +96,14 @@ test('備份 → 清空資料 → 匯入，筆記內容一致', async ({ page, b
   expect(await page.evaluate(() => localStorage.getItem('oc.lastBackupAt'))).toMatch(/^\d+$/);
 
   // 清空資料: a new browser context starts with empty IndexedDB and localStorage.
-  const fresh = await browser.newContext();
+  // Same device settings and base URL as the project's own context.
+  const fresh = await browser.newContext({
+    ...devices['Desktop Chrome'],
+    baseURL: new URL('/', page.url()).href,
+  });
   try {
     const restored = await fresh.newPage();
-    await restored.goto(new URL('/', page.url()).href);
+    await restored.goto('/');
     await expect(restored.getByRole('textbox', { name: '標題' })).toBeVisible();
     const list = restored.getByRole('list', { name: '筆記清單' });
     await expect(list.getByRole('listitem')).toHaveCount(1);
@@ -118,4 +144,25 @@ test('不是備份檔時顯示錯誤，不寫入任何資料', async ({ page }) 
   await expect(page.getByRole('alert')).toContainText('這不是 open-copilot 的備份檔');
   await expect(page.getByRole('list', { name: '筆記清單' }).getByRole('listitem')).toHaveCount(1);
   expect(await savedNotes(page)).toEqual(before);
+});
+
+test('讀取已存筆記的輔助函式不會自行建立資料庫', async ({ browser, baseURL }) => {
+  const blank = await browser.newContext({ ...devices['Desktop Chrome'] });
+  try {
+    const other = await blank.newPage();
+    // Same origin, but the app never runs, so its database does not exist yet.
+    await other.route('**/*', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<!doctype html><title>blank</title>',
+      }),
+    );
+    await other.goto(baseURL ?? 'http://localhost:5173');
+    expect(await savedNotes(other)).toEqual([]);
+    expect(
+      await other.evaluate(async () => (await indexedDB.databases()).map((d) => d.name)),
+    ).not.toContain('open-copilot');
+  } finally {
+    await blank.close();
+  }
 });
