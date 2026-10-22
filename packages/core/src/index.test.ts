@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import * as core from './index';
 import type { FileSaver, NoteStorage, Platform } from './index';
 
@@ -14,11 +14,12 @@ describe('@oc/core public API', () => {
 
   it('builds a working platform from the exported factories', async () => {
     const db = await core.openAppDb(`test-${crypto.randomUUID()}`);
+    // Close even when an await or assertion below fails.
+    onTestFinished(() => db.close());
     const storage: NoteStorage = core.createIndexedDbStorage(db);
     const fileSaver: FileSaver = core.createBrowserFileSaver();
     const platform: Platform = { storage, fileSaver, canPrint: true };
     await platform.storage.put({ id: 'x', title: 't', content: {}, createdAt: 1, updatedAt: 1 });
     expect(await platform.storage.get('x')).toMatchObject({ title: 't' });
-    db.close();
   });
 });
