@@ -50,6 +50,7 @@ const API_ERROR_CODE_SET: Record<ApiErrorCode, true> = {
   rate_limited: true,
   bad_request: true,
   upstream_error: true,
+  ai_unavailable: true,
 };
 
 function isApiErrorCode(value: unknown): value is ApiErrorCode {
