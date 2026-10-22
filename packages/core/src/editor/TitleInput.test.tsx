@@ -17,6 +17,11 @@ describe('TitleInput', () => {
     expect(input).toHaveValue('週會');
   });
 
+  it('tells on-screen keyboards that Enter moves to the next field', () => {
+    render(<TitleInput value="" onChange={vi.fn()} />);
+    expect(screen.getByRole('textbox', { name: '標題' })).toHaveAttribute('enterkeyhint', 'next');
+  });
+
   it('reports every change', async () => {
     const onChange = vi.fn();
     render(<TitleInput value="" onChange={onChange} />);

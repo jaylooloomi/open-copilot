@@ -12,6 +12,7 @@ export function TitleInput({ value, onChange, onEnter }: TitleInputProps) {
       className="oc-title"
       aria-label="標題"
       placeholder="請輸入標題.."
+      enterKeyHint="next"
       value={value}
       onChange={(event) => onChange(event.target.value)}
       onKeyDown={(event) => {

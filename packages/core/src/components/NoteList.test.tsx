@@ -30,10 +30,59 @@ describe('NoteList', () => {
     ]);
   });
 
+  it('shows when each note was last updated', () => {
+    setup();
+    const items = within(screen.getByRole('list', { name: '筆記清單' })).getAllByRole('listitem');
+    expect(items.map((li) => li.querySelector('time')?.getAttribute('dateTime'))).toEqual([
+      new Date(2).toISOString(),
+      new Date(1).toISOString(),
+    ]);
+  });
+
+  it('names the select button by its title, then its time', () => {
+    setup();
+    const time = screen.getAllByRole('listitem')[0].querySelector('time');
+    expect(time?.textContent).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^週會紀錄/ })).toHaveAccessibleName(
+      `週會紀錄 ${time?.textContent}`,
+    );
+  });
+
+  it('gives the delete button a tooltip that matches its name', () => {
+    setup();
+    expect(screen.getByRole('button', { name: '刪除「週會紀錄」' })).toHaveAttribute(
+      'title',
+      '刪除「週會紀錄」',
+    );
+  });
+
+  it('still lists a note whose updatedAt is not a valid time', () => {
+    const notes = [Infinity, Number.NaN, 9e15].map((t, i) => note(`x${i}`, `壞時間${i}`, t));
+    render(
+      <NoteList notes={notes} activeId={undefined} onSelect={vi.fn()} onCreate={vi.fn()} onDelete={vi.fn()} />,
+    );
+    const items = within(screen.getByRole('list', { name: '筆記清單' })).getAllByRole('listitem');
+    expect(items.map((li) => li.querySelector('.oc-note-title')?.textContent)).toEqual([
+      '壞時間0',
+      '壞時間1',
+      '壞時間2',
+    ]);
+    expect(items.map((li) => li.querySelector('time'))).toEqual([null, null, null]);
+  });
+
   it('marks the active note', () => {
     setup('b');
     expect(screen.getByRole('button', { name: /^週會紀錄/ })).toHaveAttribute('aria-current', 'true');
     expect(screen.getByRole('button', { name: /^未命名筆記/ })).not.toHaveAttribute('aria-current');
+  });
+
+  it('marks no note as active when there is no active id', () => {
+    render(
+      <NoteList notes={NOTES} activeId={undefined} onSelect={vi.fn()} onCreate={vi.fn()} onDelete={vi.fn()} />,
+    );
+    for (const name of [/^週會紀錄/, /^未命名筆記/]) {
+      expect(screen.getByRole('button', { name })).not.toHaveAttribute('aria-current');
+    }
   });
 
   it('selects a note', async () => {

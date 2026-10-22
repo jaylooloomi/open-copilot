@@ -38,6 +38,9 @@ export function NoteList({ notes, activeId, onSelect, onCreate, onDelete }: Note
         {notes.map((note) => {
           const title = displayTitle(note);
           const active = note.id === activeId;
+          const updated = new Date(note.updatedAt);
+          // An out-of-range timestamp (e.g. from an imported file) must not take the list down.
+          const hasTime = Number.isFinite(updated.getTime());
           return (
             <li key={note.id} className={active ? 'oc-note-item is-active' : 'oc-note-item'}>
               <button
@@ -47,15 +50,19 @@ export function NoteList({ notes, activeId, onSelect, onCreate, onDelete }: Note
                 onClick={() => onSelect(note.id)}
               >
                 <span className="oc-note-title">{title}</span>
-                <time className="oc-note-time" dateTime={new Date(note.updatedAt).toISOString()}>
-                  {timeFormat.format(note.updatedAt)}
-                </time>
+                {/* Keeps the button's accessible name "title time", not "titletime", whatever the CSS. */}
+                {' '}
+                {hasTime && (
+                  <time className="oc-note-time" dateTime={updated.toISOString()}>
+                    {timeFormat.format(updated)}
+                  </time>
+                )}
               </button>
               <button
                 type="button"
                 className="oc-note-delete"
                 aria-label={`刪除「${title}」`}
-                title="刪除"
+                title={`刪除「${title}」`}
                 onClick={() => onDelete(note.id)}
               >
                 <Trash size={16} />
