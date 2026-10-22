@@ -10,30 +10,29 @@ export function debounce<A extends unknown[]>(fn: (...args: A) => void, ms: numb
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastArgs: A | undefined;
 
-  const run = () => {
-    const args = lastArgs as A;
+  const cancel = () => {
+    if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
     lastArgs = undefined;
-    fn(...args);
   };
 
-  const debounced = ((...args: A) => {
+  // Reset state before calling fn, so a call made from inside fn schedules a new run
+  // and an exception thrown by fn leaves nothing pending.
+  const run = () => {
+    const args = lastArgs;
+    cancel();
+    if (args) fn(...args);
+  };
+
+  const flush = () => {
+    if (timer !== undefined) run();
+  };
+
+  const call = (...args: A) => {
     lastArgs = args;
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(run, ms);
-  }) as Debounced<A>;
-
-  debounced.flush = () => {
-    if (timer === undefined) return;
-    clearTimeout(timer);
-    run();
   };
 
-  debounced.cancel = () => {
-    if (timer !== undefined) clearTimeout(timer);
-    timer = undefined;
-    lastArgs = undefined;
-  };
-
-  return debounced;
+  return Object.assign(call, { flush, cancel });
 }

@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserFileSaver } from './browserFileSaver';
 
+// jsdom has no object URLs, so the tests install fakes; remember what was there to put it back.
+const urlStatics = ['createObjectURL', 'revokeObjectURL'] as const;
+const originalUrlStatics = urlStatics.map((key) => Object.getOwnPropertyDescriptor(URL, key));
+
 describe('createBrowserFileSaver', () => {
   const createObjectURL = vi.fn((_blob: Blob) => 'blob:fake-url');
   const revokeObjectURL = vi.fn((_url: string) => undefined);
@@ -8,7 +12,6 @@ describe('createBrowserFileSaver', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    // jsdom has no object URLs; install fakes.
     URL.createObjectURL = createObjectURL;
     URL.revokeObjectURL = revokeObjectURL;
     clicked = [];
@@ -22,6 +25,11 @@ describe('createBrowserFileSaver', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    urlStatics.forEach((key, i) => {
+      const original = originalUrlStatics[i];
+      if (original) Object.defineProperty(URL, key, original);
+      else Reflect.deleteProperty(URL, key);
+    });
     createObjectURL.mockClear();
     revokeObjectURL.mockClear();
   });
@@ -41,4 +49,10 @@ describe('createBrowserFileSaver', () => {
     vi.advanceTimersByTime(1000);
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:fake-url');
   });
+});
+
+it('restores URL.createObjectURL / revokeObjectURL after the fakes are used', () => {
+  expect(urlStatics.map((key) => Object.getOwnPropertyDescriptor(URL, key))).toEqual(
+    originalUrlStatics,
+  );
 });

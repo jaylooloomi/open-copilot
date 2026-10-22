@@ -1,7 +1,7 @@
 import type { Note } from '@oc/shared';
 import { vi } from 'vitest';
 import { sortByUpdatedDesc } from '../notes/noteStore';
-import type { NoteStorage } from '../platform/types';
+import type { NoteStorage, Platform } from '../platform/types';
 
 /** In-memory NoteStorage whose methods are vi.fn spies, for hook and component tests. */
 export function createMemoryStorage(initial: Note[] = []) {
@@ -26,5 +26,6 @@ export function createMemoryStorage(initial: Note[] = []) {
 export function createTestPlatform(initial: Note[] = []) {
   const { storage, notes } = createMemoryStorage(initial);
   const fileSaver = { save: vi.fn(async (_filename: string, _data: Blob) => undefined) };
-  return { platform: { storage, fileSaver, canPrint: true }, storage, notes, fileSaver };
+  const platform = { storage, fileSaver, canPrint: true } satisfies Platform;
+  return { platform, storage, notes, fileSaver };
 }

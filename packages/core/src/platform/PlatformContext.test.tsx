@@ -1,5 +1,5 @@
 import { render, renderHook, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTestPlatform } from '../test/memoryStorage';
 import { PlatformProvider, usePlatform } from './PlatformContext';
 
@@ -9,6 +9,10 @@ function ShowCanPrint() {
 }
 
 describe('PlatformContext', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('provides the platform to descendants', () => {
     const { platform } = createTestPlatform();
     render(
@@ -24,6 +28,5 @@ describe('PlatformContext', () => {
     expect(() => renderHook(() => usePlatform())).toThrow(
       'usePlatform must be used inside <PlatformProvider>',
     );
-    vi.restoreAllMocks();
   });
 });
