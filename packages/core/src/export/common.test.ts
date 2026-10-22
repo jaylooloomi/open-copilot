@@ -37,6 +37,11 @@ describe('listStart', () => {
     expect(listStart({ type: 'orderedList' })).toBe(1);
     expect(listStart({ type: 'orderedList', attrs: { start: 'x' } })).toBe(1);
   });
+
+  it('never returns a negative start', () => {
+    expect(listStart({ type: 'orderedList', attrs: { start: 0 } })).toBe(0);
+    expect(listStart({ type: 'orderedList', attrs: { start: -3 } })).toBe(0);
+  });
 });
 
 describe('formatListItem', () => {

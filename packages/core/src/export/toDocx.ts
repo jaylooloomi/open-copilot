@@ -22,6 +22,8 @@ const BULLET_REFERENCE = 'oc-bullet';
 /** Yellow from the highlighter palette, used when a highlight mark has no colour. */
 const DEFAULT_HIGHLIGHT = 'FEF08A';
 const LEVELS = 9;
+/** Left indent (twips) of each blockquote level. */
+const QUOTE_INDENT = 720;
 const BULLET_SYMBOLS = ['•', '◦', '▪'];
 const ORDERED_FORMATS = [LevelFormat.DECIMAL, LevelFormat.LOWER_LETTER, LevelFormat.LOWER_ROMAN];
 
@@ -44,8 +46,8 @@ interface Context {
 }
 
 /**
- * Word document keeping bold, italic, underline, text colour, highlight (as run shading),
- * alignment, heading levels and bullet/numbered lists. The title becomes Word's Title style.
+ * Word document keeping bold, italic, underline, strike-through, text colour, highlight (as run shading),
+ * alignment, heading levels, bullet/numbered lists and indented blockquotes. The title becomes Word's Title style.
  */
 export async function toDocx(note: Note): Promise<Blob> {
   const context: Context = { orderedLists: [] };
@@ -85,12 +87,30 @@ function renderBlock(node: JSONContent, context: Context, format: ParagraphForma
     case 'bulletList':
     case 'orderedList':
       return renderList(node, context, 0);
+    case 'blockquote':
+      return renderBlockquote(node, context, format);
     default: {
       // Unknown block: its text content as a plain paragraph.
       const text = nodeText(node);
       return text === '' ? [] : [new Paragraph({ ...format, children: plainRuns(text) })];
     }
   }
+}
+
+/**
+ * Quote children keep their own formatting, indented one step further. A list item's bullet or
+ * number stays on the quote's first paragraph; nested lists keep their own numbering.
+ */
+function renderBlockquote(quote: JSONContent, context: Context, format: ParagraphFormat): Paragraph[] {
+  const left = (Number(format.indent?.left) || 0) + QUOTE_INDENT;
+  const paragraphs: Paragraph[] = [];
+  let first = !!format.numbering;
+  for (const child of quote.content ?? []) {
+    const rendered = renderBlock(child, context, first ? format : { indent: { left } });
+    if (rendered.length > 0) first = false;
+    paragraphs.push(...rendered);
+  }
+  return paragraphs;
 }
 
 function renderList(list: JSONContent, context: Context, depth: number): Paragraph[] {
@@ -112,8 +132,9 @@ function renderList(list: JSONContent, context: Context, depth: number): Paragra
       const format: ParagraphFormat = numbered
         ? { indent: { left: levelIndent(level).left } }
         : { numbering: { reference, level } };
-      paragraphs.push(...renderBlock(child, context, format));
-      numbered = true;
+      const rendered = renderBlock(child, context, format);
+      if (rendered.length > 0) numbered = true;
+      paragraphs.push(...rendered);
     }
   }
   return paragraphs;
@@ -159,6 +180,7 @@ function runFormat(marks: Mark[]): IRunOptions {
     ...(find('bold') ? { bold: true } : {}),
     ...(find('italic') ? { italics: true } : {}),
     ...(find('underline') ? { underline: {} } : {}),
+    ...(find('strike') ? { strike: true } : {}),
     ...(color ? { color } : {}),
     ...(fill ? { shading: { type: ShadingType.CLEAR, color: 'auto', fill } } : {}),
   };

@@ -20,10 +20,10 @@ export function nodeText(node: JSONContent): string {
   return children.map(nodeText).join(inline ? '' : '\n');
 }
 
-/** First number of an ordered list (Tiptap's `start` attribute, default 1). */
+/** First number of an ordered list (Tiptap's `start` attribute, default 1, never below 0). */
 export function listStart(list: JSONContent): number {
   const start = Number(list.attrs?.start ?? 1);
-  return Number.isInteger(start) ? start : 1;
+  return Number.isInteger(start) ? Math.max(start, 0) : 1;
 }
 
 /**

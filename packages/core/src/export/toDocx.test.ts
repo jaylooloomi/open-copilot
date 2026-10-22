@@ -31,6 +31,7 @@ interface RunInfo {
   bold: boolean;
   italic: boolean;
   underline: string | null;
+  strike: boolean;
   color: string | null;
   fill: string | null;
 }
@@ -81,6 +82,7 @@ async function readDocx(blob: Blob) {
         bold: !!child(rPr, 'b'),
         italic: !!child(rPr, 'i'),
         underline: val(child(rPr, 'u')),
+        strike: !!child(rPr, 'strike'),
         color: val(child(rPr, 'color')),
         fill: child(rPr, 'shd')?.getAttribute('w:fill') ?? null,
       };
@@ -259,5 +261,56 @@ describe('toDocx', () => {
     );
     expect(paragraphs.map((x) => x.text)).toEqual(['前[未轉寫片段]後', '嗨 @小明', '提醒一提醒二']);
     expect(paragraphs[2].runs.map((r) => r.breaks)).toEqual([0, 1]);
+  });
+
+  it('keeps strike-through on the runs', async () => {
+    const { paragraphs } = await readDocx(await toDocx(note('', p(text('刪', { type: 'strike' }), text('留')))));
+    expect(paragraphs[0].runs.map((r) => [r.text, r.strike])).toEqual([
+      ['刪', true],
+      ['留', false],
+    ]);
+  });
+
+  it('renders blockquote children indented, keeping their formatting and list bullets', async () => {
+    const { paragraphs } = await readDocx(
+      await toDocx(
+        note(
+          '',
+          {
+            type: 'blockquote',
+            content: [p(text('引', { type: 'bold' })), ul(item(p(text('項目'))))],
+          },
+          p(text('外')),
+        ),
+      ),
+    );
+    expect(paragraphs.map((x) => [x.text, x.indentLeft, x.list?.format ?? null])).toEqual([
+      ['引', '720', null],
+      ['項目', null, 'bullet'],
+      ['外', null, null],
+    ]);
+    expect(paragraphs[0].runs[0].bold).toBe(true);
+  });
+
+  it('keeps the bullet on a blockquote that opens a list item', async () => {
+    const { paragraphs } = await readDocx(
+      await toDocx(note('', ul(item({ type: 'blockquote', content: [p(text('甲')), p(text('乙'))] })))),
+    );
+    expect(paragraphs.map((x) => [x.text, x.list?.format ?? null, x.indentLeft])).toEqual([
+      ['甲', 'bullet', null],
+      ['乙', null, '720'],
+    ]);
+  });
+
+  it('numbers the first real paragraph of an item even after an empty block', async () => {
+    const { paragraphs } = await readDocx(
+      await toDocx(note('', ul(item({ type: 'horizontalRule' }, p(text('第一段')))))),
+    );
+    expect(paragraphs.map((x) => [x.text, x.list?.format ?? null])).toEqual([['第一段', 'bullet']]);
+  });
+
+  it('never writes a negative start number', async () => {
+    const { paragraphs } = await readDocx(await toDocx(note('', ol(-3, item(p(text('一')))))));
+    expect(paragraphs[0].list?.start).toBe('0');
   });
 });
