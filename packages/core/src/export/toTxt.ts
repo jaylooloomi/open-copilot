@@ -17,6 +17,9 @@ import {
  * Lists keep their `- ` / `1. ` markers, task items start with ☐ / ☑, and links become
  * `text (href)`; every other kind of formatting is dropped. A heading right after a list gets a blank
  * line before it, so it reads as a new section rather than as one more list item.
+ * A note that ends in a list, heading or quote may or may not end with one empty paragraph (the
+ * editor's TrailingNode adds it, but it is only saved with the next real edit); the blank lines
+ * at both ends are trimmed, so the output is the same either way.
  */
 export function toTxt(note: Note): string {
   const title = note.title.trim();
@@ -28,7 +31,7 @@ export function toTxt(note: Note): string {
       return block.type === 'heading' && previous && isList(previous) ? `\n${text}` : text;
     })
     .join('\n')
-    // Drop blank lines at both ends (e.g. the empty paragraph Tiptap keeps after a final list).
+    // Drop blank lines at both ends (e.g. the empty paragraph TrailingNode may add after a final list).
     .replace(/^\n+|\n+$/g, '');
   return [title, body].filter((part) => part !== '').join('\n\n');
 }

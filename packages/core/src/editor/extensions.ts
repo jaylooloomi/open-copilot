@@ -45,7 +45,9 @@ export function createExtensions(): Extensions {
     TaskItem.configure({
       nested: true,
       a11y: {
-        checkboxLabel: (node, checked) => `${checked ? '已完成' : '未完成'}待辦：${node.textContent || '空白項目'}`,
+        // Only the item's own first line: node.textContent would also read out every nested sub-task.
+        checkboxLabel: (node, checked) =>
+          `${checked ? '已完成' : '未完成'}待辦：${node.firstChild?.textContent || '空白項目'}`,
       },
     }),
     TranscriptGap,

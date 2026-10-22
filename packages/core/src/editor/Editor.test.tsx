@@ -107,6 +107,8 @@ describe('Editor + useNoteEditor', () => {
     // but before useEditor's passive effect replaces the old editor instance. This relies on
     // that timing in @tiptap/react 3.32; the lateWriteText check below fails loudly if a later
     // version replaces the editor earlier, instead of letting the test pass by accident.
+    // That is why packages/core pins every @tiptap/* package to ~3.32: recheck this test when
+    // moving to a new Tiptap minor version.
     function LateWriter(props: {
       noteId: string;
       content: JSONContent;

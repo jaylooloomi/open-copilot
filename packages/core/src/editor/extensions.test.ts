@@ -157,5 +157,10 @@ describe('createExtensions task lists', () => {
     const doc: JSONContent = e.getJSON();
     const outer = doc.content?.[0]?.content?.[0];
     expect(outer?.content?.map((child) => child.type)).toEqual(['paragraph', 'taskList']);
+    // Each checkbox is labelled by its own line only, not by the nested sub-tasks under it.
+    const labels = [...e.view.dom.querySelectorAll('input[type="checkbox"]')].map((box) =>
+      box.getAttribute('aria-label'),
+    );
+    expect(labels).toEqual(['未完成待辦：準備', '已完成待辦：訂場地']);
   });
 });
