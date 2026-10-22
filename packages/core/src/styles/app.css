@@ -1,0 +1,490 @@
+:root {
+  --oc-primary: #c026d3;
+  --oc-primary-end: #ec4899;
+  --oc-gradient: linear-gradient(135deg, var(--oc-primary) 0%, var(--oc-primary-end) 100%);
+  --oc-bg: #ffffff;
+  --oc-surface: #f9fafb;
+  --oc-hover: #f3f4f6;
+  --oc-active-bg: #fdf4ff;
+  --oc-border: #e5e7eb;
+  --oc-text: #111827;
+  --oc-muted: #6b7280;
+  --oc-placeholder: #9ca3af;
+  --oc-danger: #dc2626;
+  --oc-radius: 10px;
+  --oc-sidebar-width: 260px;
+  --oc-font: system-ui, -apple-system, 'Segoe UI', 'Noto Sans TC', 'PingFang TC',
+    'Microsoft JhengHei', sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--oc-font);
+  color: var(--oc-text);
+  background: var(--oc-bg);
+}
+
+button {
+  font: inherit;
+}
+
+.oc-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--oc-muted);
+}
+
+/* ---------- layout ---------- */
+.oc-app {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.oc-sidebar {
+  width: var(--oc-sidebar-width);
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--oc-border);
+  background: var(--oc-surface);
+}
+
+.oc-backdrop {
+  display: none;
+}
+
+.oc-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.oc-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--oc-border);
+}
+
+.oc-menu-btn {
+  display: none;
+}
+
+/* ---------- action bar ---------- */
+.oc-actionbar {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.oc-record-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 999px;
+  background: var(--oc-gradient);
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.oc-record-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.oc-ai-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.oc-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: 1px solid var(--oc-border);
+  border-radius: 999px;
+  background: var(--oc-bg);
+  color: var(--oc-muted);
+  font-size: 13px;
+  cursor: not-allowed;
+}
+
+/* ---------- banner ---------- */
+.oc-banner {
+  margin: 12px 16px 0;
+  padding: 10px 14px;
+  border-radius: var(--oc-radius);
+  background: linear-gradient(135deg, rgba(192, 38, 211, 0.08), rgba(236, 72, 153, 0.08));
+  font-size: 14px;
+}
+
+.oc-banner strong {
+  color: var(--oc-primary);
+}
+
+/* ---------- toolbar ---------- */
+.oc-toolbar {
+  /* Containing block for the palette popover on narrow screens (see the media query). */
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--oc-border);
+}
+
+.oc-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+  margin-right: 2px;
+  border-right: 1px solid var(--oc-border);
+}
+
+.oc-tool-group:last-child {
+  border-right: none;
+}
+
+.oc-tool {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--oc-text);
+  cursor: pointer;
+}
+
+.oc-tool:hover:not(:disabled) {
+  background: var(--oc-active-bg);
+}
+
+.oc-tool.is-active {
+  background: var(--oc-primary);
+  color: #ffffff;
+}
+
+.oc-tool:disabled {
+  color: var(--oc-placeholder);
+  cursor: default;
+}
+
+.oc-block-select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--oc-border);
+  border-radius: 8px;
+  background: var(--oc-bg);
+  color: var(--oc-text);
+  font: inherit;
+}
+
+.oc-palette {
+  position: relative;
+}
+
+.oc-palette-indicator {
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  left: 8px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.oc-palette-popover {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, 28px);
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius);
+  background: var(--oc-bg);
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
+}
+
+.oc-swatch {
+  width: 28px;
+  height: 28px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--oc-border);
+  cursor: pointer;
+}
+
+.oc-swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--oc-primary);
+}
+
+.oc-palette-clear {
+  grid-column: 1 / -1;
+  padding: 4px;
+  border: 1px solid var(--oc-border);
+  border-radius: 6px;
+  background: var(--oc-bg);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ---------- document ---------- */
+.oc-document {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px 48px;
+}
+
+.oc-title {
+  width: 100%;
+  padding: 0 0 12px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--oc-text);
+  font: inherit;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.oc-title::placeholder {
+  color: var(--oc-placeholder);
+}
+
+.oc-editor .ProseMirror {
+  min-height: 50vh;
+  outline: none;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.oc-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--oc-placeholder);
+  pointer-events: none;
+}
+
+.oc-editor .ProseMirror ul,
+.oc-editor .ProseMirror ol {
+  padding-left: 1.5em;
+}
+
+.oc-editor .ProseMirror mark {
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+/* ---------- note list ---------- */
+.oc-notelist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 8px;
+}
+
+.oc-notelist-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.oc-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--oc-gradient);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.oc-notelist-items {
+  margin: 0;
+  padding: 0 8px 16px;
+  list-style: none;
+}
+
+.oc-note-item {
+  display: flex;
+  align-items: center;
+  border-radius: var(--oc-radius);
+}
+
+.oc-note-item:hover {
+  background: var(--oc-hover);
+}
+
+.oc-note-item.is-active {
+  background: var(--oc-active-bg);
+}
+
+.oc-note-select {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.oc-note-title {
+  max-width: 100%;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-note-item.is-active .oc-note-title {
+  color: var(--oc-primary);
+}
+
+.oc-note-time {
+  color: var(--oc-muted);
+  font-size: 12px;
+}
+
+.oc-note-delete {
+  display: inline-flex;
+  margin-right: 6px;
+  padding: 6px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--oc-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.oc-note-item:hover .oc-note-delete,
+.oc-note-item.is-active .oc-note-delete,
+.oc-note-delete:focus-visible {
+  opacity: 1;
+}
+
+.oc-note-delete:hover {
+  background: #fee2e2;
+  color: var(--oc-danger);
+}
+
+/* ---------- narrow screens: note list becomes a drawer ---------- */
+@media (max-width: 767.98px) {
+  .oc-menu-btn {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--oc-text);
+    cursor: pointer;
+  }
+
+  .oc-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    width: min(80vw, 300px);
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition:
+      transform 0.2s ease,
+      visibility 0.2s;
+    box-shadow: 0 0 24px rgba(17, 24, 39, 0.2);
+  }
+
+  .oc-app[data-drawer-open='true'] .oc-sidebar {
+    visibility: visible;
+    transform: translateX(0);
+  }
+
+  .oc-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: block;
+    background: rgba(17, 24, 39, 0.35);
+  }
+
+  .oc-note-delete {
+    opacity: 1;
+  }
+
+  .oc-topbar {
+    padding: 8px 12px;
+  }
+
+  .oc-banner {
+    margin: 8px 12px 0;
+  }
+
+  .oc-toolbar {
+    padding: 6px 12px;
+  }
+
+  /* Anchor the popover to the toolbar, not to its button: on phones the 字色/螢光筆 buttons sit
+     near the right edge and a button-anchored popover is clipped by .oc-main's overflow. */
+  .oc-palette {
+    position: static;
+  }
+
+  .oc-palette-popover {
+    top: calc(100% + 4px);
+    left: 12px;
+  }
+
+  .oc-document {
+    padding: 16px;
+  }
+
+  .oc-title {
+    font-size: 22px;
+  }
+}
