@@ -27,6 +27,17 @@ describe('createNote', () => {
     const b = createNote(1);
     expect(a.id).not.toBe(b.id);
     expect(a.content).not.toBe(EMPTY_DOC);
+    expect(a.content).not.toBe(b.content);
+    expect(a.content.content).not.toBe(b.content.content);
+  });
+
+  it('returns content the editor can mutate (EMPTY_DOC itself is frozen)', () => {
+    const a = createNote(1);
+    const b = createNote(1);
+    expect(() => a.content.content!.push({ type: 'paragraph' })).not.toThrow();
+    expect(a.content.content).toHaveLength(2);
+    expect(b.content).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
+    expect(EMPTY_DOC).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
   });
 });
 
