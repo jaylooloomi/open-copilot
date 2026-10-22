@@ -125,6 +125,8 @@ function SummaryResult({
   const empty = lines.length === 0;
 
   const copy = () => {
+    // Clear first so the live region announces the result of every copy, not only the first one.
+    setCopyMessage('');
     copyText(summary).then(
       () => setCopyMessage(AI_PANEL_TEXT.copied),
       (error: unknown) => {

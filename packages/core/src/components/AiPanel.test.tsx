@@ -45,6 +45,25 @@ describe('AiPanel', () => {
     expect(await screen.findByText(AI_PANEL_TEXT.copied)).toBeInTheDocument();
   });
 
+  it('clears the copy message while a new copy runs so each copy is announced again', async () => {
+    let resolveSecond: () => void = () => undefined;
+    const copyText = vi
+      .fn<(text: string) => Promise<void>>()
+      .mockResolvedValueOnce(undefined)
+      .mockImplementationOnce(() => new Promise<void>((resolve) => (resolveSecond = resolve)));
+    const { user } = setup({ requestId: 1, kind: 'summary', status: 'done', summary: '摘要' }, { copyText });
+    const note = () => document.querySelector('.oc-ai-panel-note');
+
+    await user.click(screen.getByRole('button', { name: AI_PANEL_TEXT.copy }));
+    expect(await screen.findByText(AI_PANEL_TEXT.copied)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: AI_PANEL_TEXT.copy }));
+    expect(note()).toBeEmptyDOMElement();
+
+    resolveSecond();
+    expect(await screen.findByText(AI_PANEL_TEXT.copied)).toBeInTheDocument();
+  });
+
   it('says so when copying fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { user } = setup(
