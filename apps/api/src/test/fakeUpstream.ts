@@ -54,6 +54,59 @@ export function jsonResponse(
   });
 }
 
+/** 假 JSON 上游收到的一次請求：網址、方法、Authorization 與解析後的 JSON body。 */
+export interface JsonUpstreamCall {
+  url: string;
+  method: string;
+  authorization: string | null;
+  body: unknown;
+}
+
+/**
+ * 假的上游 fetch，專門處理 JSON 請求（例如 chat completions），注入真正的 OpenAI SDK client。
+ * 和 createFakeUpstream 一樣：signal 已中止時以中止原因拒絕；非 JSON 請求直接丟出清楚的錯誤；
+ * `calls` 只記錄真正送到上游的請求。
+ */
+export function createFakeJsonUpstream(respond: (call: JsonUpstreamCall) => Response) {
+  const calls: JsonUpstreamCall[] = [];
+  // 掛上全域 Response 的理由同 createFakeUpstream：讓 SDK 跳過 FormData 探測。
+  const fetch = Object.assign(vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const request = new Request(input, init);
+    if (request.signal.aborted) throw request.signal.reason;
+    const contentType = request.headers.get('content-type') ?? '';
+    if (!contentType.startsWith('application/json')) {
+      throw new Error(`createFakeJsonUpstream only handles JSON requests, got "${contentType}"`);
+    }
+    const call: JsonUpstreamCall = {
+      url: request.url,
+      method: request.method,
+      authorization: request.headers.get('authorization'),
+      body: await request.json(),
+    };
+    calls.push(call);
+    return respond(call);
+  }), { Response });
+  return { fetch, calls };
+}
+
+/** 一個成功的 chat completion 回應，只有一個 choice；content 可為 null（模型沒有輸出）。 */
+export function chatCompletionResponse(content: string | null): Response {
+  return jsonResponse(200, {
+    id: 'chatcmpl-test',
+    object: 'chat.completion',
+    created: 0,
+    model: 'test-model',
+    choices: [
+      {
+        index: 0,
+        finish_reason: 'stop',
+        logprobs: null,
+        message: { role: 'assistant', content, refusal: null },
+      },
+    ],
+  });
+}
+
 /**
  * 測試不可連網：把全域 fetch 換成會丟錯的假物件。在 beforeEach 呼叫，
  * afterEach 用 vi.unstubAllGlobals() 還原。沒注入假上游的 SDK client 會因此失敗，而不是打到真的 API。
