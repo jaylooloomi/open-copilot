@@ -51,9 +51,13 @@ describe('BackupControls', () => {
   });
 
   it('shows the last result as a status message only when there is one', () => {
-    setup();
+    const handlers = { onBackup: vi.fn(), onImportFile: vi.fn() };
+    const { rerender } = render(<BackupControls disabled={false} message={undefined} {...handlers} />);
     expect(screen.queryByRole('status')).toBeNull();
-    setup({ message: '已匯入 2 篇，略過 1 篇（本機版本較新）' });
+
+    rerender(<BackupControls disabled={false} message="已匯入 2 篇，略過 1 篇（本機版本較新）" {...handlers} />);
+
+    expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(screen.getByRole('status')).toHaveTextContent('已匯入 2 篇，略過 1 篇（本機版本較新）');
   });
 });
