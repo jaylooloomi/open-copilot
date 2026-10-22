@@ -19,6 +19,7 @@ export async function selectPlatform(): Promise<Platform> {
 
 function selectFileSaver(): FileSaver {
   // apps/desktop's preload script exposes window.ocDesktop; browsers do not have it.
+  // Read once at startup: preload runs before page scripts, so the bridge already exists.
   const desktop = window.ocDesktop;
   return desktop ? createDesktopFileSaver(desktop) : createBrowserFileSaver();
 }

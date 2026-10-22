@@ -61,10 +61,15 @@ describe('selectPlatform', () => {
     URL.revokeObjectURL = vi.fn((_url: string) => undefined);
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
 
-    await platform.fileSaver.save('筆記.txt', new Blob(['內文']));
+    const blob = new Blob(['內文']);
+    await platform.fileSaver.save('筆記.txt', blob);
 
     expect(click).toHaveBeenCalledTimes(1);
+    const anchor = click.mock.contexts[0] as HTMLAnchorElement;
+    expect(anchor.download).toBe('筆記.txt');
+    expect(anchor.href).toBe('blob:fake-url');
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    expect(URL.createObjectURL).toHaveBeenCalledWith(blob);
     vi.advanceTimersByTime(1000);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake-url');
   });
