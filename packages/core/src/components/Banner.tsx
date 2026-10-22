@@ -1,7 +1,7 @@
 export interface BannerProps {
   /** Show the backup reminder instead of the recording tip. */
   backupDue?: boolean;
-  /** 立即備份 is disabled (recording, or a backup or import is running). */
+  /** 立即備份 is disabled (recording, or a backup or import is running). It is also disabled when onBackup is not passed. */
   backupDisabled?: boolean;
   onBackup?(): void;
 }
@@ -11,7 +11,7 @@ export function Banner({ backupDue = false, backupDisabled = false, onBackup }: 
     return (
       <div className="oc-banner oc-banner-backup" role="note">
         <strong>已超過 7 天沒有備份筆記</strong>
-        <button type="button" className="oc-banner-action" disabled={backupDisabled} onClick={onBackup}>
+        <button type="button" className="oc-banner-action" disabled={backupDisabled || !onBackup} onClick={onBackup}>
           立即備份
         </button>
       </div>

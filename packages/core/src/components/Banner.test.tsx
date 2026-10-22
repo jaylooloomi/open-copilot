@@ -35,4 +35,9 @@ describe('Banner', () => {
     render(<Banner backupDue backupDisabled onBackup={vi.fn()} />);
     expect(screen.getByRole('button', { name: '立即備份' })).toBeDisabled();
   });
+
+  it('disables 立即備份 when no backup handler is wired', () => {
+    render(<Banner backupDue />);
+    expect(screen.getByRole('button', { name: '立即備份' })).toBeDisabled();
+  });
 });
