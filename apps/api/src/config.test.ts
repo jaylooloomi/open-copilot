@@ -9,12 +9,18 @@ import {
   loadConfig,
 } from './config';
 
-const base = { OPENAI_API_KEY: 'sk-test', ACCESS_KEYS: 'key-a' };
+const base = { GROQ_API_KEY: 'gsk-test', ACCESS_KEYS: 'key-a' };
 
 describe('loadConfig', () => {
-  it('throws when OPENAI_API_KEY is missing or blank', () => {
-    expect(() => loadConfig({ ACCESS_KEYS: 'key-a' })).toThrow('OPENAI_API_KEY');
-    expect(() => loadConfig({ ...base, OPENAI_API_KEY: '   ' })).toThrow('OPENAI_API_KEY');
+  it('refuses to start without any transcription key', () => {
+    for (const env of [
+      { ACCESS_KEYS: 'key-a' },
+      { ACCESS_KEYS: 'key-a', GROQ_API_KEY: '   ', OPENAI_API_KEY: '' },
+    ]) {
+      expect(() => loadConfig(env)).toThrow(
+        'No transcription API key: set GROQ_API_KEY (free key at https://console.groq.com/keys) or OPENAI_API_KEY',
+      );
+    }
   });
 
   it('throws when ACCESS_KEYS is missing or only separators', () => {
@@ -49,10 +55,10 @@ describe('loadConfig', () => {
     expect(config.allowedOrigins).toEqual(['app://bundle']);
   });
 
-  it('uses default origins and port when not set', () => {
+  it('uses Groq, default origins and default port when only the required values are set', () => {
     const config = loadConfig(base);
     expect(config).toEqual({
-      openaiApiKey: 'sk-test',
+      transcriber: { provider: 'groq', apiKey: 'gsk-test', model: 'whisper-large-v3-turbo' },
       accessKeys: ['key-a'],
       allowedOrigins: [
         'http://localhost:5173',
@@ -90,10 +96,89 @@ describe('loadConfig', () => {
     }
   });
 
-  it('refuses to start from an unedited copy of .env.example', () => {
-    // 範例檔不能帶可用的存取金鑰：只換掉 OPENAI_API_KEY 就上線時，伺服器必須拒絕啟動。
-    const example = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
-    expect(() => loadConfig(parseEnv(example))).toThrow('ACCESS_KEYS');
+  it('refuses to start from an unedited copy of .env.example, even after a transcription key is filled in', () => {
+    // 範例檔不能帶可用的金鑰：只填轉寫金鑰就上線時，伺服器仍必須因缺存取金鑰而拒絕啟動。
+    const example = parseEnv(readFileSync(new URL('../.env.example', import.meta.url), 'utf8'));
+    expect(example).toMatchObject({
+      TRANSCRIBE_PROVIDER: '',
+      GROQ_API_KEY: '',
+      GROQ_TRANSCRIBE_MODEL: '',
+      OPENAI_API_KEY: '',
+      ACCESS_KEYS: '',
+    });
+    expect(() => loadConfig(example)).toThrow('No transcription API key');
+    expect(() => loadConfig({ ...example, GROQ_API_KEY: 'gsk-real' })).toThrow('ACCESS_KEYS');
+  });
+});
+
+describe('transcription provider', () => {
+  it('prefers Groq when TRANSCRIBE_PROVIDER is unset and both keys exist', () => {
+    const config = loadConfig({ ...base, OPENAI_API_KEY: 'sk-test' });
+    expect(config.transcriber).toEqual({
+      provider: 'groq',
+      apiKey: 'gsk-test',
+      model: 'whisper-large-v3-turbo',
+    });
+  });
+
+  it('falls back to OpenAI when only OPENAI_API_KEY is set', () => {
+    for (const env of [
+      { ACCESS_KEYS: 'key-a', OPENAI_API_KEY: ' sk-test ' },
+      { ACCESS_KEYS: 'key-a', OPENAI_API_KEY: 'sk-test', GROQ_API_KEY: '  ' },
+      { ACCESS_KEYS: 'key-a', OPENAI_API_KEY: 'sk-test', TRANSCRIBE_PROVIDER: '   ' },
+    ]) {
+      expect(loadConfig(env).transcriber).toEqual({
+        provider: 'openai',
+        apiKey: 'sk-test',
+        model: 'gpt-4o-mini-transcribe',
+      });
+    }
+  });
+
+  it('honours an explicit provider, case-insensitively', () => {
+    const both = { ...base, OPENAI_API_KEY: 'sk-test' };
+    expect(loadConfig({ ...both, TRANSCRIBE_PROVIDER: 'openai' }).transcriber.provider).toBe('openai');
+    expect(loadConfig({ ...both, TRANSCRIBE_PROVIDER: ' Groq ' }).transcriber.provider).toBe('groq');
+    expect(loadConfig({ ...both, TRANSCRIBE_PROVIDER: 'OPENAI' }).transcriber.apiKey).toBe('sk-test');
+  });
+
+  it('requires the key of the explicitly chosen provider', () => {
+    expect(() =>
+      loadConfig({ ACCESS_KEYS: 'key-a', OPENAI_API_KEY: 'sk-test', TRANSCRIBE_PROVIDER: 'groq' }),
+    ).toThrow('GROQ_API_KEY is required when TRANSCRIBE_PROVIDER=groq');
+    expect(() => loadConfig({ ...base, TRANSCRIBE_PROVIDER: 'openai' })).toThrow(
+      'OPENAI_API_KEY is required when TRANSCRIBE_PROVIDER=openai',
+    );
+  });
+
+  it('rejects an unknown provider without echoing any key', () => {
+    let message = '';
+    try {
+      loadConfig({ ...base, OPENAI_API_KEY: 'sk-test', TRANSCRIBE_PROVIDER: 'azure' });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toBe('TRANSCRIBE_PROVIDER must be "groq" or "openai", got "azure"');
+    expect(message).not.toContain('gsk-test');
+    expect(message).not.toContain('sk-test');
+  });
+
+  it('lets GROQ_TRANSCRIBE_MODEL override the Groq model', () => {
+    expect(loadConfig({ ...base, GROQ_TRANSCRIBE_MODEL: ' whisper-large-v3 ' }).transcriber.model).toBe(
+      'whisper-large-v3',
+    );
+    expect(loadConfig({ ...base, GROQ_TRANSCRIBE_MODEL: '   ' }).transcriber.model).toBe(
+      'whisper-large-v3-turbo',
+    );
+  });
+
+  it('ignores GROQ_TRANSCRIBE_MODEL for OpenAI', () => {
+    const config = loadConfig({
+      ACCESS_KEYS: 'key-a',
+      OPENAI_API_KEY: 'sk-test',
+      GROQ_TRANSCRIBE_MODEL: 'whisper-large-v3',
+    });
+    expect(config.transcriber.model).toBe('gpt-4o-mini-transcribe');
   });
 });
 

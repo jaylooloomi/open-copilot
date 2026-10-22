@@ -1,5 +1,9 @@
+import type { TranscribeProvider, TranscriberConfig } from './transcriber/createTranscriber';
+import { GROQ_DEFAULT_TRANSCRIBE_MODEL } from './transcriber/groqTranscriber';
+import { TRANSCRIBE_MODEL } from './transcriber/openaiTranscriber';
+
 export interface AppConfig {
-  openaiApiKey: string;
+  transcriber: TranscriberConfig;
   accessKeys: string[];
   allowedOrigins: string[];
   port: number;
@@ -59,11 +63,53 @@ function parsePort(raw: string): number {
   return /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
 }
 
-export function loadConfig(env: Record<string, string | undefined>): AppConfig {
-  const openaiApiKey = env['OPENAI_API_KEY']?.trim();
-  if (!openaiApiKey) {
-    throw new Error('OPENAI_API_KEY is required');
+/** 去空白後的值；空字串或只有空白視為未設定（Docker --env-file 的 `NAME=` 會給空字串）。 */
+function readValue(env: Record<string, string | undefined>, name: string): string | undefined {
+  const value = env[name]?.trim();
+  return value ? value : undefined;
+}
+
+/**
+ * 轉寫服務：TRANSCRIBE_PROVIDER 未設定時，有 GROQ_API_KEY 就用 groq，否則有 OPENAI_API_KEY 就用 openai，
+ * 兩者都沒有就拒絕啟動。錯誤訊息只列變數名稱，不含金鑰。
+ */
+function loadTranscriberConfig(env: Record<string, string | undefined>): TranscriberConfig {
+  const groqKey = readValue(env, 'GROQ_API_KEY');
+  const openaiKey = readValue(env, 'OPENAI_API_KEY');
+  const rawProvider = readValue(env, 'TRANSCRIBE_PROVIDER');
+
+  let provider: TranscribeProvider;
+  if (rawProvider === undefined) {
+    if (groqKey) provider = 'groq';
+    else if (openaiKey) provider = 'openai';
+    else {
+      throw new Error(
+        'No transcription API key: set GROQ_API_KEY (free key at https://console.groq.com/keys) or OPENAI_API_KEY',
+      );
+    }
+  } else {
+    const normalized = rawProvider.toLowerCase();
+    if (normalized !== 'groq' && normalized !== 'openai') {
+      throw new Error(`TRANSCRIBE_PROVIDER must be "groq" or "openai", got "${rawProvider}"`);
+    }
+    provider = normalized;
   }
+
+  if (provider === 'groq') {
+    if (!groqKey) throw new Error('GROQ_API_KEY is required when TRANSCRIBE_PROVIDER=groq');
+    return {
+      provider,
+      apiKey: groqKey,
+      model: readValue(env, 'GROQ_TRANSCRIBE_MODEL') ?? GROQ_DEFAULT_TRANSCRIBE_MODEL,
+    };
+  }
+
+  if (!openaiKey) throw new Error('OPENAI_API_KEY is required when TRANSCRIBE_PROVIDER=openai');
+  return { provider, apiKey: openaiKey, model: TRANSCRIBE_MODEL };
+}
+
+export function loadConfig(env: Record<string, string | undefined>): AppConfig {
+  const transcriber = loadTranscriberConfig(env);
 
   const accessKeys = splitList(env['ACCESS_KEYS']);
   if (accessKeys.length === 0) {
@@ -88,7 +134,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     throw new Error(`PORT must be an integer between 1 and 65535, got "${rawPort}"`);
   }
 
-  return { openaiApiKey, accessKeys, allowedOrigins, port };
+  return { transcriber, accessKeys, allowedOrigins, port };
 }
 
 /**

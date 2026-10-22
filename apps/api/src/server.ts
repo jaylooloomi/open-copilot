@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server';
 import { createApp } from './app';
 import { accessKeyWarning, loadConfig } from './config';
 import { createShutdown } from './shutdown';
-import { createOpenAITranscriber } from './transcriber/openaiTranscriber';
+import { createTranscriber } from './transcriber/createTranscriber';
 
 const config = loadConfig(process.env);
 
@@ -10,7 +10,7 @@ const keyWarning = accessKeyWarning(config.accessKeys);
 if (keyWarning) console.warn(keyWarning);
 
 const app = createApp({
-  transcriber: createOpenAITranscriber(config.openaiApiKey),
+  transcriber: createTranscriber(config.transcriber),
   accessKeys: config.accessKeys,
   allowedOrigins: config.allowedOrigins,
 });
