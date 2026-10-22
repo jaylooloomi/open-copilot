@@ -1,0 +1,133 @@
+# CI for open-copilot (add-ons design section 2).
+# apps/web and apps/desktop may be missing on a branch until it is merged,
+# so their steps are gated on their package.json and leave a notice when skipped.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  # Branch pushes already run CI, so only PRs into main add a (merge-result) run.
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Keep every run on main so each main commit gets a result.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  web-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # The Electron binary is only needed by the desktop job.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Check the CI workflow
+        run: npm run test:workflow
+
+      - name: Note skipped web steps
+        if: hashFiles('apps/web/package.json') == ''
+        run: echo "::notice::apps/web is not on this branch; web build and e2e skipped"
+
+      - name: Build web
+        if: hashFiles('apps/web/package.json') != ''
+        run: npm run build -w @oc/web
+
+      - name: Install Playwright Chromium
+        if: hashFiles('apps/web/package.json') != ''
+        run: npx playwright install --with-deps chromium
+
+      - name: Web e2e
+        id: web-e2e
+        if: hashFiles('apps/web/package.json') != ''
+        run: npm run e2e
+
+      # Still build the image when e2e or an earlier step failed, so a
+      # Dockerfile regression is not hidden behind another failure.
+      - name: Build API Docker image
+        if: ${{ !cancelled() }}
+        run: docker build -f apps/api/Dockerfile .
+
+      - name: Upload Playwright report
+        if: failure() && steps.web-e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-web
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Note skipped desktop steps
+        if: hashFiles('apps/desktop/package.json') == ''
+        run: echo "::notice::apps/desktop is not on this branch; desktop build and Electron e2e skipped"
+
+      - name: Build web
+        if: hashFiles('apps/desktop/package.json') != ''
+        run: npm run build -w @oc/web
+
+      - name: Build desktop
+        if: hashFiles('apps/desktop/package.json') != ''
+        run: npm run build -w @oc/desktop
+
+      # Electron 45 has no install script: npm ci does not fetch the binary,
+      # so download it here instead of inside the first e2e test's timeout.
+      - name: Download Electron
+        if: hashFiles('apps/desktop/package.json') != ''
+        run: npm exec -w @oc/desktop -- install-electron
+
+      - name: Electron e2e
+        id: desktop-e2e
+        if: hashFiles('apps/desktop/package.json') != ''
+        working-directory: apps/desktop
+        run: npx playwright test
+
+      - name: Upload Playwright results
+        if: failure() && steps.desktop-e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-desktop
+          path: |
+            apps/desktop/playwright-report/
+            apps/desktop/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

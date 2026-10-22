@@ -1,5 +1,6 @@
 import { writeSync } from 'node:fs';
 import { serve } from '@hono/node-server';
+import { createGroqAssistant } from './ai/groqAssistant';
 import { createApp } from './app';
 import { accessKeyWarning, loadConfig, type AppConfig } from './config';
 import { createShutdown } from './shutdown';
@@ -24,6 +25,8 @@ if (keyWarning) console.warn(keyWarning);
 
 const app = createApp({
   transcriber: createTranscriber(config.transcriber),
+  // 沒有 GROQ_API_KEY 時不建 AI 助理，/ai/* 回 503 ai_unavailable。
+  assistant: config.ai ? createGroqAssistant(config.ai.apiKey, config.ai.model) : null,
   accessKeys: config.accessKeys,
   allowedOrigins: config.allowedOrigins,
 });
@@ -33,6 +36,11 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   // 只印服務與模型，不印金鑰。
   console.log(
     `[transcribe] provider ${config.transcriber.provider}, model ${config.transcriber.model}`,
+  );
+  console.log(
+    config.ai
+      ? `[ai] provider groq, model ${config.ai.model}`
+      : '[ai] disabled: set GROQ_API_KEY to enable /ai/summary and /ai/todos',
   );
 });
 
