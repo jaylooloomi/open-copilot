@@ -11,6 +11,15 @@ import {
 describe('@oc/shared', () => {
   it('EMPTY_DOC is a Tiptap doc with one empty paragraph', () => {
     expect(EMPTY_DOC).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
+    // Every importer shares this one object, so it must be immutable all the way down.
+    expect(() => EMPTY_DOC.content!.push({ type: 'paragraph' })).toThrow(TypeError);
+    expect(() => {
+      EMPTY_DOC.content![0].type = 'heading';
+    }).toThrow(TypeError);
+    expect(() => {
+      EMPTY_DOC.type = 'paragraph';
+    }).toThrow(TypeError);
+    expect(EMPTY_DOC).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
   });
 
   it('exposes the API limits used by the backend and the recorder', () => {

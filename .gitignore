@@ -4,4 +4,6 @@ coverage/
 playwright-report/
 test-results/
 .env
+.env.*
+!.env.example
 apps/web/android/app/build/

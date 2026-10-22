@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 describe('test setup', () => {
   it('provides jest-dom matchers', () => {
     const el = document.createElement('div');
     document.body.appendChild(el);
+    // RTL cleanup() only removes containers made by render(), so remove this one ourselves.
+    onTestFinished(() => el.remove());
     expect(el).toBeInTheDocument();
   });
 
