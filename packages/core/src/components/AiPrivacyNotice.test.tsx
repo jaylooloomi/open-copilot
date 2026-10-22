@@ -27,12 +27,42 @@ describe('AiPrivacyNotice', () => {
     expect(onCancel).not.toHaveBeenCalled();
   });
 
-  it('cancels with 取消 and with Escape', async () => {
+  it('cancels with 取消', async () => {
     const { user, onCancel, onAccept } = setup();
     await user.click(screen.getByRole('button', { name: '取消' }));
-    await user.keyboard('{Escape}');
-    expect(onCancel).toHaveBeenCalledTimes(2);
+    expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onAccept).not.toHaveBeenCalled();
+  });
+
+  it('cancels with Escape from the initial focus', async () => {
+    const { user, onCancel, onAccept } = setup();
+    await user.keyboard('{Escape}');
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onAccept).not.toHaveBeenCalled();
+  });
+
+  it('cancels on a mousedown on the backdrop but not inside the dialog', async () => {
+    const { user, onCancel, container } = setup();
+    await user.click(screen.getByText(AI_PRIVACY_TEXT.body));
+    expect(onCancel).not.toHaveBeenCalled();
+    const backdrop = container.querySelector('.oc-dialog-backdrop');
+    expect(backdrop).not.toBeNull();
+    await user.pointer({ keys: '[MouseLeft>]', target: backdrop! });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps focus inside the dialog after a click on its text', async () => {
+    const { user, onCancel } = setup();
+    await user.click(screen.getByText(AI_PRIVACY_TEXT.hint));
+    expect(screen.getByRole('dialog')).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(screen.getByRole('button', { name: '我知道了' })).toHaveFocus();
+    await user.click(screen.getByText(AI_PRIVACY_TEXT.body));
+    await user.tab();
+    expect(screen.getByRole('button', { name: '取消' })).toHaveFocus();
+    await user.click(screen.getByText(AI_PRIVACY_TEXT.body));
+    await user.keyboard('{Escape}');
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
   it('keeps Tab inside the dialog', async () => {

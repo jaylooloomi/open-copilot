@@ -920,6 +920,11 @@ button {
   box-shadow: 0 16px 48px rgba(17, 24, 39, 0.2);
 }
 
+/* The dialog is focusable (tabindex -1) only to keep focus inside it; no ring on the container. */
+.oc-dialog[tabindex='-1']:focus {
+  outline: none;
+}
+
 .oc-dialog-title {
   margin: 0 0 16px;
   font-size: 18px;

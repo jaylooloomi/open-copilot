@@ -41,7 +41,11 @@ export function AiPrivacyNotice({ onAccept, onCancel }: AiPrivacyNoticeProps) {
     const first = buttons[0];
     const last = buttons[buttons.length - 1];
     if (!first || !last) return;
-    if (event.shiftKey && document.activeElement === first) {
+    if (document.activeElement === dialogRef.current) {
+      // Focus sits on the dialog itself after a click on its text: step to the first or last button.
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    } else if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last.focus();
     } else if (!event.shiftKey && document.activeElement === last) {
@@ -64,6 +68,8 @@ export function AiPrivacyNotice({ onAccept, onCancel }: AiPrivacyNoticeProps) {
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={bodyId}
+        // -1 keeps focus in the dialog when its text is clicked, so Escape and the Tab trap still work.
+        tabIndex={-1}
         onKeyDown={onKeyDown}
       >
         <h2 id={titleId} className="oc-dialog-title">
