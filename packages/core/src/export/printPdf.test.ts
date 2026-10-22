@@ -50,7 +50,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  frames().forEach((frame) => frame.remove());
+  // Finish any print still open so the module's pending title restore does not leak into the next test.
+  frames().forEach((frame) => {
+    afterPrint(frame);
+    frame.remove();
+  });
 });
 
 describe('printPdf', () => {
@@ -99,6 +103,23 @@ describe('printPdf', () => {
     expect(frames()).toHaveLength(1);
 
     afterPrint(frames()[0]);
+    expect(document.title).toBe('open-copilot');
+  });
+
+  it('restores the tab title and removes the iframe when print() throws', () => {
+    const append = document.body.appendChild.bind(document.body);
+    vi.spyOn(document.body, 'appendChild').mockImplementation((node) => {
+      const result = append(node);
+      if (node instanceof HTMLIFrameElement) {
+        node.contentWindow!.print = () => {
+          throw new Error('print blocked');
+        };
+      }
+      return result;
+    });
+
+    expect(() => printPdf(note('A', p('a')))).toThrow('print blocked');
+    expect(frames()).toHaveLength(0);
     expect(document.title).toBe('open-copilot');
   });
 });

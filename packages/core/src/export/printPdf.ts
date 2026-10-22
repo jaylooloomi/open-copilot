@@ -74,7 +74,13 @@ export function printPdf(note: Note): void {
     },
     { once: true },
   );
-  frameWindow.print();
+  try {
+    frameWindow.print();
+  } catch (error) {
+    restoreTitle?.();
+    iframe.remove();
+    throw error;
+  }
 }
 
 function printDocument(note: Note): string {

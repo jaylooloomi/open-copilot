@@ -30,5 +30,9 @@ export async function exportNote(note: Note, format: ExportFormat, platform: Pla
       if (!platform.canPrint) throw new Error('PDF export is not available on this platform');
       printPdf(note);
       return;
+    default: {
+      const unreachable: never = format;
+      throw new Error(`Unknown export format: ${String(unreachable)}`);
+    }
   }
 }

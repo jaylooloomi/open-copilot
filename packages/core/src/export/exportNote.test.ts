@@ -83,4 +83,11 @@ describe('exportNote', () => {
     fileSaver.save.mockRejectedValueOnce(new Error('disk full'));
     await expect(exportNote(NOTE, 'md', platform)).rejects.toThrow('disk full');
   });
+
+  it('rejects an unknown format instead of silently doing nothing', async () => {
+    const { platform, fileSaver } = createTestPlatform();
+    await expect(exportNote(NOTE, 'rtf' as never, platform)).rejects.toThrow('Unknown export format: rtf');
+    expect(fileSaver.save).not.toHaveBeenCalled();
+    expect(printPdf).not.toHaveBeenCalled();
+  });
 });
