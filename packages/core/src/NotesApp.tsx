@@ -15,7 +15,7 @@ import { Toolbar } from './editor/Toolbar';
 import { useNoteEditor } from './editor/useNoteEditor';
 import { TRANSCRIPT_GAP_TYPE } from './export/common';
 import { displayTitle } from './notes/noteStore';
-import { useNotes } from './notes/useNotes';
+import { ImportNotesError, useNotes, type ImportNotesResult } from './notes/useNotes';
 import { openAppDb } from './platform/db';
 import { usePlatform } from './platform/PlatformContext';
 import { collectGapIds } from './recording/gapRefs';
@@ -98,10 +98,19 @@ export function NotesApp() {
     notes,
     fileSaver,
     importNotes: async (incoming) => {
-      const result = await importNotes(incoming);
       // The editor keeps the content it was created with; recreate it from the imported version.
-      if (result.replacedActive) setEditorRevision((revision) => revision + 1);
-      return result;
+      // Also when a later write failed: the notes stored before it are already shown.
+      const reloadIfReplaced = (result: ImportNotesResult) => {
+        if (result.replacedActive) setEditorRevision((revision) => revision + 1);
+      };
+      try {
+        const result = await importNotes(incoming);
+        reloadIfReplaced(result);
+        return result;
+      } catch (error) {
+        if (error instanceof ImportNotesError) reloadIfReplaced(error.result);
+        throw error;
+      }
     },
     onError: (message, error) => {
       console.error('Backup or import failed', error);

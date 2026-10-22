@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBackup, serializeBackup } from './backup/backupFormat';
+import { IMPORT_FAILED_MESSAGE } from './backup/useBackup';
 import { LAST_BACKUP_KEY } from './backup/backupReminder';
 import { NotesApp } from './NotesApp';
 import { PlatformProvider } from './platform/PlatformContext';
@@ -78,6 +79,20 @@ describe('NotesApp backup', () => {
     await waitFor(() => expect(body()).toHaveTextContent('新內容'));
     expect(within(list()).getAllByRole('listitem')).toHaveLength(2);
     expect(within(list()).getByRole('button', { name: /^專案/ })).toBeInTheDocument();
+  });
+
+  it('reloads the open note when an import fails after replacing it', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { storage } = await renderApp([note('a', '週會', '舊內容', 1_000)]);
+    storage.put.mockImplementationOnce(async () => undefined);
+    storage.put.mockImplementationOnce(() => Promise.reject(new Error('disk full')));
+
+    chooseFile(backupFile([note('a', '週會', '新內容', 2_000), note('b', '專案', '專案內容', 500)]));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(IMPORT_FAILED_MESSAGE);
+    await waitFor(() => expect(body()).toHaveTextContent('新內容'));
+    expect(body()).not.toHaveTextContent('舊內容');
+    expect(error).toHaveBeenCalledWith('Backup or import failed', expect.any(Error));
   });
 
   it('keeps a note that is newer here and says it was skipped', async () => {
