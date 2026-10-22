@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   AI_MAX_TEXT_CHARS,
+  type ApiErrorCode,
   AI_UPSTREAM_TIMEOUT_MS,
   type AiRequest,
   type AiSummaryResponse,
@@ -25,5 +26,16 @@ describe('@oc/shared AI types', () => {
       '寄出報價單',
       'ai_unavailable',
     ]);
+  });
+
+  // 型別合約由 `npm run typecheck -w @oc/shared`（tsc 會檢查測試檔）把關；Vitest 執行時會剝掉型別。
+  it('pins the AI type contract at compile time', () => {
+    expectTypeOf<AiRequest>().toEqualTypeOf<{ title: string; text: string }>();
+    expectTypeOf<AiSummaryResponse>().toEqualTypeOf<{ summary: string }>();
+    expectTypeOf<AiTodosResponse>().toEqualTypeOf<{ items: string[] }>();
+    expectTypeOf<'ai_unavailable'>().toMatchTypeOf<ApiErrorCode>();
+    // @ts-expect-error 不在合約內的錯誤碼必須被 tsc 擋下
+    const bad: ApiErrorBody = { error: 'not_a_real_code' };
+    expect(bad.error).toBe('not_a_real_code');
   });
 });
