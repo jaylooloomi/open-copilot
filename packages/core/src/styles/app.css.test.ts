@@ -12,7 +12,26 @@ function selectorLists(source: string): string[] {
   return [...stripped.matchAll(/([^{}]+)\{/g)].map((m) => m[1]!.trim()).filter((s) => !s.startsWith('@'));
 }
 
+/** Body of the first `@media (max-width: 767.98px)` block, bounded at its matching closing brace. */
+function narrowBlock(source: string): string {
+  const start = source.indexOf('@media (max-width: 767.98px)');
+  if (start < 0) return '';
+  const open = source.indexOf('{', start);
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}' && --depth === 0) return source.slice(open + 1, i);
+  }
+  return '';
+}
+
 describe('app.css', () => {
+  it('bounds the narrow-screen block at its own closing brace', () => {
+    const sample = 'a { x: 1; } @media (max-width: 767.98px) { .b { y: 2; } } .c { z: 3; }';
+    expect(narrowBlock(sample)).toContain('.b { y: 2; }');
+    expect(narrowBlock(sample)).not.toContain('.c');
+  });
+
   it('is loaded', () => {
     expect(css).toContain('.oc-tool-group');
   });
@@ -48,7 +67,7 @@ describe('app.css', () => {
 
   it('drops the toolbar group dividers on narrow screens, where groups wrap onto new rows', () => {
     // A divider would otherwise hang at the end of a wrapped row with nothing after it.
-    const narrow = css.slice(css.indexOf('@media (max-width: 767.98px)'));
+    const narrow = narrowBlock(css);
     expect(narrow).toMatch(/\.oc-tool-group\s*\{[^}]*border-right:\s*none/);
   });
 
@@ -61,13 +80,13 @@ describe('app.css', () => {
   });
 
   it('lets only the 轉寫中 N 段 text give way on narrow screens, so the gear stays on screen', () => {
-    const narrow = css.slice(css.indexOf('@media (max-width: 767.98px)'));
+    const narrow = narrowBlock(css);
     expect(narrow).toMatch(/\.oc-rec-status\s*\{[^}]*flex-shrink:\s*1[^}]*min-width:\s*0/);
     expect(narrow).toMatch(/\.oc-transcribing\s*\{[^}]*text-overflow:\s*ellipsis/);
   });
 
   it('gives the AI chips only the space left beside the recording status on narrow screens', () => {
-    const narrow = css.slice(css.indexOf('@media (max-width: 767.98px)'));
+    const narrow = narrowBlock(css);
     // Sized from 0 rather than from the chips' full width, so they give way before the status does.
     const rule = narrow.match(/\.oc-actionbar-end\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(rule).toMatch(/flex:\s*1 1 0\s*;/);
@@ -107,9 +126,14 @@ describe('app.css', () => {
 
   it('shows the AI panel as a right-hand column, and as a bottom sheet under the drawer on phones', () => {
     expect(css).toMatch(/\.oc-ai-panel\s*\{[^}]*width:\s*320px[^}]*border-left:\s*1px solid var\(--oc-border\)/);
-    const narrow = css.slice(css.indexOf('@media (max-width: 767.98px)'));
+    const narrow = narrowBlock(css);
     // Under the drawer (z-index 40) and its backdrop (30), so the open drawer covers it.
     expect(narrow).toMatch(/\.oc-ai-panel\s*\{[^}]*position:\s*fixed[^}]*z-index:\s*20/);
+  });
+
+  it('leaves room under the note for the bottom sheet on phones, so its last lines can scroll clear', () => {
+    // A rule of its own: an old WebView that does not know :has() drops only this one.
+    expect(narrowBlock(css)).toMatch(/\.oc-app:has\(\.oc-ai-panel\) \.oc-editor\s*\{[^}]*padding-bottom:\s*60vh/);
   });
 
   it('dims a disabled primary button', () => {

@@ -1289,6 +1289,12 @@ button {
     box-shadow: 0 -8px 24px rgba(17, 24, 39, 0.15);
   }
 
+  /* Room for the sheet under the note, so its last lines can scroll clear. A rule of its own:
+     an old WebView without :has() drops only this one. */
+  .oc-app:has(.oc-ai-panel) .oc-editor {
+    padding-bottom: 60vh;
+  }
+
   .oc-banner {
     margin: 8px 12px 0;
   }
