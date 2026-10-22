@@ -1,7 +1,9 @@
+import { MAX_AUDIO_BYTES } from '@oc/shared';
 import { describe, expect, it } from 'vitest';
 import {
   ALLOWED_ORIGIN,
   OTHER_KEY,
+  TEST_KEY,
   audioFile,
   createFakeTranscriber,
   createTestApp,
@@ -19,10 +21,11 @@ describe('POST /transcribe auth', () => {
   });
 
   it('returns 401 for a wrong key', async () => {
-    const { app } = createTestApp();
+    const { app, transcriber } = createTestApp();
     const res = await postTranscribe(app, transcribeForm(), { Authorization: 'Bearer nope' });
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: 'unauthorized' });
+    expect(transcriber.transcribe).not.toHaveBeenCalled();
   });
 
   it('keeps CORS headers on a 401 so the browser can read the status', async () => {
@@ -30,6 +33,28 @@ describe('POST /transcribe auth', () => {
     const res = await postTranscribe(app, transcribeForm(), { Origin: ALLOWED_ORIGIN });
     expect(res.status).toBe(401);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ALLOWED_ORIGIN);
+  });
+});
+
+describe('POST /transcribe CORS on errors', () => {
+  it.each([
+    ['400 bad_request', () => transcribeForm({ seq: null }), 400, 'bad_request'],
+    [
+      '413 payload_too_large',
+      () => transcribeForm({ audio: audioFile(MAX_AUDIO_BYTES + 1) }),
+      413,
+      'payload_too_large',
+    ],
+  ] as const)('keeps CORS headers on a %s', async (_label, form, status, error) => {
+    const { app, transcriber } = createTestApp();
+    const res = await postTranscribe(app, form(), {
+      Authorization: `Bearer ${TEST_KEY}`,
+      Origin: ALLOWED_ORIGIN,
+    });
+    expect(res.status).toBe(status);
+    expect(await res.json()).toEqual({ error });
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ALLOWED_ORIGIN);
+    expect(transcriber.transcribe).not.toHaveBeenCalled();
   });
 });
 

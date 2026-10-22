@@ -1,7 +1,14 @@
 import { MAX_AUDIO_BYTES } from '@oc/shared';
 import { describe, expect, it } from 'vitest';
 import { MULTIPART_OVERHEAD_BYTES } from './app';
-import { TEST_KEY, audioFile, createTestApp, postTranscribe, transcribeForm } from './test/helpers';
+import {
+  ALLOWED_ORIGIN,
+  TEST_KEY,
+  audioFile,
+  createTestApp,
+  postTranscribe,
+  transcribeForm,
+} from './test/helpers';
 
 describe('POST /transcribe validation', () => {
   it.each([
@@ -73,6 +80,21 @@ describe('POST /transcribe size limit', () => {
     });
     expect(res.status).toBe(413);
     expect(await res.json()).toEqual({ error: 'payload_too_large' });
+    expect(transcriber.transcribe).not.toHaveBeenCalled();
+  });
+
+  it('rejects a declared oversize Content-Length before reading the body', async () => {
+    // 瀏覽器會帶 Content-Length，bodyLimit 只看標頭就回 413，不讀 body。
+    // 實際送出的是合法的小表單：少了標頭檢查，邊讀邊計數會放行，handler 會回 200。
+    const { app, transcriber } = createTestApp();
+    const res = await postTranscribe(app, transcribeForm(), {
+      Authorization: `Bearer ${TEST_KEY}`,
+      Origin: ALLOWED_ORIGIN,
+      'Content-Length': String(MAX_AUDIO_BYTES + MULTIPART_OVERHEAD_BYTES + 1),
+    });
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: 'payload_too_large' });
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ALLOWED_ORIGIN);
     expect(transcriber.transcribe).not.toHaveBeenCalled();
   });
 });
