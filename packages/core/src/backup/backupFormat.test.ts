@@ -100,10 +100,34 @@ describe('parseBackup', () => {
       'content with an empty text node',
       withNote({ content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '' }] }] } }),
     ],
+    [
+      'content with an unknown mark',
+      withNote({
+        content: {
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x', marks: [{ type: 'mystery' }] }] }],
+        },
+      }),
+    ],
+    [
+      'content with a mark where it is not allowed',
+      withNote({
+        content: {
+          type: 'doc',
+          content: [{ type: 'codeBlock', content: [{ type: 'text', text: 'x', marks: [{ type: 'bold' }] }] }],
+        },
+      }),
+    ],
     ['duplicate ids', text({ ...valid(), notes: [note('a', 1), note('a', 2)] })],
   ];
 
   it.each(broken)('rejects %s', (_label, input) => {
     expect(() => parseBackup(input)).toThrow(InvalidBackupError);
+  });
+
+  it('names a repeated id by its position, not its value', () => {
+    const longId = 'x'.repeat(5000);
+    const input = text({ ...valid(), notes: [note(longId, 1), note(longId, 2)] });
+    expect(() => parseBackup(input)).toThrow('Invalid backup: note 1 repeats an earlier id');
   });
 });

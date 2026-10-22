@@ -44,6 +44,8 @@ function isTimestamp(value: unknown): value is number {
 /**
  * A document the editor can open as is. Tiptap does not reject unknown nodes: it swaps in an
  * empty document, and the next edit would overwrite the imported note with it.
+ * Node types, marks and content structure are checked; attribute values (a heading level,
+ * a text alignment) are not, because the editor renders out-of-range values harmlessly.
  */
 function isEditorDoc(value: unknown): value is JSONContent {
   if (!isRecord(value) || value.type !== 'doc') return false;
@@ -107,7 +109,7 @@ export function parseBackup(text: string): BackupFile {
   const ids = new Set<string>();
   const notes = data.notes.map((value: unknown, index: number) => {
     if (!isNote(value)) throw new InvalidBackupError(`note ${index} is malformed`);
-    if (ids.has(value.id)) throw new InvalidBackupError(`note id ${value.id} appears twice`);
+    if (ids.has(value.id)) throw new InvalidBackupError(`note ${index} repeats an earlier id`);
     ids.add(value.id);
     return pickNoteFields(value);
   });
