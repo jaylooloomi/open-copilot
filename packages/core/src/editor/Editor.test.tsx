@@ -1,6 +1,7 @@
 import type { JSONContent } from '@oc/shared';
 import type { Editor as TiptapEditor } from '@tiptap/react';
 import { act, render, screen } from '@testing-library/react';
+import { useLayoutEffect } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { Editor } from './Editor';
 import { useNoteEditor } from './useNoteEditor';
@@ -74,6 +75,56 @@ describe('Editor + useNoteEditor', () => {
 
     expect(screen.getByRole('textbox', { name: '筆記內文' })).toHaveTextContent('Second');
     expect(editorRef.current?.can().undo()).toBe(false);
+  });
+
+  it('never reports the previous note content to the new note while switching', () => {
+    const editors: TiptapEditor[] = [];
+    let lateWriteText: string | undefined;
+    // Mutates the editor from a layout effect: after the commit that carries the new noteId
+    // but before useEditor's passive effect replaces the old editor instance.
+    function LateWriter(props: {
+      noteId: string;
+      content: JSONContent;
+      onChange: (content: JSONContent) => void;
+    }) {
+      const editor = useNoteEditor(props);
+      if (!editors.includes(editor)) editors.push(editor);
+      useLayoutEffect(() => {
+        if (props.noteId === 'b' && editor === editors[0] && !editor.isDestroyed) {
+          editor.commands.insertContent('late ');
+          lateWriteText = editor.getText();
+        }
+      });
+      return <Editor editor={editor} />;
+    }
+
+    const onChangeA = vi.fn();
+    const onChangeB = vi.fn();
+    const { rerender } = render(
+      <LateWriter noteId="a" content={doc('Note A')} onChange={onChangeA} />,
+    );
+    rerender(<LateWriter noteId="b" content={doc('Note B')} onChange={onChangeB} />);
+
+    // The late write really hit the old editor inside the switch window.
+    expect(lateWriteText).toBe('late Note A');
+    expect(onChangeB).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox', { name: '筆記內文' })).toHaveTextContent('Note B');
+
+    // Edits to the new note's own editor still reach its onChange.
+    act(() => {
+      editors.at(-1)?.chain().setTextSelection(7).insertContent('!').run();
+    });
+    expect(onChangeB).toHaveBeenCalledTimes(1);
+    expect(onChangeB).toHaveBeenLastCalledWith({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          attrs: { textAlign: null },
+          content: [{ type: 'text', text: 'Note B!' }],
+        },
+      ],
+    });
   });
 
   it('ignores content prop changes for the same note (no reset while typing)', () => {
