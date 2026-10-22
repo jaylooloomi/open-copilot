@@ -24,6 +24,7 @@ export const RECORDER_MESSAGES = {
   startFailed: '無法開始錄音，請再試一次',
   interrupted: '錄音已中斷，已錄的部分會照常轉寫',
   retryFailed: '重新轉寫失敗，請稍後再試',
+  retryRejected: '伺服器無法轉寫這段錄音',
   audioMissing: '找不到這段錄音，無法重新轉寫',
 } as const;
 
@@ -103,6 +104,8 @@ interface Session {
   uploads: Set<Promise<void>>;
   unauthorized: boolean;
   finishing: Promise<void> | null;
+  /** Set on unmount: the inserter is gone, so a late gap would have no marker to retry it from. */
+  disposed: boolean;
 }
 
 interface ControllerEnv {
@@ -232,6 +235,7 @@ function createRecorderController(env: ControllerEnv) {
         uploads: new Set(),
         unauthorized: false,
         finishing: null,
+        disposed: false,
       };
       try {
         recorder.start();
@@ -314,6 +318,8 @@ function createRecorderController(env: ControllerEnv) {
         return { kind: 'skip' };
       }
       if (status === 401) handleUnauthorized(current);
+      // After unmount no marker can be inserted, so the audio could never be retried: drop it.
+      if (current.disposed) return { kind: 'skip' };
       // Network errors and 5xx after every retry, 401 and anything unexpected: keep the audio.
       const gapId = d.newGapId();
       await keepPending({ gapId, noteId: current.noteId, seq, blob, mimeType, prompt });
@@ -330,7 +336,9 @@ function createRecorderController(env: ControllerEnv) {
           current.inserter.insertText(item.text);
           current.transcript += item.text;
         } else if (item.kind === 'gap') {
-          current.inserter.insertGap(item.gapId, item.seq);
+          // Unmounted while its audio was being stored: no marker, so do not keep the audio.
+          if (current.disposed) void dropPending(item.gapId);
+          else current.inserter.insertGap(item.gapId, item.seq);
         }
       } catch (error) {
         console.error('Failed to insert a transcript', error);
@@ -345,6 +353,14 @@ function createRecorderController(env: ControllerEnv) {
     } catch (error) {
       console.error('Failed to keep an untranscribed segment', error);
     }
+  }
+
+  async function dropPending(gapId: string): Promise<void> {
+    pending.delete(gapId);
+    await env
+      .queue()
+      .remove(gapId)
+      .catch((error: unknown) => console.error('Failed to drop an untranscribed segment', error));
   }
 
   function handleUnauthorized(current: Session): void {
@@ -409,9 +425,13 @@ function createRecorderController(env: ControllerEnv) {
         .catch((error: unknown) => console.error('Failed to drop a retried segment', error));
       env.setError(null);
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
+      const status = error instanceof ApiError ? error.status : undefined;
+      if (status === 401) {
         env.setError(RECORDER_MESSAGES.unauthorized);
         env.options().onUnauthorized?.();
+      } else if (status === 400 || status === 413) {
+        // Retrying again would be refused the same way; say so instead of "try later".
+        env.setError(RECORDER_MESSAGES.retryRejected);
       } else {
         env.setError(RECORDER_MESSAGES.retryFailed);
       }
@@ -435,6 +455,7 @@ function createRecorderController(env: ControllerEnv) {
     const current = session;
     if (!current) return;
     session = null;
+    current.disposed = true;
     current.inserter.destroy();
     void current.recorder.stop().catch(() => undefined);
     stopTracks(current.stream);

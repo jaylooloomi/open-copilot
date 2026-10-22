@@ -184,6 +184,41 @@ describe('useRecorder: failures', () => {
     expect(await createPendingQueue(ctx.db).get('gap-1')).toBeDefined();
   });
 
+  it('retryGap says the segment cannot be transcribed when the server rejects it (400/413)', async () => {
+    for (const status of [400, 413]) {
+      const ctx = await setupRecorder({ content: `<p>${GAP_1}</p>` });
+      await keepAudioForGap1(ctx);
+      ctx.transcribe.mockRejectedValue(new ApiError('rejected', status));
+
+      await act(async () => {
+        await ctx.result.current.retryGap('gap-1');
+      });
+
+      expect(ctx.transcribe).toHaveBeenCalledTimes(1);
+      expect(ctx.result.current.error).toBe(RECORDER_MESSAGES.retryRejected);
+      expect(ctx.editor.getHTML()).toBe(`<p>${GAP_1}</p>`);
+      expect(await createPendingQueue(ctx.db).get('gap-1')).toBeDefined();
+    }
+  });
+
+  it('does not keep audio of a segment that fails after unmount, since no marker can retry it', async () => {
+    const ctx = await setupRecorder();
+    ctx.transcribe.mockRejectedValue(new ApiError('down', 503));
+    await act(async () => {
+      await ctx.result.current.start();
+    });
+
+    act(() => {
+      ctx.recorders[0].emit(1);
+      ctx.unmount();
+    });
+
+    await waitFor(() => expect(ctx.transcribe).toHaveBeenCalledTimes(4));
+    await settle();
+    await settle();
+    expect(await createPendingQueue(ctx.db).get('gap-1')).toBeUndefined();
+  });
+
   it('a rejected key (401) stops recording, keeps the audio as a gap and asks for settings', async () => {
     const ctx = await setupRecorder();
     ctx.transcribe.mockRejectedValue(new ApiError('unauthorized', 401, { code: 'unauthorized' }));

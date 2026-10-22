@@ -1,9 +1,13 @@
 import { act } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/apiClient';
 import { CONFIGURED, createTestEditor, settle, setupRecorder } from '../test/recorderHarness';
 import { TranscriptInserter } from './transcriptInserter';
 import { RECORDER_MESSAGES } from './useRecorder';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('useRecorder: recording', () => {
   it('needs setup until both a backend URL and an access key are saved', async () => {
@@ -203,6 +207,7 @@ describe('useRecorder: recording', () => {
   });
 
   it('skips a segment that fails without retry and still inserts the next one', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const { result, editor, recorders, calls, deps } = await setupRecorder();
     await act(async () => {
       await result.current.start();
@@ -219,6 +224,7 @@ describe('useRecorder: recording', () => {
     expect(deps.sleep).not.toHaveBeenCalled();
     expect(calls).toHaveLength(2);
     expect(editor.getText()).toBe('第二段');
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it('keeps inserting the rest of a released batch when one insert throws', async () => {
