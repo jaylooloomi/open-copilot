@@ -1,9 +1,11 @@
 import type { JSONContent, Note } from '@oc/shared';
 import {
   formatListItem,
+  isTaskChecked,
   linkRuns,
   listStart,
   nodeText,
+  TASK_LIST_TYPE,
   TRANSCRIPT_GAP_TEXT,
   TRANSCRIPT_GAP_TYPE,
 } from './common';
@@ -30,7 +32,8 @@ const PUNCTUATION_EDGES = /^([\s\p{P}\p{S}]*)([\s\S]*?)([\s\p{P}\p{S}]*)$/u;
 
 /**
  * Markdown: `# title`, body headings one level lower (`##`–`####`), `**bold**`, `*italic*`,
- * `<u>underline</u>`, `[text](href)` links, `- ` / `1. ` lists. Colour, highlight and alignment are dropped.
+ * `<u>underline</u>`, `[text](href)` links, `- ` / `1. ` lists and `- [ ]` / `- [x]` task lists.
+ * Colour, highlight and alignment are dropped.
  */
 export function toMarkdown(note: Note): string {
   const blocks = renderBlocks(note.content.content ?? []);
@@ -40,7 +43,33 @@ export function toMarkdown(note: Note): string {
 }
 
 function renderBlocks(nodes: JSONContent[]): string[] {
-  return nodes.map(renderBlock).filter((block) => block !== '');
+  const blocks: string[] = [];
+  let previous: JSONContent | undefined;
+  for (const node of nodes) {
+    const block = renderBlock(node);
+    if (block === '') continue;
+    if (previous && listsWouldMerge(previous, node)) blocks.push(LIST_SEPARATOR);
+    blocks.push(block);
+    previous = node;
+  }
+  return blocks;
+}
+
+/**
+ * Written between two adjacent lists that Markdown would otherwise read as one list. An HTML
+ * comment ends a list and renders as nothing.
+ */
+const LIST_SEPARATOR = '<!-- -->';
+
+/**
+ * Whether two adjacent lists use the same kind of marker and would merge into one list when only
+ * a blank line separates them: bullet and task lists both use `-`, ordered lists all use `.`.
+ */
+function listsWouldMerge(a: JSONContent, b: JSONContent): boolean {
+  const family = (node: JSONContent) =>
+    node.type === 'orderedList' ? 'ordered' : isList(node) ? 'dash' : undefined;
+  const kind = family(a);
+  return kind !== undefined && kind === family(b);
 }
 
 function renderBlock(node: JSONContent): string {
@@ -57,6 +86,7 @@ function renderBlock(node: JSONContent): string {
     }
     case 'bulletList':
     case 'orderedList':
+    case TASK_LIST_TYPE:
       return renderList(node);
     default:
       // Unknown block: its text content, one paragraph per line.
@@ -70,24 +100,34 @@ function renderBlock(node: JSONContent): string {
 
 function renderList(list: JSONContent): string {
   const ordered = list.type === 'orderedList';
+  const task = list.type === TASK_LIST_TYPE;
   const start = listStart(list);
   return (list.content ?? [])
     .map((item, index) => {
-      const marker = ordered ? `${start + index}. ` : '- ';
+      let marker = '- ';
+      if (task) marker = isTaskChecked(item) ? '- [x] ' : '- [ ] ';
+      else if (ordered) marker = `${start + index}. `;
       let body = '';
+      let previous: JSONContent | undefined;
       for (const child of item.content ?? []) {
         const block = renderBlock(child);
         if (block === '') continue;
-        if (body !== '') body += canInterruptParagraph(child, block) ? '\n' : '\n\n';
+        if (previous && listsWouldMerge(previous, child)) body += `\n\n${LIST_SEPARATOR}\n\n`;
+        else if (body !== '') body += canInterruptParagraph(child, block) ? '\n' : '\n\n';
         body += block;
+        previous = child;
       }
-      return formatListItem(marker, body);
+      // GFM needs whitespace after `]` to read a task marker, so an empty item keeps `- [ ] ` untrimmed
+      // (formatListItem would trim it to `- [ ]`, a bullet whose text is `[ ]`).
+      if (task && body === '') return marker;
+      // GFM reads `[ ]` as part of the item text, so nested lines line up after `- `.
+      return formatListItem(marker, body, task ? 2 : marker.length);
     })
     .join('\n');
 }
 
 function isList(node: JSONContent): boolean {
-  return node.type === 'bulletList' || node.type === 'orderedList';
+  return node.type === 'bulletList' || node.type === 'orderedList' || node.type === TASK_LIST_TYPE;
 }
 
 /**

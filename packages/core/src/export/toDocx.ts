@@ -15,7 +15,17 @@ import {
   type ParagraphChild,
 } from 'docx';
 import { UNTITLED_NOTE } from '../notes/noteStore';
-import { linkRuns, listStart, nodeText, TRANSCRIPT_GAP_TEXT, TRANSCRIPT_GAP_TYPE } from './common';
+import {
+  isTaskChecked,
+  linkRuns,
+  listStart,
+  nodeText,
+  TASK_CHECKED,
+  TASK_LIST_TYPE,
+  TASK_UNCHECKED,
+  TRANSCRIPT_GAP_TEXT,
+  TRANSCRIPT_GAP_TYPE,
+} from './common';
 
 type Mark = NonNullable<JSONContent['marks']>[number];
 type ParagraphFormat = Pick<IParagraphOptions, 'numbering' | 'indent'>;
@@ -55,8 +65,9 @@ interface Context {
 
 /**
  * Word document keeping bold, italic, underline, strike-through, text colour, highlight (as run shading),
- * links, alignment, heading levels, bullet/numbered lists and indented blockquotes. The title becomes
- * Word's Title style. Text is stripped of characters XML cannot hold.
+ * links, alignment, heading levels, bullet/numbered lists, task lists (paragraphs starting with ☐ / ☑)
+ * and indented blockquotes. The title becomes Word's Title style. Text is stripped of characters XML
+ * cannot hold.
  */
 export async function toDocx(note: Note): Promise<Blob> {
   const context: Context = { orderedLists: [] };
@@ -95,7 +106,8 @@ function renderBlock(node: JSONContent, context: Context, format: ParagraphForma
     }
     case 'bulletList':
     case 'orderedList':
-      return renderList(node, context, 0);
+    case TASK_LIST_TYPE:
+      return renderAnyList(node, context, 0);
     case 'blockquote':
       return renderBlockquote(node, context, format);
     default: {
@@ -122,6 +134,15 @@ function renderBlockquote(quote: JSONContent, context: Context, format: Paragrap
   return paragraphs;
 }
 
+function isListNode(node: JSONContent): boolean {
+  return node.type === 'bulletList' || node.type === 'orderedList' || node.type === TASK_LIST_TYPE;
+}
+
+/** A list at the given nesting depth: task lists get ☐ / ☑ characters, the others Word numbering. */
+function renderAnyList(list: JSONContent, context: Context, depth: number): Paragraph[] {
+  return list.type === TASK_LIST_TYPE ? renderTaskList(list, context, depth) : renderList(list, context, depth);
+}
+
 function renderList(list: JSONContent, context: Context, depth: number): Paragraph[] {
   const level = Math.min(depth, LEVELS - 1);
   let reference = BULLET_REFERENCE;
@@ -133,8 +154,8 @@ function renderList(list: JSONContent, context: Context, depth: number): Paragra
   for (const item of list.content ?? []) {
     let numbered = false;
     for (const child of item.content ?? []) {
-      if (child.type === 'bulletList' || child.type === 'orderedList') {
-        paragraphs.push(...renderList(child, context, depth + 1));
+      if (isListNode(child)) {
+        paragraphs.push(...renderAnyList(child, context, depth + 1));
         continue;
       }
       // The item's first paragraph carries the bullet/number; later ones only line up with it.
@@ -149,12 +170,38 @@ function renderList(list: JSONContent, context: Context, depth: number): Paragra
   return paragraphs;
 }
 
-function textParagraph(node: JSONContent, options: IParagraphOptions): Paragraph {
+/**
+ * Task items are indented paragraphs whose first line starts with ☐ or ☑ (Word has no checkbox
+ * numbering). A task item always starts with a paragraph; should it not, the box gets its own line.
+ */
+function renderTaskList(list: JSONContent, context: Context, depth: number): Paragraph[] {
+  // The box line hangs like a bullet (box in the hanging space) so wrapped lines line up with the item text.
+  const boxIndent = levelIndent(Math.min(depth, LEVELS - 1));
+  const indent = { left: boxIndent.left };
+  const paragraphs: Paragraph[] = [];
+  for (const item of list.content ?? []) {
+    const box = isTaskChecked(item) ? TASK_CHECKED : TASK_UNCHECKED;
+    const children = item.content ?? [];
+    if (children[0]?.type !== 'paragraph') {
+      paragraphs.push(new Paragraph({ indent, children: [new TextRun(box)] }));
+    }
+    children.forEach((child, index) => {
+      if (isListNode(child)) paragraphs.push(...renderAnyList(child, context, depth + 1));
+      // Only a leading paragraph carries the box; any other first child was given its own box line above.
+      else if (index === 0 && child.type === 'paragraph') paragraphs.push(textParagraph(child, { indent: boxIndent }, `${box} `));
+      else paragraphs.push(...renderBlock(child, context, { indent }));
+    });
+  }
+  return paragraphs;
+}
+
+function textParagraph(node: JSONContent, options: IParagraphOptions, prefix?: string): Paragraph {
   const alignment = ALIGNMENTS[node.attrs?.textAlign as keyof typeof ALIGNMENTS];
+  const runs = inlineRuns(node.content ?? []);
   return new Paragraph({
     ...options,
     ...(alignment ? { alignment } : {}),
-    children: inlineRuns(node.content ?? []),
+    children: prefix ? [new TextRun(prefix), ...runs] : runs,
   });
 }
 

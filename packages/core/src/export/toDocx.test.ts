@@ -40,6 +40,7 @@ interface ParagraphInfo {
   style: string | null;
   align: string | null;
   indentLeft: string | null;
+  indentHanging: string | null;
   list: { format: string | null; start: string | null; level: number; numId: string } | null;
   text: string;
   runs: RunInfo[];
@@ -91,6 +92,7 @@ async function readDocx(blob: Blob) {
       style: val(child(pPr, 'pStyle')),
       align: val(child(pPr, 'jc')),
       indentLeft: child(pPr, 'ind')?.getAttribute('w:left') ?? null,
+      indentHanging: child(pPr, 'ind')?.getAttribute('w:hanging') ?? null,
       list,
       text: runs.map((r) => r.text).join(''),
       runs,
@@ -355,5 +357,80 @@ describe('toDocx', () => {
   it('never writes a negative start number', async () => {
     const { paragraphs } = await readDocx(await toDocx(note('', ol(-3, item(p(text('一')))))));
     expect(paragraphs[0].list?.start).toBe('0');
+  });
+});
+
+const task = (checked: boolean, ...content: JSONContent[]): JSONContent => ({
+  type: 'taskItem',
+  attrs: { checked },
+  content,
+});
+const tasks = (...items: JSONContent[]): JSONContent => ({ type: 'taskList', content: items });
+
+describe('toDocx task lists', () => {
+  it('starts each task item with ☐ or ☑ instead of Word numbering', async () => {
+    const { paragraphs } = await readDocx(
+      await toDocx(note('', tasks(task(false, p(text('寄出報價單'))), task(true, p(text('預約會議室')))))),
+    );
+    expect(paragraphs.map((x) => [x.text, x.list, x.indentLeft])).toEqual([
+      ['☐ 寄出報價單', null, '720'],
+      ['☑ 預約會議室', null, '720'],
+    ]);
+  });
+
+  it('hangs the box line so wrapped text lines up with the item text, but not later paragraphs', async () => {
+    const { paragraphs } = await readDocx(
+      await toDocx(note('', tasks(task(false, p(text('第一段')), p(text('第二段')))))),
+    );
+    expect(paragraphs.map((x) => [x.text, x.indentLeft, x.indentHanging])).toEqual([
+      ['☐ 第一段', '720', '360'],
+      ['第二段', '720', null],
+    ]);
+  });
+
+  it('keeps the marks of the item text after the box', async () => {
+    const { paragraphs } = await readDocx(
+      await toDocx(note('', tasks(task(false, p(text('重要', { type: 'bold' })))))),
+    );
+    expect(paragraphs[0]!.runs.map((r) => [r.text, r.bold])).toEqual([
+      ['☐ ', false],
+      ['重要', true],
+    ]);
+  });
+
+  it('indents nested lists one level further', async () => {
+    const { paragraphs } = await readDocx(
+      await toDocx(
+        note(
+          '',
+          tasks(task(false, p(text('準備')), tasks(task(true, p(text('訂場地')))), ul(item(p(text('帶投影機')))))),
+        ),
+      ),
+    );
+    expect(paragraphs.map((x) => [x.text, x.indentLeft, x.list?.format ?? null, x.list?.level ?? null])).toEqual([
+      ['☐ 準備', '720', null, null],
+      ['☑ 訂場地', '1080', null, null],
+      ['帶投影機', null, 'bullet', 1],
+    ]);
+  });
+
+  it('nests a task list inside a bullet list one level further', async () => {
+    const { paragraphs } = await readDocx(
+      await toDocx(note('', ul(item(p(text('專案')), tasks(task(false, p(text('寫測試')))))))),
+    );
+    expect(paragraphs.map((x) => [x.text, x.indentLeft, x.list?.level ?? null])).toEqual([
+      ['專案', null, 0],
+      ['☐ 寫測試', '1080', null],
+    ]);
+  });
+
+  it('gives the box its own line once when an item does not start with a paragraph', async () => {
+    const { paragraphs } = await readDocx(
+      await toDocx(note('', tasks(task(true, { type: 'heading', attrs: { level: 2 }, content: [text('議程')] })))),
+    );
+    expect(paragraphs.map((x) => [x.text, x.indentLeft])).toEqual([
+      ['☑', '720'],
+      ['議程', '720'],
+    ]);
   });
 });

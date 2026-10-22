@@ -95,6 +95,45 @@ describe('NotesApp', () => {
     await waitFor(() => expect(titleInput()).toHaveFocus());
   });
 
+  it('keeps typing out of the previous note while a new note is being created', async () => {
+    const { user, storage } = await renderApp([note('a', 'A', 'Alpha', 1)]);
+    let release!: () => void;
+    storage.put.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    await user.click(screen.getByRole('button', { name: '新增筆記' }));
+    await waitFor(() => expect(storage.put).toHaveBeenCalledTimes(1));
+    expect(titleInput()).toHaveAttribute('readonly');
+    expect(body()).toHaveAttribute('contenteditable', 'false');
+    await user.type(titleInput(), '丙');
+    expect(titleInput()).toHaveValue('A');
+
+    await act(async () => release());
+
+    await waitFor(() => expect(within(list()).getAllByRole('listitem')).toHaveLength(2));
+    expect(within(list()).getByRole('button', { name: /^A/ })).toBeInTheDocument();
+    expect(titleInput()).not.toHaveAttribute('readonly');
+    expect(body()).toHaveAttribute('contenteditable', 'true');
+    await user.type(titleInput(), '丙');
+    expect(titleInput()).toHaveValue('丙');
+  });
+
+  it('unlocks the title again when creating a note fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { user, storage } = await renderApp([note('a', 'A', 'Alpha', 1)]);
+    storage.put.mockRejectedValueOnce(new Error('quota'));
+
+    await user.click(screen.getByRole('button', { name: '新增筆記' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('新增筆記失敗');
+    expect(titleInput()).not.toHaveAttribute('readonly');
+    expect(body()).toHaveAttribute('contenteditable', 'true');
+  });
+
   it('reports a failed autosave and clears it once a later save succeeds', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { user, storage, notes } = await renderApp([note('a', 'A', 'Alpha', 1)]);

@@ -10,6 +10,8 @@ import {
   type PendingQueue,
   type PendingSegment,
 } from './pendingQueue';
+import { createLevelStore, type LevelSource, type LevelStore } from './levelStore';
+import { NoSoundDetector } from './noSoundDetector';
 import { extensionFor, pickMimeType } from './pickMimeType';
 import { replaceGap } from './replaceGap';
 import { withRetry } from './retry';
@@ -26,6 +28,7 @@ export const RECORDER_MESSAGES = {
   retryFailed: '重新轉寫失敗，請稍後再試',
   retryRejected: '伺服器無法轉寫這段錄音',
   audioMissing: '找不到這段錄音，無法重新轉寫',
+  noSound: '沒有偵測到聲音，請確認麥克風',
 } as const;
 
 /** How much of the text already inserted in this recording is sent as the prompt. */
@@ -45,6 +48,8 @@ export interface RecorderDeps {
   /** Wait between retries. */
   sleep(ms: number): Promise<void>;
   newGapId(): string;
+  /** Clock (epoch ms) for the recording timer and the no-sound hint. */
+  now(): number;
 }
 
 export const defaultRecorderDeps: RecorderDeps = {
@@ -59,6 +64,7 @@ export const defaultRecorderDeps: RecorderDeps = {
   pickMimeType: () => pickMimeType(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   newGapId: () => crypto.randomUUID(),
+  now: () => Date.now(),
 };
 
 export interface UseRecorderOptions {
@@ -78,6 +84,16 @@ export interface UseRecorderResult {
   state: RecorderState;
   error: string | null;
   notice: string | null;
+  /** When the running recording started (deps.now(), epoch ms); null unless state is 'recording'. */
+  startedAt: number | null;
+  /** The clock startedAt was read from (deps.now); the timer must count with this same clock. */
+  now(): number;
+  /** The latest microphone level (RMS) while recording, 0 otherwise; read it with useLevel(). */
+  levels: LevelSource;
+  /** No reading reached the threshold for over 10 s in this recording; a loud reading clears it. */
+  noSound: boolean;
+  /** Segments uploaded but not inserted yet (waiting for their transcript or an earlier one). */
+  transcribing: number;
   start(): Promise<void>;
   stop(): Promise<void>;
   retryGap(gapId: string): Promise<void>;
@@ -119,14 +135,24 @@ interface Session {
   finishing: Promise<void> | null;
   /** Set on unmount: the inserter is gone, so a late gap would have no marker to retry it from. */
   disposed: boolean;
+  /** Decides when this recording shows the no-sound hint. */
+  noSound: NoSoundDetector;
+  /** Whether the hint is shown now, so the state is only set when it changes. */
+  noSoundShown: boolean;
+  /** Segments handed to handleSegment that have not left the ordered buffer yet. */
+  waiting: number;
 }
 
 interface ControllerEnv {
   options(): UseRecorderOptions;
   queue(): PendingQueue;
+  levels: LevelStore;
   setPhase(phase: Phase): void;
   setError(message: string | null): void;
   setNotice(message: string | null): void;
+  setStartedAt(ms: number | null): void;
+  setNoSound(shown: boolean): void;
+  setTranscribing(count: number): void;
 }
 
 /**
@@ -139,6 +165,10 @@ export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [noSound, setNoSound] = useState(false);
+  const [transcribing, setTranscribing] = useState(0);
+  const [levels] = useState(createLevelStore);
   const queue = useMemo(() => createPendingQueue(options.db), [options.db]);
 
   const latest = useRef({ options, queue });
@@ -150,9 +180,13 @@ export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
   controllerRef.current ??= createRecorderController({
     options: () => latest.current.options,
     queue: () => latest.current.queue,
+    levels,
     setPhase,
     setError,
     setNotice,
+    setStartedAt,
+    setNoSound,
+    setTranscribing,
   });
   const controller = controllerRef.current;
 
@@ -179,6 +213,11 @@ export function useRecorder(options: UseRecorderOptions): UseRecorderResult {
     state,
     error,
     notice,
+    startedAt,
+    now: controller.now,
+    levels,
+    noSound,
+    transcribing,
     start: controller.start,
     stop: controller.stop,
     retryGap: controller.retryGap,
@@ -232,6 +271,8 @@ function createRecorderController(env: ControllerEnv) {
         return;
       }
       const mimeType = d.pickMimeType();
+      // The timer counts from here: the microphone is granted and recording begins.
+      const startedAt = d.now();
       // Assigned right below, before the recorder can call back.
       let current: Session;
       const recorder = d.createRecorder({
@@ -239,6 +280,7 @@ function createRecorderController(env: ControllerEnv) {
         mimeType,
         onSegment: (segment) => handleSegment(current, segment),
         onInterrupted: () => handleInterrupted(current),
+        onLevel: (rms) => handleLevel(current, rms),
       });
       current = {
         noteId,
@@ -253,6 +295,9 @@ function createRecorderController(env: ControllerEnv) {
         unauthorized: false,
         finishing: null,
         disposed: false,
+        noSound: new NoSoundDetector(startedAt),
+        noSoundShown: false,
+        waiting: 0,
       };
       try {
         recorder.start();
@@ -265,6 +310,7 @@ function createRecorderController(env: ControllerEnv) {
       }
       session = current;
       env.setPhase('recording');
+      env.setStartedAt(startedAt);
     } finally {
       starting = false;
     }
@@ -277,6 +323,7 @@ function createRecorderController(env: ControllerEnv) {
   function finish(current: Session): Promise<void> {
     current.finishing ??= (async () => {
       env.setPhase('stopping');
+      clearLiveFeedback();
       // Delivers the last segment through onSegment before it resolves.
       await current.recorder
         .stop()
@@ -285,12 +332,36 @@ function createRecorderController(env: ControllerEnv) {
       while (current.uploads.size > 0) await Promise.allSettled([...current.uploads]);
       current.inserter.destroy();
       if (session === current) session = null;
+      if (!current.disposed) env.setTranscribing(0);
       env.setPhase('idle');
     })();
     return current.finishing;
   }
 
+  function handleLevel(current: Session, rms: number): void {
+    // Readings after stop() began, after unmount or from an older recording must not bring the
+    // meter or the hint back.
+    if (session !== current || current.finishing || current.disposed) return;
+    env.levels.set(rms);
+    const shown = current.noSound.update(deps().now(), rms);
+    if (shown !== current.noSoundShown) {
+      current.noSoundShown = shown;
+      env.setNoSound(shown);
+    }
+  }
+
+  /** Timer, level meter and no-sound hint are only shown while recording. */
+  function clearLiveFeedback(): void {
+    env.setStartedAt(null);
+    env.setNoSound(false);
+    env.levels.set(0);
+  }
+
   function handleSegment(current: Session, { seq, blob }: RecordedSegment): void {
+    // Seqs come from SegmentRecorder as unique integers counting up from 1, so the buffer accepts
+    // every one and each counted segment is eventually released. finish() resets the count anyway.
+    current.waiting += 1;
+    reportWaiting(current);
     const prompt = tail(current.transcript, PROMPT_CHARS);
     const mimeType = blob.type || current.mimeType || '';
     const upload: Promise<void> = transcribeSegment(current, seq, blob, mimeType, prompt)
@@ -351,7 +422,8 @@ function createRecorderController(env: ControllerEnv) {
 
   /** Inserts every result that is now next in line. */
   function release(current: Session, seq: number, result: SegmentResult): void {
-    for (const item of current.buffer.put(seq, result)) {
+    const ready = current.buffer.put(seq, result);
+    for (const item of ready) {
       // One failing insert must not drop the rest of the batch, which has already left the buffer.
       try {
         if (item.kind === 'text') {
@@ -366,6 +438,15 @@ function createRecorderController(env: ControllerEnv) {
         console.error('Failed to insert a transcript', error);
       }
     }
+    if (ready.length > 0) {
+      current.waiting -= ready.length;
+      reportWaiting(current);
+    }
+  }
+
+  /** 轉寫中 N 段; an unmounted recording no longer shows anything. */
+  function reportWaiting(current: Session): void {
+    if (!current.disposed) env.setTranscribing(current.waiting);
   }
 
   async function keepPending(item: PendingSegment): Promise<void> {
@@ -497,14 +578,21 @@ function createRecorderController(env: ControllerEnv) {
     if (!current) return;
     session = null;
     current.disposed = true;
+    clearLiveFeedback();
+    env.setTranscribing(0);
     current.inserter.destroy();
     void current.recorder.stop().catch(() => undefined);
     stopTracks(current.stream);
   }
 
+  function now(): number {
+    return deps().now();
+  }
+
   return {
     start,
     stop,
+    now,
     retryGap,
     forgetNote,
     pruneAudio,

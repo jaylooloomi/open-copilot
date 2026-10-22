@@ -14,6 +14,7 @@
   --oc-danger: #dc2626;
   --oc-radius: 10px;
   --oc-sidebar-width: 260px;
+  --oc-gear-size: 34px;
   --oc-font: system-ui, -apple-system, 'Segoe UI', 'Noto Sans TC', 'PingFang TC',
     'Microsoft JhengHei', sans-serif;
 }
@@ -145,6 +146,70 @@ button {
   cursor: not-allowed;
 }
 
+/* ---------- recording status: timer, level meter, 轉寫中 N 段 ---------- */
+.oc-rec-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  color: var(--oc-muted);
+  font-size: 13px;
+}
+
+.oc-rec-timer {
+  color: var(--oc-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.oc-level-meter {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+
+.oc-level-bar {
+  width: 4px;
+  border-radius: 1px;
+  background: var(--oc-border);
+}
+
+.oc-level-bar:nth-child(1) {
+  height: 20%;
+}
+
+.oc-level-bar:nth-child(2) {
+  height: 40%;
+}
+
+.oc-level-bar:nth-child(3) {
+  height: 60%;
+}
+
+.oc-level-bar:nth-child(4) {
+  height: 80%;
+}
+
+.oc-level-bar:nth-child(5) {
+  height: 100%;
+}
+
+.oc-level-bar.is-on {
+  background: var(--oc-primary);
+}
+
+.oc-no-sound {
+  margin: 12px 16px 0;
+  padding: 8px 14px;
+  border: 1px solid #fde68a;
+  border-radius: var(--oc-radius);
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 14px;
+}
+
 .oc-ai-group {
   display: flex;
   flex-wrap: wrap;
@@ -165,6 +230,27 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* M11: AI 摘要 and 待辦事項 work; AI 助理 and AI 對話 stay locked. */
+.oc-ai-btn.is-available {
+  border-color: rgba(192, 38, 211, 0.4);
+  color: var(--oc-primary);
+  cursor: pointer;
+}
+
+.oc-ai-btn.is-available:hover:not(:disabled) {
+  background: var(--oc-active-bg);
+}
+
+.oc-ai-btn.is-available:focus-visible {
+  outline: 2px solid var(--oc-primary);
+  outline-offset: 2px;
+}
+
+.oc-ai-btn.is-available:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 /* ---------- banner ---------- */
 .oc-banner {
   margin: 12px 16px 0;
@@ -176,6 +262,35 @@ button {
 
 .oc-banner strong {
   color: var(--oc-primary);
+}
+
+.oc-banner-backup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.oc-banner-action {
+  padding: 4px 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--oc-gradient);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.oc-banner-action:focus-visible {
+  outline: 2px solid var(--oc-primary);
+  outline-offset: 2px;
+}
+
+.oc-banner-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 /* ---------- toolbar ---------- */
@@ -467,6 +582,54 @@ button {
   text-align: left;
 }
 
+/* Task lists (AI 待辦事項): the checkbox sits beside the item text instead of a bullet. */
+.oc-editor .ProseMirror ul[data-type='taskList'] {
+  padding-left: 0.25em;
+  list-style: none;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li > label {
+  flex: none;
+  /* Line height is 1.7: this centres the box on the first line of text. */
+  margin-top: 0.35em;
+  line-height: 1;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The item's content is a flex item, so its paragraph's default 1em margins stay inside it and would
+   push the text a line below the checkbox. Spacing between items goes on the items instead. */
+.oc-editor .ProseMirror ul[data-type='taskList'] > li > div > :first-child {
+  margin-top: 0;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li > div > :last-child {
+  margin-bottom: 0;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li + li {
+  margin-top: 0.25em;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li[data-checked='true'] > div > p {
+  color: var(--oc-muted);
+  text-decoration: line-through;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] input[type='checkbox'] {
+  accent-color: var(--oc-primary);
+  cursor: pointer;
+}
+
 .oc-editor .ProseMirror mark {
   padding: 0 1px;
   border-radius: 2px;
@@ -638,8 +801,8 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: var(--oc-gear-size);
+  height: var(--oc-gear-size);
   border: 1px solid var(--oc-border);
   border-radius: 50%;
   background: var(--oc-bg);
@@ -754,6 +917,160 @@ button {
   opacity: 0.5;
 }
 
+/* ---------- backup ---------- */
+/* .oc-sidebar is the scroll container: keep the buttons visible below a long list. */
+.oc-notelist-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--oc-surface);
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--oc-border);
+}
+
+.oc-backup-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.oc-backup-btn {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.oc-backup-btn:hover:not(:disabled) {
+  background: var(--oc-hover);
+}
+
+.oc-backup-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.oc-backup-message {
+  margin: 8px 0 0;
+  color: var(--oc-muted);
+  font-size: 13px;
+}
+
+/* ---------- AI panel ---------- */
+.oc-ai-panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 320px;
+  overflow-y: auto;
+  border-left: 1px solid var(--oc-border);
+  background: var(--oc-surface);
+}
+
+.oc-ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--oc-border);
+}
+
+.oc-ai-panel-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+/* Focused by script when the panel opens; it is not a control, so no ring. */
+.oc-ai-panel-header h2:focus {
+  outline: none;
+}
+
+.oc-ai-panel-body {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.oc-ai-panel-status,
+.oc-ai-panel-error,
+.oc-ai-panel-note {
+  margin: 0;
+}
+
+.oc-ai-panel-status,
+.oc-ai-panel-note {
+  color: var(--oc-muted);
+}
+
+.oc-ai-panel-note {
+  min-height: 1.2em;
+  font-size: 13px;
+}
+
+.oc-ai-panel-error {
+  color: var(--oc-danger);
+}
+
+.oc-ai-summary p {
+  margin: 0 0 6px;
+}
+
+.oc-ai-todos {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.oc-ai-todos label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.oc-ai-todos input {
+  flex: none;
+  margin-top: 0.35em;
+  accent-color: var(--oc-primary);
+}
+
+.oc-ai-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.oc-ai-panel-actions .oc-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 複製 with an empty summary. Outranks `.oc-action-btn:hover`, so hovering it changes nothing. */
+.oc-ai-panel-actions .oc-action-btn:disabled {
+  border-color: var(--oc-border);
+  color: var(--oc-text);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.oc-ai-privacy-body {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
 /* ---------- settings dialog ---------- */
 .oc-dialog-backdrop {
   position: fixed;
@@ -771,6 +1088,11 @@ button {
   border-radius: var(--oc-radius);
   background: var(--oc-bg);
   box-shadow: 0 16px 48px rgba(17, 24, 39, 0.2);
+}
+
+/* The dialog is focusable (tabindex -1) only to keep focus inside it; no ring on the container. */
+.oc-dialog[tabindex='-1']:focus {
+  outline: none;
 }
 
 .oc-dialog-title {
@@ -846,6 +1168,11 @@ button {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.oc-primary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 /* ---------- narrow screens: note list becomes a drawer ---------- */
@@ -929,16 +1256,18 @@ button {
     padding: 8px 14px;
   }
 
+  /* The chips scroll sideways with no scrollbar: the faded edges show a cut chip is more to scroll,
+     and snapping keeps a chip's start at the left edge instead of half of it. */
   .oc-ai-group {
     flex-wrap: nowrap;
     min-width: 0;
     overflow-x: auto;
     scrollbar-width: none;
-    /* Fade the right edge so a chip cut off there reads as "scroll for more"; the end padding
-       lets the last chip scroll clear of the fade. */
-    padding-right: 20px;
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
-    mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+    scroll-snap-type: x proximity;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent);
+    /* End padding as wide as the fade lets the last chip scroll clear of it. */
+    padding-right: 12px;
   }
 
   .oc-ai-group::-webkit-scrollbar {
@@ -947,19 +1276,79 @@ button {
 
   .oc-ai-btn {
     flex-shrink: 0;
+    scroll-snap-align: start;
   }
 
-  /* The AI chips scroll inside .oc-actionbar-end; the gear stays visible at its end. */
+  /* The AI chips scroll inside .oc-actionbar-end; the gear stays visible at its end. Sized from 0, it
+     takes only the space 錄製 and the recording status leave (the chips give way first), never less
+     than the gear. Sized from the chips' full width, it squeezed the status to nothing at 375px. */
   .oc-actionbar-end {
+    flex: 1 1 0;
     flex-wrap: nowrap;
-    min-width: 0;
+    min-width: var(--oc-gear-size);
+    /* Its width never depends on the chips (flex-basis 0), so it can be the query container below. */
+    container: oc-actionbar-end / inline-size;
   }
 
   .oc-settings-btn {
     flex-shrink: 0;
+    /* Stays at the right edge, also when the chips are hidden. */
+    margin-left: auto;
+  }
+
+  /* About 140px is left beside 錄製 and the gear at 375px: a smaller status fits there, and if it
+     still does not, only the 轉寫中 N 段 text is cut, never the timer, the meter or the gear. */
+  .oc-rec-status {
+    flex-shrink: 1;
+    min-width: 0;
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  .oc-rec-timer,
+  .oc-level-meter {
+    flex-shrink: 0;
+  }
+
+  .oc-level-meter {
+    gap: 1px;
+  }
+
+  .oc-level-bar {
+    width: 3px;
+  }
+
+  .oc-transcribing {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* A bottom sheet on phones. Below the drawer (40) and its backdrop (30): the open drawer covers it. */
+  .oc-ai-panel {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    width: auto;
+    max-height: 60vh;
+    border-top: 1px solid var(--oc-border);
+    border-left: none;
+    box-shadow: 0 -8px 24px rgba(17, 24, 39, 0.15);
+  }
+
+  /* Room for the sheet under the note, so its last lines can scroll clear. A rule of its own:
+     an old WebView without :has() drops only this one. */
+  .oc-app:has(.oc-ai-panel) .oc-editor {
+    padding-bottom: 60vh;
   }
 
   .oc-banner {
+    margin: 8px 12px 0;
+  }
+
+  .oc-no-sound {
     margin: 8px 12px 0;
   }
 
@@ -984,5 +1373,29 @@ button {
 
   .oc-title {
     font-size: 22px;
+  }
+}
+
+/* Up to about 1366px the AI side panel leaves the toolbar too narrow for one row, and the note would
+   jump down a row whenever the panel opens. 複製 and 匯出 keep their icons; their labels stay as the
+   buttons' accessible names. A rule of its own: an old WebView without :has() only wraps the row. */
+@media (min-width: 768px) and (max-width: 1366px) {
+  .oc-app:has(.oc-ai-panel) .oc-note-actions .oc-action-btn > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* Too narrow for the gear, the gap and one whole chip (86px with the default font; the limit leaves
+   room for a wider one): hide the chips instead of showing a clipped sliver of the first one, e.g.
+   at 390px with the timer, meter and 轉寫中 N 段 all shown. Only phones make .oc-actionbar-end a
+   container, so this never applies on wider screens. */
+@container oc-actionbar-end (max-width: 139.98px) {
+  .oc-ai-group {
+    display: none;
   }
 }

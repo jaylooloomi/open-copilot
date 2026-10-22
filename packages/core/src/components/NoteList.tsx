@@ -1,5 +1,6 @@
 import type { Note } from '@oc/shared';
 import { Plus, Trash } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { displayTitle } from '../notes/noteStore';
 
 export interface NoteListProps {
@@ -11,6 +12,8 @@ export interface NoteListProps {
   onDelete(id: string): void;
   /** While recording, notes cannot be created, switched or deleted. */
   disabled?: boolean;
+  /** Shown below the list (the backup buttons); it handles its own disabled state. */
+  footer?: ReactNode;
 }
 
 const timeFormat = new Intl.DateTimeFormat('zh-TW', {
@@ -28,6 +31,7 @@ export function NoteList({
   onCreate,
   onDelete,
   disabled = false,
+  footer,
 }: NoteListProps) {
   return (
     <nav className="oc-notelist" aria-label="筆記">
@@ -83,6 +87,7 @@ export function NoteList({
           );
         })}
       </ul>
+      {footer && <div className="oc-notelist-footer">{footer}</div>}
     </nav>
   );
 }

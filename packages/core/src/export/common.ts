@@ -5,6 +5,17 @@ export const TRANSCRIPT_GAP_TYPE = 'transcriptGap';
 /** What every exporter writes in place of a transcriptGap node. */
 export const TRANSCRIPT_GAP_TEXT = '[未轉寫片段]';
 
+/** Node name of Tiptap's task list (@tiptap/extension-list); its items are `taskItem`s. */
+export const TASK_LIST_TYPE = 'taskList';
+/** Plain-text boxes for task items (also used at the start of Word paragraphs). */
+export const TASK_UNCHECKED = '☐';
+export const TASK_CHECKED = '☑';
+
+/** Whether a task item is ticked; only a real `true` counts. */
+export function isTaskChecked(item: JSONContent): boolean {
+  return item.attrs?.checked === true;
+}
+
 const INLINE_TYPES = new Set(['text', 'hardBreak', TRANSCRIPT_GAP_TYPE]);
 
 /** Whether a node's children are inline content (joined directly) rather than blocks. */
@@ -32,11 +43,12 @@ export function listStart(list: JSONContent): number {
 }
 
 /**
- * Puts a list marker in front of a list item's text and indents its following lines by the
- * marker's width, so nested lists and wrapped lines stay inside the item.
+ * Puts a list marker in front of a list item's text and indents its following lines, so nested
+ * lists and wrapped lines stay inside the item. The indent is the marker's width unless given:
+ * Markdown task items (`- [ ] `) indent by 2, because `[ ]` belongs to the item text.
  */
-export function formatListItem(marker: string, body: string): string {
-  const indent = ' '.repeat(marker.length);
+export function formatListItem(marker: string, body: string, indentWidth: number = marker.length): string {
+  const indent = ' '.repeat(indentWidth);
   return body
     .split('\n')
     .map((line, index) => {

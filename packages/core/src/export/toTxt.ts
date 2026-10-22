@@ -2,31 +2,46 @@ import type { JSONContent, Note } from '@oc/shared';
 import {
   formatListItem,
   hasInlineChildren,
+  isTaskChecked,
   linkRuns,
   linkShowsHref,
   listStart,
   nodeText,
+  TASK_CHECKED,
+  TASK_LIST_TYPE,
+  TASK_UNCHECKED,
 } from './common';
 
 /**
  * Plain text: the title, a blank line, then one line per paragraph or list item.
- * Lists keep their `- ` / `1. ` markers and links become `text (href)`; every other kind of
- * formatting is dropped.
+ * Lists keep their `- ` / `1. ` markers, task items start with ☐ / ☑, and links become
+ * `text (href)`; every other kind of formatting is dropped. A heading right after a list gets a blank
+ * line before it, so it reads as a new section rather than as one more list item.
  */
 export function toTxt(note: Note): string {
   const title = note.title.trim();
-  const body = (note.content.content ?? [])
-    .map(renderBlock)
+  const blocks = note.content.content ?? [];
+  const body = blocks
+    .map((block, index) => {
+      const text = renderBlock(block);
+      const previous = blocks[index - 1];
+      return block.type === 'heading' && previous && isList(previous) ? `\n${text}` : text;
+    })
     .join('\n')
     // Drop blank lines at both ends (e.g. the empty paragraph Tiptap keeps after a final list).
     .replace(/^\n+|\n+$/g, '');
   return [title, body].filter((part) => part !== '').join('\n\n');
 }
 
+function isList(node: JSONContent): boolean {
+  return node.type === 'bulletList' || node.type === 'orderedList' || node.type === TASK_LIST_TYPE;
+}
+
 function renderBlock(node: JSONContent): string {
   switch (node.type) {
     case 'bulletList':
     case 'orderedList':
+    case TASK_LIST_TYPE:
       return renderList(node);
     default:
       // Paragraphs, headings and unknown blocks are their text content, with link addresses kept.
@@ -47,10 +62,13 @@ function inlineText(nodes: JSONContent[]): string {
 
 function renderList(list: JSONContent): string {
   const ordered = list.type === 'orderedList';
+  const task = list.type === TASK_LIST_TYPE;
   const start = listStart(list);
   return (list.content ?? [])
     .map((item, index) => {
-      const marker = ordered ? `${start + index}. ` : '- ';
+      let marker = '- ';
+      if (task) marker = `${isTaskChecked(item) ? TASK_CHECKED : TASK_UNCHECKED} `;
+      else if (ordered) marker = `${start + index}. `;
       const body = (item.content ?? []).map(renderBlock).join('\n');
       return formatListItem(marker, body);
     })

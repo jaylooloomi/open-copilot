@@ -6,9 +6,11 @@ export interface TitleInputProps {
   /** Called on Enter (not while composing Chinese input), e.g. to move focus to the body. */
   onEnter?(): void;
   inputRef?: Ref<HTMLInputElement>;
+  /** Ignores typing, e.g. while a new note is being created. */
+  readOnly?: boolean;
 }
 
-export function TitleInput({ value, onChange, onEnter, inputRef }: TitleInputProps) {
+export function TitleInput({ value, onChange, onEnter, inputRef, readOnly = false }: TitleInputProps) {
   return (
     <input
       ref={inputRef}
@@ -18,6 +20,7 @@ export function TitleInput({ value, onChange, onEnter, inputRef }: TitleInputPro
       placeholder="請輸入標題.."
       enterKeyHint="next"
       value={value}
+      readOnly={readOnly}
       onChange={(event) => onChange(event.target.value)}
       onKeyDown={(event) => {
         // Safari fires the IME-confirming Enter after compositionend with keyCode 229.

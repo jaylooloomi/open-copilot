@@ -114,4 +114,14 @@ describe('NoteList', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: /^未命名筆記/ }));
     expect(handlers.onSelect).not.toHaveBeenCalled();
   });
+
+  it('shows the footer below the list, inside the note navigation', () => {
+    const handlers = { onSelect: vi.fn(), onCreate: vi.fn(), onDelete: vi.fn() };
+    render(<NoteList notes={NOTES} activeId="b" footer={<button type="button">備份</button>} {...handlers} />);
+    const nav = screen.getByRole('navigation', { name: '筆記' });
+    const footer = within(nav).getByRole('button', { name: '備份' });
+    const listEl = screen.getByRole('list', { name: '筆記清單' });
+    expect(listEl.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(listEl).queryByRole('button', { name: '備份' })).toBeNull();
+  });
 });

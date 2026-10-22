@@ -16,7 +16,7 @@ import { createFakeStream } from './media';
 
 export const CONFIGURED: Settings = { apiBaseUrl: 'https://api.test', accessKey: 'key-1' };
 
-/** Stands in for SegmentRecorder; tests push segments through it by hand. */
+/** Stands in for SegmentRecorder; tests push segments and microphone readings through it by hand. */
 export class FakeSegmentRecorder implements SegmentRecorderHandle {
   started = false;
   /** Runs inside stop(), e.g. to deliver the last segment like the real recorder does. */
@@ -33,6 +33,11 @@ export class FakeSegmentRecorder implements SegmentRecorderHandle {
 
   emit(seq: number): void {
     this.options.onSegment({ seq, blob: new Blob([`audio-${seq}`], { type: 'audio/webm;codecs=opus' }) });
+  }
+
+  /** One microphone reading, as the real recorder reports about every 100ms. */
+  level(rms: number): void {
+    this.options.onLevel?.(rms);
   }
 
   interrupt(): void {
@@ -55,7 +60,13 @@ export function createFakeClient() {
         calls.push({ input, resolve: (text) => resolve({ seq: input.seq, text }), reject });
       }),
   );
-  const client: ApiClient = { health: vi.fn(async () => true), transcribe };
+  const client: ApiClient = {
+    health: vi.fn(async () => true),
+    transcribe,
+    // The recorder never calls the AI endpoints.
+    summarize: vi.fn(async () => ({ summary: '' })),
+    todos: vi.fn(async () => ({ items: [] })),
+  };
   return { client, transcribe, calls };
 }
 
@@ -96,6 +107,8 @@ export async function setupRecorder(options: { settings?: Settings; content?: st
   const media = createFakeStream();
   const recorders: FakeSegmentRecorder[] = [];
   const fake = createFakeClient();
+  /** What deps.now() returns; tests move it by hand. */
+  const clock = { now: 0 };
   let gaps = 0;
   const deps = {
     getUserMedia: vi.fn(async () => media.stream),
@@ -108,6 +121,7 @@ export async function setupRecorder(options: { settings?: Settings; content?: st
     pickMimeType: () => 'audio/webm;codecs=opus',
     sleep: vi.fn(async (_ms: number) => undefined),
     newGapId: () => `gap-${++gaps}`,
+    now: vi.fn(() => clock.now),
   } satisfies RecorderDeps;
   const onUnauthorized = vi.fn();
   // Typed as RecorderProps so that rerender() accepts editor and noteId too.
@@ -122,6 +136,7 @@ export async function setupRecorder(options: { settings?: Settings; content?: st
     editor,
     db,
     deps,
+    clock,
     recorders,
     onUnauthorized,
     stream: media.stream,

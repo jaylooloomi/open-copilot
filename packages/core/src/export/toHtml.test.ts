@@ -89,3 +89,21 @@ describe('escapeHtml', () => {
     expect(escapeHtml(`<a href="x">'&'</a>`)).toBe('&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;');
   });
 });
+
+describe('toHtml task lists', () => {
+  it('keeps task lists with their checkboxes and checked state', () => {
+    const html = toHtml(
+      note('', {
+        type: 'taskList',
+        content: [
+          { type: 'taskItem', attrs: { checked: true }, content: [p(text('寄出報價單'))] },
+          { type: 'taskItem', attrs: { checked: false }, content: [p(text('預約會議室'))] },
+        ],
+      }),
+    );
+    expect(html).toContain('<ul data-type="taskList">');
+    expect(html).toContain('data-checked="true"');
+    expect(html).toMatch(/<input type="checkbox" checked="checked"\s*\/?>/);
+    expect(html).toContain('<p>寄出報價單</p>');
+  });
+});

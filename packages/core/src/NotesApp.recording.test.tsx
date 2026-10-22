@@ -1,12 +1,14 @@
 import type { Note } from '@oc/shared';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { createBackup, serializeBackup } from './backup/backupFormat';
 import { NotesApp } from './NotesApp';
 import { openAppDb } from './platform/db';
 import { PlatformProvider } from './platform/PlatformContext';
 import { createPendingQueue } from './recording/pendingQueue';
-import { createFakeStream, FakeMediaRecorder } from './test/media';
+import { RECORDER_MESSAGES } from './recording/useRecorder';
+import { createFakeAudioContext, createFakeStream, FakeMediaRecorder } from './test/media';
 import { createTestPlatform } from './test/memoryStorage';
 
 const SETTINGS = { apiBaseUrl: 'https://api.test', accessKey: 'key-1' };
@@ -56,6 +58,88 @@ afterEach(() => {
   Reflect.deleteProperty(navigator, 'mediaDevices');
 });
 
+const backupFile = (notes: Note[]) =>
+  new File([serializeBackup(createBackup(notes, 5_000))], 'backup.json', { type: 'application/json' });
+const chooseFile = (file: File) =>
+  fireEvent.change(screen.getByLabelText('選擇備份檔'), { target: { files: [file] } });
+const textNote = (id: string, title: string, text: string, updatedAt: number): Note => ({
+  id,
+  title,
+  content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] },
+  createdAt: updatedAt,
+  updatedAt,
+});
+
+describe('NotesApp recording and import', () => {
+  it('cannot start recording while an import is writing, and records into the reloaded note after it', async () => {
+    const mic = installMicrophone();
+    installBackend((seq) => json({ seq, text: '你好世界' }));
+    const { user, storage } = await renderApp({ notes: [textNote('a', '週會', '舊內容', 1_000)] });
+    let release!: () => void;
+    storage.put.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    chooseFile(backupFile([textNote('a', '週會', '新內容', 2_000)]));
+    await waitFor(() => expect(storage.put).toHaveBeenCalledTimes(1));
+
+    expect(button('錄製')).toBeDisabled();
+    fireEvent.click(button('錄製'));
+    expect(mic.getUserMedia).not.toHaveBeenCalled();
+
+    release();
+    expect(await screen.findByText('已匯入 1 篇，略過 0 篇（本機版本較新）')).toBeInTheDocument();
+    await waitFor(() => expect(body()).toHaveTextContent('新內容'));
+    expect(button('錄製')).toBeEnabled();
+
+    await user.click(button('錄製'));
+    await user.click(await screen.findByRole('button', { name: '停止' }));
+    expect(await screen.findByRole('button', { name: '錄製' })).toBeEnabled();
+    expect(body()).toHaveTextContent('你好世界');
+  });
+
+  it('locks backup and import while the microphone prompt is open', async () => {
+    const mic = installMicrophone();
+    installBackend((seq) => json({ seq, text: '你好世界' }));
+    const { user } = await renderApp();
+    let allow!: () => void;
+    mic.getUserMedia.mockImplementationOnce(
+      () =>
+        new Promise<MediaStream>((resolve) => {
+          allow = () => resolve(mic.stream);
+        }),
+    );
+
+    await user.click(button('錄製'));
+
+    await waitFor(() => expect(mic.getUserMedia).toHaveBeenCalledTimes(1));
+    expect(button('備份')).toBeDisabled();
+    expect(button('匯入')).toBeDisabled();
+    expect(button('新增筆記')).toBeDisabled();
+
+    allow();
+    expect(await screen.findByRole('button', { name: '停止' })).toBeEnabled();
+    await user.click(button('停止'));
+    expect(await screen.findByRole('button', { name: '錄製' })).toBeEnabled();
+    expect(button('匯入')).toBeEnabled();
+  });
+
+  it('unlocks backup and import when the microphone is denied', async () => {
+    const mic = installMicrophone();
+    const { user } = await renderApp();
+    mic.getUserMedia.mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'));
+
+    await user.click(button('錄製'));
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(button('匯入')).toBeEnabled();
+    expect(button('備份')).toBeEnabled();
+  });
+});
+
 describe('NotesApp recording', () => {
   it('asks for a backend first and saves it from the settings dialog', async () => {
     const { user } = await renderApp({ configured: false });
@@ -89,12 +173,16 @@ describe('NotesApp recording', () => {
     expect(mic.getUserMedia).toHaveBeenCalledWith({ audio: true });
     expect(button('新增筆記')).toBeDisabled();
     expect(screen.getByRole('button', { name: /^未命名筆記/ })).toBeDisabled();
+    expect(button('備份')).toBeDisabled();
+    expect(button('匯入')).toBeDisabled();
 
     await user.click(button('停止'));
 
     expect(await screen.findByRole('button', { name: '錄製' })).toBeEnabled();
     expect(body()).toHaveTextContent('你好世界');
     expect(button('新增筆記')).toBeEnabled();
+    expect(button('備份')).toBeEnabled();
+    expect(button('匯入')).toBeEnabled();
     expect(mic.track.stop).toHaveBeenCalled();
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe('https://api.test/transcribe');
@@ -154,14 +242,11 @@ describe('NotesApp recording', () => {
     expect(fetchMock).toHaveBeenCalledTimes(sent);
 
     // The cursor is at the start, in front of the marker; ArrowRight selects it (it is an atom).
-    // fireEvent, not user.keyboard: user-event sends no keyCode, and ProseMirror's arrow keys
-    // read keyCode, so it ignores that keydown. user-event then moves the DOM caret itself, and
-    // whether ProseMirror reads that back as the marker depends on when the async selectionchange
-    // arrives (ProseMirror distrusts one within 200 ms of focusing), so the test was flaky.
-    // With the keyCode a browser sends, ProseMirror selects the marker on the keydown itself.
-    const editorDom = document.activeElement as HTMLElement;
-    expect(editorDom).toHaveClass('ProseMirror');
-    fireEvent.keyDown(editorDom, { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 });
+    // fireEvent with keyCode 39, as browsers send it, so ProseMirror's own arrow handling selects
+    // the marker. user-event's {ArrowRight} has no keyCode: it only moves the DOM selection, which
+    // ProseMirror reads back later, and under load that raced with focus handling and with Enter.
+    expect(document.activeElement).toBe(body());
+    fireEvent.keyDown(body(), { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 });
     expect(screen.getByText('⚠ 第 1 段未轉寫・重試')).toHaveClass('ProseMirror-selectednode');
     await user.keyboard('{Enter}');
 
@@ -231,5 +316,92 @@ describe('NotesApp recording', () => {
     await waitFor(() => expect(storage.remove).toHaveBeenCalledWith('with-gap'));
     await waitFor(async () => expect(await queue.get('gap-of-deleted-note')).toBeUndefined());
     expect(await queue.get('gap-of-other-note')).toBeDefined();
+  });
+});
+
+/** A fake AudioContext behind `new AudioContext()`, so SegmentRecorder gets real readings. */
+function installAudioContext(level: number) {
+  const audio = createFakeAudioContext();
+  audio.setLevel(level);
+  vi.stubGlobal('AudioContext', function FakeAudioContext() {
+    return audio.context;
+  });
+  return audio;
+}
+
+describe('NotesApp recording feedback', () => {
+  it('shows the timer and level meter while recording, the no-sound hint after 10 quiet seconds, and drops them after stop', async () => {
+    // Only Date is faked: the recorder's 50ms polling and the timer's 250ms ticks run for real,
+    // reading the faked clock, so 10 seconds can pass at once. SegmentRecorder throttles onLevel
+    // on Date.now() (levelMs = 100), so the faked clock must move before every new reading:
+    // while it stands still, polls after the first one are skipped.
+    vi.useFakeTimers({ now: 0, toFake: ['Date'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    installMicrophone();
+    const audio = installAudioContext(0.5);
+    installBackend((seq) => json({ seq, text: '' }));
+    const { user } = await renderApp();
+
+    await user.click(button('錄製'));
+    expect(await screen.findByRole('button', { name: '停止' })).toBeEnabled();
+    const timer = screen.getByRole('timer', { name: '錄音時間' });
+    expect(timer).toHaveTextContent('00:00');
+    await waitFor(() =>
+      expect(document.querySelector('.oc-level-meter')).toHaveAttribute('data-level', '5'),
+    );
+    expect(screen.queryByText(RECORDER_MESSAGES.noSound)).not.toBeInTheDocument();
+
+    audio.setLevel(0);
+    vi.setSystemTime(10_500);
+    const hint = await screen.findByText(RECORDER_MESSAGES.noSound);
+    expect(hint).toHaveAttribute('role', 'status');
+    await waitFor(() => expect(timer).toHaveTextContent('00:10'));
+    expect(document.querySelector('.oc-level-meter')).toHaveAttribute('data-level', '0');
+
+    audio.setLevel(0.5);
+    // Move the clock past levelMs so the next poll reports the loud reading.
+    vi.setSystemTime(10_700);
+    await waitFor(() =>
+      expect(document.querySelector('.oc-level-meter')).toHaveAttribute('data-level', '5'),
+    );
+    await waitFor(() => expect(screen.queryByText(RECORDER_MESSAGES.noSound)).not.toBeInTheDocument());
+
+    await user.click(button('停止'));
+    expect(await screen.findByRole('button', { name: '錄製' })).toBeEnabled();
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument();
+    expect(document.querySelector('.oc-level-meter')).toBeNull();
+    expect(screen.queryByText(/轉寫中/)).not.toBeInTheDocument();
+  });
+
+  it('shows 轉寫中 N 段 while a segment waits for its transcript', async () => {
+    // No AudioContext, so the recorder takes no level readings and the test stays on the transcribing count.
+    vi.stubGlobal('AudioContext', undefined);
+    installMicrophone();
+    // /transcribe waits until the test answers it.
+    let answer!: (response: Response) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).endsWith('/health')
+          ? json({ ok: true })
+          : new Promise<Response>((resolve) => {
+              answer = resolve;
+            }),
+      ),
+    );
+    const { user } = await renderApp();
+
+    await user.click(button('錄製'));
+    await user.click(await screen.findByRole('button', { name: '停止' }));
+
+    expect(await screen.findByText('轉寫中 1 段')).toBeInTheDocument();
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument();
+
+    answer(json({ seq: 1, text: '你好世界' }));
+    expect(await screen.findByRole('button', { name: '錄製' })).toBeEnabled();
+    expect(screen.queryByText(/轉寫中/)).not.toBeInTheDocument();
+    expect(body()).toHaveTextContent('你好世界');
   });
 });

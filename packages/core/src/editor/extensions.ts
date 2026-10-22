@@ -1,5 +1,6 @@
 import { Extension, type Extensions } from '@tiptap/react';
 import { Highlight } from '@tiptap/extension-highlight';
+import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { Color, TextStyle } from '@tiptap/extension-text-style';
 import { Placeholder } from '@tiptap/extensions';
@@ -38,6 +39,15 @@ export function createExtensions(): Extensions {
     Highlight.configure({ multicolor: true }),
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Placeholder.configure({ placeholder: EDITOR_PLACEHOLDER }),
+    // M11: AI 待辦事項 are inserted as a task list. Nested, so a list pasted into an item survives.
+    TaskList,
+    // zh-TW checkbox labels for screen readers (Tiptap's default label is English).
+    TaskItem.configure({
+      nested: true,
+      a11y: {
+        checkboxLabel: (node, checked) => `${checked ? '已完成' : '未完成'}待辦：${node.textContent || '空白項目'}`,
+      },
+    }),
     TranscriptGap,
     HistoryKeys,
   ];

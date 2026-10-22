@@ -1,4 +1,4 @@
-import { Editor } from '@tiptap/react';
+import { Editor, type JSONContent } from '@tiptap/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createExtensions, EDITOR_PLACEHOLDER } from './extensions';
 
@@ -103,5 +103,59 @@ describe('createExtensions', () => {
     expect(EDITOR_PLACEHOLDER).toBe('在這裡開始編寫筆記..');
     const empty = e.view.dom.querySelector('p');
     expect(empty).toHaveAttribute('data-placeholder', '在這裡開始編寫筆記..');
+  });
+});
+
+describe('createExtensions task lists', () => {
+  it('parses task lists and keeps each item checked state', () => {
+    const e = makeEditor(
+      '<ul data-type="taskList">' +
+        '<li data-type="taskItem" data-checked="true"><p>寄出報價單</p></li>' +
+        '<li data-type="taskItem" data-checked="false"><p>預約會議室</p></li>' +
+        '</ul>',
+    );
+    const doc: JSONContent = e.getJSON();
+    const list = doc.content?.[0];
+    expect(list?.type).toBe('taskList');
+    expect(list?.content?.map((item) => [item.type, item.attrs?.checked])).toEqual([
+      ['taskItem', true],
+      ['taskItem', false],
+    ]);
+    expect(e.view.dom.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+  });
+
+  it('toggles a paragraph into a task list', () => {
+    const e = makeEditor('<p>準備</p>');
+    e.chain().setTextSelection(2).toggleTaskList().run();
+    expect(e.isActive('taskList')).toBe(true);
+    const doc: JSONContent = e.getJSON();
+    const item = doc.content?.[0]?.content?.[0];
+    expect(item?.attrs?.checked).toBe(false);
+    expect(item?.content?.[0]?.content?.[0]?.text).toBe('準備');
+    expect(e.getText().trim()).toBe('準備');
+  });
+
+  it('labels each checkbox in zh-TW for screen readers', () => {
+    const e = makeEditor(
+      '<ul data-type="taskList">' +
+        '<li data-type="taskItem" data-checked="true"><p>寄出報價單</p></li>' +
+        '<li data-type="taskItem" data-checked="false"><p></p></li>' +
+        '</ul>',
+    );
+    const labels = [...e.view.dom.querySelectorAll('input[type="checkbox"]')].map((box) =>
+      box.getAttribute('aria-label'),
+    );
+    expect(labels).toEqual(['已完成待辦：寄出報價單', '未完成待辦：空白項目']);
+  });
+
+  it('lets a task item hold a nested task list', () => {
+    const e = makeEditor(
+      '<ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>準備</p>' +
+        '<ul data-type="taskList"><li data-type="taskItem" data-checked="true"><p>訂場地</p></li></ul>' +
+        '</li></ul>',
+    );
+    const doc: JSONContent = e.getJSON();
+    const outer = doc.content?.[0]?.content?.[0];
+    expect(outer?.content?.map((child) => child.type)).toEqual(['paragraph', 'taskList']);
   });
 });

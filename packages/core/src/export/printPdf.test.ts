@@ -147,3 +147,25 @@ describe('printPdf', () => {
     expect(document.title).toBe('open-copilot');
   });
 });
+
+describe('printPdf task lists', () => {
+  it('prints task lists with their checkboxes beside the text and no bullets', () => {
+    const { printed } = stubFramePrint();
+    printPdf(
+      note('待辦', {
+        type: 'taskList',
+        content: [
+          { type: 'taskItem', attrs: { checked: true }, content: [p('寄出報價單')] },
+          { type: 'taskItem', attrs: { checked: false }, content: [p('預約會議室')] },
+        ],
+      }),
+    );
+    expect(printed).toHaveLength(1);
+    expect(printed[0]!.body).toContain('data-type="taskList"');
+    expect(printed[0]!.body).toMatch(/<input type="checkbox" checked="checked"\s*\/?>/);
+    expect(printed[0]!.css).toMatch(/ul\[data-type="taskList"\]\s*\{[^}]*list-style:\s*none/);
+    expect(printed[0]!.css).toMatch(/ul\[data-type="taskList"\] > li\s*\{[^}]*display:\s*flex/);
+    // A plain list nested inside a task item keeps its normal layout.
+    expect(printed[0]!.css).not.toContain('ul[data-type="taskList"] li');
+  });
+});
