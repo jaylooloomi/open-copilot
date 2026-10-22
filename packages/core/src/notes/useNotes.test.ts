@@ -2,7 +2,7 @@ import { EMPTY_DOC, type Note } from '@oc/shared';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryStorage } from '../test/memoryStorage';
-import { useNotes } from './useNotes';
+import { ImportNotesError, useNotes } from './useNotes';
 
 const note = (id: string, updatedAt: number, title = id): Note => ({
   id,
@@ -571,5 +571,26 @@ describe('useNotes importNotes', () => {
 
     expect(result.current.notes.map((n) => n.id)).toEqual(['b', 'a', 'x']);
     expect(result.current.activeNote?.id).toBe('b');
+  });
+
+  it('reports the partial result, including a replaced active note, when a later write fails', async () => {
+    const { result, storage } = await setup([note('a', 100), note('b', 200)]);
+    const failure = new Error('disk full');
+    storage.put.mockImplementationOnce(async () => undefined).mockRejectedValueOnce(failure);
+
+    let caught: unknown;
+    await act(async () => {
+      await result.current.importNotes([note('b', 999, 'B2'), note('x', 50)]).catch((error: unknown) => {
+        caught = error;
+      });
+    });
+
+    expect(caught).toBeInstanceOf(ImportNotesError);
+    expect(caught).toBeInstanceOf(Error);
+    const error = caught as ImportNotesError;
+    expect(error.message).toBe('disk full');
+    expect(error.cause).toBe(failure);
+    expect(error.result).toEqual({ imported: 1, skipped: 0, replacedActive: true });
+    expect(result.current.activeNote).toMatchObject({ id: 'b', title: 'B2' });
   });
 });

@@ -27,6 +27,21 @@ export interface ImportNotesResult {
   replacedActive: boolean;
 }
 
+/**
+ * importNotes rejects with this when a write fails. The notes stored before the failure are
+ * already in the list, so `result` says what changed: if `result.replacedActive` is true, an open
+ * editor must still reload the active note. `message` and `cause` come from the failed write.
+ */
+export class ImportNotesError extends Error {
+  readonly result: ImportNotesResult;
+
+  constructor(cause: unknown, result: ImportNotesResult) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = 'ImportNotesError';
+    this.result = result;
+  }
+}
+
 export interface UseNotesResult {
   /** Newest `updatedAt` first. */
   notes: Note[];
@@ -57,7 +72,7 @@ export interface UseNotesResult {
    * Merges notes from a backup (see mergeNotes: unknown ids are added, a strictly newer
    * `updatedAt` replaces the local note) and stores the added or replaced ones, one by one.
    * The active note stays selected. If a write fails, the notes stored before it are kept in the
-   * list and the promise rejects.
+   * list and the promise rejects with an ImportNotesError that carries this partial result.
    */
   importNotes(incoming: readonly Note[]): Promise<ImportNotesResult>;
 }
@@ -286,12 +301,13 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
       const activeId = activeIdRef.current;
       const merged = mergeNotes(notesRef.current, stored);
       if (merged.toWrite.length > 0) commit(merged.notes, activeId);
-      if (failed) throw failure;
-      return {
+      const result: ImportNotesResult = {
         imported: stored.length,
         skipped,
         replacedActive: merged.toWrite.some((note) => note.id === activeId),
       };
+      if (failed) throw new ImportNotesError(failure, result);
+      return result;
     },
     [storage, flushSaves, commit],
   );
