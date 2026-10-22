@@ -29,4 +29,14 @@ describe('OrderedBuffer', () => {
     expect(buffer.put(6, 60)).toEqual([]);
     expect(buffer.put(5, 50)).toEqual([50, 60]);
   });
+
+  it('ignores non-integer sequence numbers', () => {
+    const buffer = new OrderedBuffer<string>();
+    expect(buffer.put(Number.NaN, 'x')).toEqual([]);
+    expect(buffer.put(1.5, 'y')).toEqual([]);
+    expect(buffer.put(Number.POSITIVE_INFINITY, 'z')).toEqual([]);
+    expect(buffer.put(1, 'a')).toEqual(['a']);
+    expect(buffer.put(2, 'b')).toEqual(['b']);
+    expect((buffer as unknown as { waiting: Map<number, string> }).waiting.size).toBe(0);
+  });
 });

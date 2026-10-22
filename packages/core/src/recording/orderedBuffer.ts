@@ -7,9 +7,9 @@ export class OrderedBuffer<T> {
     this.next = firstSeq;
   }
 
-  /** Stores `value` and returns every item that can now be released, in order. */
+  /** Stores `value` and returns every item that can now be released, in order. Non-integer seq is ignored. */
   put(seq: number, value: T): T[] {
-    if (seq < this.next || this.waiting.has(seq)) return [];
+    if (!Number.isInteger(seq) || seq < this.next || this.waiting.has(seq)) return [];
     this.waiting.set(seq, value);
     const ready: T[] = [];
     while (this.waiting.has(this.next)) {

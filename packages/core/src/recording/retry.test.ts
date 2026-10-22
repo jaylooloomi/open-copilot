@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/apiClient';
-import { RETRY_DELAYS_MS, withRetry } from './retry';
+import { MAX_RETRY_AFTER_MS, RETRY_DELAYS_MS, withRetry } from './retry';
 
 /** fn that fails with the given errors in turn, then resolves 'ok'. */
 function failing(...errors: unknown[]) {
@@ -80,5 +80,44 @@ describe('withRetry', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(await result).toBe('ok');
     expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('caps a huge Retry-After at MAX_RETRY_AFTER_MS', async () => {
+    const sleep = sleepSpy();
+    const fn = failing(new ApiError('slow down', 429, { retryAfterMs: 86_400_000 }));
+    expect(MAX_RETRY_AFTER_MS).toBe(60_000);
+    expect(await withRetry(fn, { sleep })).toBe('ok');
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([60_000]);
+  });
+
+  it('stops retrying once the signal is aborted and throws the abort reason', async () => {
+    const controller = new AbortController();
+    const reason = new Error('stopped');
+    const sleep = vi.fn(async (_ms: number) => {
+      controller.abort(reason);
+    });
+    const fn = failing(new ApiError('down', 500), new ApiError('down', 500));
+    await expect(withRetry(fn, { sleep, signal: controller.signal })).rejects.toBe(reason);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts a pending default sleep', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const fn = failing(new ApiError('slow down', 429, { retryAfterMs: 30_000 }));
+    const result = withRetry(fn, { signal: controller.signal });
+    const settled = expect(result).rejects.toBeInstanceOf(Error);
+    await vi.advanceTimersByTimeAsync(10);
+    controller.abort(new Error('stopped'));
+    await settled;
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call fn when the signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort(new Error('stopped'));
+    const fn = failing();
+    await expect(withRetry(fn, { signal: controller.signal })).rejects.toThrow('stopped');
+    expect(fn).not.toHaveBeenCalled();
   });
 });
