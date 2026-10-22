@@ -16,8 +16,10 @@ export interface NoSoundOptions {
  * or above the threshold, counted from the start of the recording. Shown at most once per
  * recording (one detector per recording); a loud reading hides it.
  *
- * Timestamps must come from a monotonic clock such as performance.now(); a clock that jumps
- * backwards (Date.now after a system time change) only delays the hint.
+ * Timestamps may come from the wall clock (useRecorder passes Date.now, the same clock as the
+ * recording timer). A clock that jumps backwards (a system time change) only delays the hint; one
+ * that jumps forwards (an NTP sync, waking from sleep) can show it before `afterMs` of real
+ * silence. Both only shift when the hint appears, so a monotonic clock is not required.
  */
 export class NoSoundDetector {
   private readonly threshold: number;
