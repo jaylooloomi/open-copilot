@@ -30,6 +30,11 @@ describe('loadSettings', () => {
     expect(loadSettings()).toEqual({ apiBaseUrl: 'https://api.example.com', accessKey: 'key-1' });
   });
 
+  it('normalises values that were stored without saveSettings', () => {
+    localStorage.setItem('oc.settings', JSON.stringify({ apiBaseUrl: ' https://a.test/ ', accessKey: ' k ' }));
+    expect(loadSettings()).toEqual({ apiBaseUrl: 'https://a.test', accessKey: 'k' });
+  });
+
   it('ignores broken or partial JSON', () => {
     localStorage.setItem('oc.settings', '{not json');
     expect(loadSettings()).toEqual(EMPTY_SETTINGS);

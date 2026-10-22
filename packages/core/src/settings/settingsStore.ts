@@ -16,10 +16,10 @@ export function loadSettings(): Settings {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return { ...EMPTY_SETTINGS };
     const { apiBaseUrl, accessKey } = parsed as Record<string, unknown>;
-    return {
+    return normalizeSettings({
       apiBaseUrl: typeof apiBaseUrl === 'string' ? apiBaseUrl : '',
       accessKey: typeof accessKey === 'string' ? accessKey : '',
-    };
+    });
   } catch {
     return { ...EMPTY_SETTINGS };
   }
