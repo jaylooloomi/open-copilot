@@ -15,6 +15,12 @@ describe('shouldGrantPermission', () => {
     ).toBe(false);
   });
 
+  it('denies media requests that do not name the microphone', () => {
+    expect(shouldGrantPermission('media', { requestingUrl: PAGE })).toBe(false);
+    expect(shouldGrantPermission('media', { requestingUrl: PAGE, mediaTypes: [] })).toBe(false);
+    expect(shouldGrantPermission('media', { requestingUrl: PAGE, mediaTypes: ['unknown'] })).toBe(false);
+  });
+
   it('grants clipboard writes (複製) but not clipboard reads', () => {
     expect(shouldGrantPermission('clipboard-sanitized-write', { requestingUrl: PAGE })).toBe(true);
     expect(shouldGrantPermission('clipboard-read', { requestingUrl: PAGE })).toBe(false);

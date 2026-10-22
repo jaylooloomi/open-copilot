@@ -11,7 +11,7 @@ const FORBIDDEN = /[\\:\0]/;
 
 /**
  * Maps an app://bundle/... request to a file inside `rootDir`, or null when the URL is not ours,
- * is malformed, or would escape `rootDir`. Query strings and fragments are ignored.
+ * is malformed, names a directory (trailing slash), or would escape `rootDir`. Query strings and fragments are ignored.
  */
 export function resolveAppPath(requestUrl: string, rootDir: string): string | null {
   let url: URL;
@@ -29,6 +29,7 @@ export function resolveAppPath(requestUrl: string, rootDir: string): string | nu
     return null; // malformed percent-encoding
   }
   if (pathname === '' || pathname === '/') pathname = '/index.html';
+  else if (pathname.endsWith('/')) return null; // a directory, never a file we serve
   if (FORBIDDEN.test(pathname)) return null;
 
   const root = path.resolve(rootDir);

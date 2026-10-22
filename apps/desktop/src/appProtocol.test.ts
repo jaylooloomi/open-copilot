@@ -57,6 +57,12 @@ describe('resolveAppPath', () => {
     expect(resolveAppPath('app://bundle/%E4%B8', root)).toBeNull();
   });
 
+  it('rejects directory URLs below the root', () => {
+    expect(resolveAppPath('app://bundle/assets/', root)).toBeNull();
+    expect(resolveAppPath('app://bundle/assets/?v=1', root)).toBeNull();
+    expect(resolveAppPath('app://bundle/assets%2F', root)).toBeNull();
+  });
+
   it('rejects other hosts, other schemes and non-URLs', () => {
     expect(resolveAppPath('app://evil/index.html', root)).toBeNull();
     expect(resolveAppPath('https://bundle/index.html', root)).toBeNull();

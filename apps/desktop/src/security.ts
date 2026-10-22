@@ -12,7 +12,11 @@ export interface PermissionDetails {
  */
 export function shouldGrantPermission(permission: string, details: PermissionDetails): boolean {
   if (!isAppUrl(details.requestingUrl ?? '')) return false;
-  if (permission === 'media') return !(details.mediaTypes ?? []).includes('video');
+  if (permission === 'media') {
+    // Grant only requests that name the microphone and nothing else; an empty list is not trusted.
+    const types = details.mediaTypes ?? [];
+    return types.length > 0 && types.every((type) => type === 'audio');
+  }
   return permission === 'clipboard-sanitized-write';
 }
 
