@@ -1,7 +1,8 @@
-import type { HealthResponse } from '@oc/shared';
+import type { HealthResponse, TranscribeResponse } from '@oc/shared';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import type { AuthEnv } from './middleware/auth';
+import { bearerAuth, type AuthEnv } from './middleware/auth';
+import { toTraditional } from './text/toTraditional';
 import type { Transcriber } from './transcriber/types';
 
 export interface AppDeps {
@@ -11,7 +12,7 @@ export interface AppDeps {
   now?: () => number;
 }
 
-export function createApp({ allowedOrigins }: AppDeps) {
+export function createApp({ transcriber, accessKeys, allowedOrigins }: AppDeps) {
   const app = new Hono<AuthEnv>();
 
   // CORS 必須最先執行：預檢請求不帶 Authorization，且 401/413/429 回應也要有 CORS 標頭。
@@ -27,6 +28,16 @@ export function createApp({ allowedOrigins }: AppDeps) {
   );
 
   app.get('/health', (c) => c.json({ ok: true } satisfies HealthResponse));
+
+  app.post('/transcribe', bearerAuth(accessKeys), async (c) => {
+    const body = await c.req.parseBody();
+    const audio = body['audio'] as File;
+    const seq = Number(body['seq']);
+    const prompt = typeof body['prompt'] === 'string' ? body['prompt'] : '';
+
+    const rawText = await transcriber.transcribe({ file: audio, prompt });
+    return c.json({ seq, text: toTraditional(rawText.trim()) } satisfies TranscribeResponse, 200);
+  });
 
   return app;
 }
