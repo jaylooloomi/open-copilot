@@ -196,7 +196,11 @@ button {
   border-right: 1px solid var(--oc-border);
 }
 
-.oc-tool-group:last-child,
+.oc-tool-group:last-child {
+  border-right: none;
+}
+
+/* A separate rule: a WebView without :has() drops only this one, not :last-child above. */
 .oc-tool-group:has(+ .oc-note-actions) {
   border-right: none;
 }

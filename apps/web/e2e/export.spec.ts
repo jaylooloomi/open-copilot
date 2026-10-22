@@ -49,6 +49,8 @@ type Printed = { title: string; tabTitle: string; body: string };
 test('匯出 PDF 把筆記交給隱藏 iframe 列印', async ({ page }) => {
   await expect(page).toHaveTitle('open-copilot');
   // Replace print() on the print iframe so no dialog opens; record what it would print.
+  // This hooks document.body.appendChild, which is how printPdf adds its iframe; if printPdf
+  // switches to append() or insertBefore(), move the hook too.
   await page.evaluate(() => {
     const w = window as unknown as { printed?: Printed };
     const append = document.body.appendChild.bind(document.body);
@@ -114,6 +116,8 @@ test('窄螢幕時匯出選單完整顯示在畫面內', async ({ page }) => {
   const box = await menu.boundingBox();
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(844);
 
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
