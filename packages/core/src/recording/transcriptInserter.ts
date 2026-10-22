@@ -1,7 +1,11 @@
-import type { Node as PmNode } from '@tiptap/pm/model';
-import { Selection, type Transaction } from '@tiptap/pm/state';
-import type { Editor } from '@tiptap/react';
-import { TRANSCRIPT_GAP_TEXT, TRANSCRIPT_GAP_TYPE } from '../export/common';
+import type { Node as PmNode } from "@tiptap/pm/model";
+import {
+  type EditorState,
+  Selection,
+  type Transaction,
+} from "@tiptap/pm/state";
+import type { Editor } from "@tiptap/react";
+import { TRANSCRIPT_GAP_TEXT, TRANSCRIPT_GAP_TYPE } from "../export/common";
 
 /**
  * Inserts transcripts at the position the cursor had when recording started. The position is
@@ -17,7 +21,7 @@ export class TranscriptInserter {
     anchorPos: number,
   ) {
     this.pos = textPosition(editor, anchorPos);
-    editor.on('transaction', this.onTransaction);
+    editor.on("transaction", this.onTransaction);
   }
 
   get position(): number {
@@ -25,19 +29,21 @@ export class TranscriptInserter {
   }
 
   insertText(text: string): void {
-    if (text === '') return;
+    if (text === "") return;
     // schema.text() carries no marks, so a transcript is plain even inside bold text.
     this.insert(this.editor.schema.text(text));
   }
 
   insertGap(gapId: string, seq: number): void {
-    this.insert(this.editor.schema.nodes[TRANSCRIPT_GAP_TYPE].create({ gapId, seq }));
+    this.insert(
+      this.editor.schema.nodes[TRANSCRIPT_GAP_TYPE].create({ gapId, seq }),
+    );
   }
 
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.editor.off('transaction', this.onTransaction);
+    this.editor.off("transaction", this.onTransaction);
   }
 
   private readonly onTransaction = ({
@@ -64,7 +70,7 @@ export class TranscriptInserter {
     if ($pos.parent.canReplaceWith($pos.index(), $pos.index(), node.type)) {
       // Mapped with assoc = 1 in onTransaction, so the anchor ends up right after the node.
       this.pos = pos;
-      view.dispatch(state.tr.insert(pos, node));
+      view.dispatch(this.background(state.tr.insert(pos, node), state));
       return;
     }
     // The textblock does not accept this node (a gap inside a code block). Never split the
@@ -73,17 +79,40 @@ export class TranscriptInserter {
     const after = $pos.depth > 0 ? $pos.after() : pos;
     const paragraph = state.schema.nodes.paragraph?.createAndFill(null, node);
     const $after = state.doc.resolve(after);
-    if (paragraph && $after.parent.canReplaceWith($after.index(), $after.index(), paragraph.type)) {
+    if (
+      paragraph &&
+      $after.parent.canReplaceWith(
+        $after.index(),
+        $after.index(),
+        paragraph.type,
+      )
+    ) {
       this.pos = after;
-      view.dispatch(state.tr.insert(after, paragraph));
+      view.dispatch(this.background(state.tr.insert(after, paragraph), state));
       // The anchor is mapped to just past the new paragraph; pull it back to the paragraph's end
       // so the next transcript continues right after the node.
       this.pos = textPosition(this.editor, this.pos);
       return;
     }
-    // Last resort: the plain-text placeholder fits wherever text does.
+    // Last resort: the plain-text placeholder fits wherever text does. schema.text() keeps it
+    // plain, unlike tr.insertText(), which takes the marks at pos.
     this.pos = pos;
-    view.dispatch(state.tr.insertText(TRANSCRIPT_GAP_TEXT, pos));
+    view.dispatch(
+      this.background(
+        state.tr.insert(pos, state.schema.text(TRANSCRIPT_GAP_TEXT)),
+        state,
+      ),
+    );
+  }
+
+  /**
+   * A transcript arrives in the background, so it must not disturb the user's editing: keep the
+   * marks they turned on at the cursor (any doc change clears stored marks) and keep it out of the
+   * undo history, so Ctrl+Z never removes transcript text or groups it with the user's typing.
+   */
+  private background(tr: Transaction, state: EditorState): Transaction {
+    if (state.storedMarks) tr.setStoredMarks(state.storedMarks);
+    return tr.setMeta("addToHistory", false);
   }
 }
 
@@ -96,6 +125,7 @@ function textPosition(editor: Editor, pos: number): number {
   const { doc } = editor.state;
   const $pos = doc.resolve(Math.max(0, Math.min(pos, doc.content.size)));
   if ($pos.parent.inlineContent) return $pos.pos;
-  const found = Selection.findFrom($pos, -1, true) ?? Selection.findFrom($pos, 1, true);
+  const found =
+    Selection.findFrom($pos, -1, true) ?? Selection.findFrom($pos, 1, true);
   return found ? found.from : $pos.pos;
 }
