@@ -2,6 +2,7 @@ import type { Note } from '@oc/shared';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createBackup, serializeBackup } from './backup/backupFormat';
 import { NotesApp } from './NotesApp';
 import { openAppDb } from './platform/db';
 import { PlatformProvider } from './platform/PlatformContext';
@@ -54,6 +55,88 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   Reflect.deleteProperty(navigator, 'mediaDevices');
+});
+
+const backupFile = (notes: Note[]) =>
+  new File([serializeBackup(createBackup(notes, 5_000))], 'backup.json', { type: 'application/json' });
+const chooseFile = (file: File) =>
+  fireEvent.change(screen.getByLabelText('選擇備份檔'), { target: { files: [file] } });
+const textNote = (id: string, title: string, text: string, updatedAt: number): Note => ({
+  id,
+  title,
+  content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] },
+  createdAt: updatedAt,
+  updatedAt,
+});
+
+describe('NotesApp recording and import', () => {
+  it('cannot start recording while an import is writing, and records into the reloaded note after it', async () => {
+    const mic = installMicrophone();
+    installBackend((seq) => json({ seq, text: '你好世界' }));
+    const { user, storage } = await renderApp({ notes: [textNote('a', '週會', '舊內容', 1_000)] });
+    let release!: () => void;
+    storage.put.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    chooseFile(backupFile([textNote('a', '週會', '新內容', 2_000)]));
+    await waitFor(() => expect(storage.put).toHaveBeenCalledTimes(1));
+
+    expect(button('錄製')).toBeDisabled();
+    fireEvent.click(button('錄製'));
+    expect(mic.getUserMedia).not.toHaveBeenCalled();
+
+    release();
+    expect(await screen.findByText('已匯入 1 篇，略過 0 篇（本機版本較新）')).toBeInTheDocument();
+    await waitFor(() => expect(body()).toHaveTextContent('新內容'));
+    expect(button('錄製')).toBeEnabled();
+
+    await user.click(button('錄製'));
+    await user.click(await screen.findByRole('button', { name: '停止' }));
+    expect(await screen.findByRole('button', { name: '錄製' })).toBeEnabled();
+    expect(body()).toHaveTextContent('你好世界');
+  });
+
+  it('locks backup and import while the microphone prompt is open', async () => {
+    const mic = installMicrophone();
+    installBackend((seq) => json({ seq, text: '你好世界' }));
+    const { user } = await renderApp();
+    let allow!: () => void;
+    mic.getUserMedia.mockImplementationOnce(
+      () =>
+        new Promise<MediaStream>((resolve) => {
+          allow = () => resolve(mic.stream);
+        }),
+    );
+
+    await user.click(button('錄製'));
+
+    await waitFor(() => expect(mic.getUserMedia).toHaveBeenCalledTimes(1));
+    expect(button('備份')).toBeDisabled();
+    expect(button('匯入')).toBeDisabled();
+    expect(button('新增筆記')).toBeDisabled();
+
+    allow();
+    expect(await screen.findByRole('button', { name: '停止' })).toBeEnabled();
+    await user.click(button('停止'));
+    expect(await screen.findByRole('button', { name: '錄製' })).toBeEnabled();
+    expect(button('匯入')).toBeEnabled();
+  });
+
+  it('unlocks backup and import when the microphone is denied', async () => {
+    const mic = installMicrophone();
+    const { user } = await renderApp();
+    mic.getUserMedia.mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'));
+
+    await user.click(button('錄製'));
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(button('匯入')).toBeEnabled();
+    expect(button('備份')).toBeEnabled();
+  });
 });
 
 describe('NotesApp recording', () => {

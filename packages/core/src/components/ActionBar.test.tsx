@@ -27,6 +27,17 @@ describe('ActionBar', () => {
     else expect(button).toBeDisabled();
   });
 
+  it.each([
+    ['idle', '錄製', false],
+    ['needsSetup', '請先設定', false],
+    ['recording', '停止', true],
+  ] as const)('with recordDisabled, the %s button (%s) enabled: %s', (state, label, enabled) => {
+    render(<ActionBar recordState={state} recordDisabled onRecord={vi.fn()} onOpenSettings={vi.fn()} />);
+    const button = screen.getByRole('button', { name: label });
+    if (enabled) expect(button).toBeEnabled();
+    else expect(button).toBeDisabled();
+  });
+
   it('marks the record button while recording', () => {
     setup('recording');
     expect(screen.getByRole('button', { name: '停止' })).toHaveClass('is-recording');

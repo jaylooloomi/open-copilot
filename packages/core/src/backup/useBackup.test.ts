@@ -9,6 +9,7 @@ import {
   IMPORT_FAILED_MESSAGE,
   NOT_A_BACKUP_MESSAGE,
   READ_FAILED_MESSAGE,
+  REMINDER_CHECK_MS,
   useBackup,
   type UseBackupOptions,
 } from './useBackup';
@@ -70,6 +71,62 @@ describe('useBackup reminder', () => {
     expect(setup().result.current.backupDue).toBe(false);
     localStorage.setItem(LAST_BACKUP_KEY, String(NOW - BACKUP_REMINDER_MS - 1));
     expect(setup().result.current.backupDue).toBe(true);
+  });
+});
+
+describe('useBackup reminder refresh', () => {
+  it('follows a backup made in another tab', () => {
+    const { result } = setup();
+    expect(result.current.backupDue).toBe(true);
+
+    localStorage.setItem(LAST_BACKUP_KEY, String(NOW));
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: LAST_BACKUP_KEY, newValue: String(NOW) }));
+    });
+
+    expect(result.current.backupDue).toBe(false);
+  });
+
+  it('ignores other keys changing in another tab', () => {
+    const { result } = setup();
+    localStorage.setItem(LAST_BACKUP_KEY, String(NOW));
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'oc.settings', newValue: '{}' }));
+    });
+    expect(result.current.backupDue).toBe(true);
+  });
+
+  it('starts reminding when the page is shown again after the 7 days ran out', () => {
+    localStorage.setItem(LAST_BACKUP_KEY, String(NOW - BACKUP_REMINDER_MS));
+    let clock = NOW;
+    const { result } = setup({ now: () => clock });
+    expect(result.current.backupDue).toBe(false);
+
+    clock = NOW + 1;
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(result.current.backupDue).toBe(true);
+  });
+
+  it('starts reminding on a page left open past the 7 days', () => {
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem(LAST_BACKUP_KEY, String(NOW - BACKUP_REMINDER_MS));
+      let clock = NOW;
+      const { result } = setup({ now: () => clock });
+      expect(result.current.backupDue).toBe(false);
+
+      clock = NOW + 1;
+      act(() => {
+        vi.advanceTimersByTime(REMINDER_CHECK_MS);
+      });
+
+      expect(result.current.backupDue).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -171,6 +228,16 @@ describe('useBackup import', () => {
     expect(importNotes).toHaveBeenCalledWith(incoming);
     expect(result.current.message).toBe('已匯入 2 篇，略過 1 篇（本機版本較新）');
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('rejects a backup whose notes are dated far in the future', async () => {
+    const { result, importNotes, onError } = setup();
+    const future = note('x', 'X', NOW + 30 * 24 * 60 * 60 * 1000);
+
+    await act(() => result.current.importFile(jsonFile(serializeBackup(createBackup([future], NOW)))));
+
+    expect(onError).toHaveBeenCalledWith(NOT_A_BACKUP_MESSAGE, expect.any(InvalidBackupError));
+    expect(importNotes).not.toHaveBeenCalled();
   });
 
   it('rejects a file that is not a backup without importing anything', async () => {

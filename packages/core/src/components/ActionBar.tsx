@@ -15,6 +15,8 @@ export interface ActionBarProps {
   /** 錄製 → start, 停止 → stop, 請先設定 → open the settings (decided by NotesApp). */
   onRecord(): void;
   onOpenSettings(): void;
+  /** Disables 錄製 / 請先設定, e.g. while a backup or import runs. Ignored while recording. */
+  recordDisabled?: boolean;
 }
 
 function RecordIcon({ state }: { state: RecorderState }) {
@@ -23,13 +25,15 @@ function RecordIcon({ state }: { state: RecorderState }) {
   return <Mic size={18} aria-hidden="true" />;
 }
 
-export function ActionBar({ recordState, onRecord, onOpenSettings }: ActionBarProps) {
+export function ActionBar({ recordState, onRecord, onOpenSettings, recordDisabled = false }: ActionBarProps) {
+  // Stopping a running recording is always allowed.
+  const disabled = recordState === 'stopping' || (recordDisabled && recordState !== 'recording');
   return (
     <div className="oc-actionbar">
       <button
         type="button"
         className={recordState === 'recording' ? 'oc-record-btn is-recording' : 'oc-record-btn'}
-        disabled={recordState === 'stopping'}
+        disabled={disabled}
         aria-busy={recordState === 'stopping' ? true : undefined}
         onClick={onRecord}
       >

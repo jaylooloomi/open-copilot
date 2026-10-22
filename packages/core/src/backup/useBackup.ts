@@ -1,15 +1,18 @@
 import type { Note } from '@oc/shared';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ImportNotesResult } from '../notes/useNotes';
 import { isAbortError } from '../platform/isAbortError';
 import type { FileSaver } from '../platform/types';
 import { BACKUP_MIME, backupFilename, createBackup, parseBackup, serializeBackup } from './backupFormat';
-import { isBackupDue, loadLastBackupAt, saveLastBackupAt } from './backupReminder';
+import { isBackupDue, LAST_BACKUP_KEY, loadLastBackupAt, saveLastBackupAt } from './backupReminder';
 
 export const NOT_A_BACKUP_MESSAGE = '這不是 open-copilot 的備份檔';
 export const BACKUP_FAILED_MESSAGE = '備份失敗，請再試一次。';
 export const IMPORT_FAILED_MESSAGE = '匯入失敗，請再試一次。';
 export const READ_FAILED_MESSAGE = '無法讀取檔案，請再試一次。';
+
+/** How often a page left open checks whether the reminder is due. */
+export const REMINDER_CHECK_MS = 60 * 60 * 1000;
 
 export interface UseBackupOptions {
   /** The notes to back up, as shown (unsaved edits included). */
@@ -58,6 +61,30 @@ export function useBackup({
   const [message, setMessage] = useState<string | undefined>(undefined);
   // State updates land after the next render; the ref stops a second click right away.
   const busyRef = useRef(false);
+  // Bumped to re-check the reminder on a page left open (the 7 days can run out without a render).
+  const [, setReminderCheck] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => {
+      setLastBackupAt(loadLastBackupAt());
+      setReminderCheck((count) => count + 1);
+    };
+    // A backup made in another tab or window; null means localStorage was cleared.
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === LAST_BACKUP_KEY || event.key === null) refresh();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener('storage', onStorage);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    const timer = setInterval(refresh, REMINDER_CHECK_MS);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      clearInterval(timer);
+    };
+  }, []);
 
   const run = async (task: () => Promise<void>) => {
     if (busyRef.current) return;
@@ -101,7 +128,7 @@ export function useBackup({
       }
       let incoming: Note[];
       try {
-        incoming = parseBackup(text).notes;
+        incoming = parseBackup(text, now()).notes;
       } catch (error) {
         onError(NOT_A_BACKUP_MESSAGE, error);
         return;

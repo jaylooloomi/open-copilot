@@ -37,8 +37,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isTimestamp(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
+/** How far ahead of this device's clock a backup's times may be (another device's clock). */
+export const CLOCK_TOLERANCE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Epoch ms no later than `now` plus the tolerance. A note dated far in the future would win every
+ * later merge against local edits, so such a file is rejected.
+ */
+function isTimestamp(value: unknown, now: number): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= now + CLOCK_TOLERANCE_MS
+  );
 }
 
 /**
@@ -57,14 +69,14 @@ function isEditorDoc(value: unknown): value is JSONContent {
   }
 }
 
-function isNote(value: unknown): value is Note {
+function isNote(value: unknown, now: number): value is Note {
   return (
     isRecord(value) &&
     typeof value.id === 'string' &&
     value.id.trim() !== '' &&
     typeof value.title === 'string' &&
-    isTimestamp(value.createdAt) &&
-    isTimestamp(value.updatedAt) &&
+    isTimestamp(value.createdAt, now) &&
+    isTimestamp(value.updatedAt, now) &&
     isEditorDoc(value.content)
   );
 }
@@ -91,8 +103,11 @@ export function backupFilename(date: Date): string {
   return `open-copilot-backup-${day}-${time}.json`;
 }
 
-/** Parses and validates a backup file's text; throws InvalidBackupError for anything else. */
-export function parseBackup(text: string): BackupFile {
+/**
+ * Parses and validates a backup file's text; throws InvalidBackupError for anything else.
+ * `now` (epoch ms) bounds the timestamps; see CLOCK_TOLERANCE_MS.
+ */
+export function parseBackup(text: string, now: number = Date.now()): BackupFile {
   let data: unknown;
   try {
     // Windows editors often save JSON with a byte order mark, which JSON.parse rejects.
@@ -103,12 +118,12 @@ export function parseBackup(text: string): BackupFile {
   if (!isRecord(data)) throw new InvalidBackupError('not an object');
   if (data.app !== BACKUP_APP) throw new InvalidBackupError('not an open-copilot backup');
   if (data.version !== BACKUP_VERSION) throw new InvalidBackupError('unsupported version');
-  if (!isTimestamp(data.exportedAt)) throw new InvalidBackupError('exportedAt is not a number');
+  if (!isTimestamp(data.exportedAt, now)) throw new InvalidBackupError('exportedAt is not a valid time');
   if (!Array.isArray(data.notes)) throw new InvalidBackupError('notes is not an array');
 
   const ids = new Set<string>();
   const notes = data.notes.map((value: unknown, index: number) => {
-    if (!isNote(value)) throw new InvalidBackupError(`note ${index} is malformed`);
+    if (!isNote(value, now)) throw new InvalidBackupError(`note ${index} is malformed`);
     if (ids.has(value.id)) throw new InvalidBackupError(`note ${index} repeats an earlier id`);
     ids.add(value.id);
     return pickNoteFields(value);

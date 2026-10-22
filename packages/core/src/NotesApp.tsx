@@ -75,6 +75,11 @@ export function NotesApp() {
   const [recorderDb] = useState(getRecorderDb);
   // Bumped when an import replaces the open note, so the editor reloads it.
   const [editorRevision, setEditorRevision] = useState(0);
+  // A recording is waiting for the microphone; recorder.state is still 'idle' meanwhile.
+  const [recordStarting, setRecordStarting] = useState(false);
+  // A note is being created: typing would still reach the previous note, so the title and body
+  // are read-only until the new note is shown.
+  const [creating, setCreating] = useState(false);
 
   // Called unconditionally (rules of hooks); recreated whenever the active note changes.
   const editor = useNoteEditor({
@@ -129,6 +134,11 @@ export function NotesApp() {
   }, [loading, loadError, notes, pruneAudio]);
 
   useEffect(() => {
+    // emitUpdate false: toggling editability is not an edit and must not save the note.
+    if (!editor.isDestroyed) editor.setEditable(!creating, false);
+  }, [editor, creating]);
+
+  useEffect(() => {
     if (focusTitleOf === undefined || focusTitleOf !== activeNote?.id) return;
     titleRef.current?.focus();
     setFocusTitleOf(undefined);
@@ -155,7 +165,9 @@ export function NotesApp() {
 
   const closeDrawer = () => setDrawerOpen(false);
   const recording = recorder.state === 'recording' || recorder.state === 'stopping';
-  const listLocked = recording || backup.busy;
+  // An import that replaces the open note recreates the editor, which a recording (or one still
+  // waiting for the microphone) would keep writing into; so neither may run alongside the other.
+  const listLocked = recording || recordStarting || backup.busy;
 
   // A failed create rejects without adding the note; deleteNote rejects only when the remove
   // failed, after putting the note back. Either way the user has to be told, and the rejection
@@ -194,7 +206,14 @@ export function NotesApp() {
 
   const onRecord = () => {
     if (recorder.state === 'needsSetup') setSettingsOpen(true);
-    else if (recorder.state === 'idle') void recorder.start();
+    else if (recorder.state === 'idle') {
+      if (backup.busy || recordStarting) return;
+      setRecordStarting(true);
+      recorder
+        .start()
+        .catch((error: unknown) => console.error('Failed to start recording', error))
+        .finally(() => setRecordStarting(false));
+    }
     else if (recorder.state === 'recording') void recorder.stop();
   };
 
@@ -245,10 +264,13 @@ export function NotesApp() {
           }}
           onCreate={() => {
             setStorageError(undefined);
-            createNote().then(
-              (created) => setFocusTitleOf(created.id),
-              reportFailure('新增筆記失敗，請再試一次。', 'Failed to create note'),
-            );
+            setCreating(true);
+            createNote()
+              .then(
+                (created) => setFocusTitleOf(created.id),
+                reportFailure('新增筆記失敗，請再試一次。', 'Failed to create note'),
+              )
+              .finally(() => setCreating(false));
             closeDrawer();
           }}
           onDelete={confirmDelete}
@@ -292,6 +314,7 @@ export function NotesApp() {
           <ActionBar
             recordState={recorder.state}
             onRecord={onRecord}
+            recordDisabled={backup.busy || recordStarting}
             onOpenSettings={() => setSettingsOpen(true)}
           />
         </header>
@@ -321,6 +344,7 @@ export function NotesApp() {
           <TitleInput
             inputRef={titleRef}
             value={activeNote.title}
+            readOnly={creating}
             onChange={(title) => updateNote(activeNote.id, { title })}
             onEnter={() => {
               // Set the cursor and move DOM focus synchronously. commands.focus() focuses a frame

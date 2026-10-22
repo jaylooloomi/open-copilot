@@ -118,16 +118,39 @@ describe('parseBackup', () => {
         },
       }),
     ],
-    ['duplicate ids', text({ ...valid(), notes: [note('a', 1), note('a', 2)] })],
+    ['duplicate ids', text({ ...valid(), notes: [note('a', 100), note('a', 200)] })],
   ];
 
   it.each(broken)('rejects %s', (_label, input) => {
     expect(() => parseBackup(input)).toThrow(InvalidBackupError);
   });
 
+  describe('timestamps', () => {
+    const NOW = 1_800_000_000_000;
+    const DAY = 24 * 60 * 60 * 1000;
+
+    it.each([
+      ['a negative createdAt', withNote({ createdAt: -1 })],
+      ['an updatedAt far in the future', withNote({ updatedAt: NOW + 2 * DAY })],
+      ['a createdAt far in the future', withNote({ createdAt: NOW + 2 * DAY })],
+      ['an exportedAt far in the future', text({ ...valid(), exportedAt: 9e15 })],
+    ])('rejects %s', (_label, input) => {
+      expect(() => parseBackup(input, NOW)).toThrow(InvalidBackupError);
+    });
+
+    it('tolerates a clock up to a day ahead', () => {
+      const input = text({ ...valid(), exportedAt: NOW + DAY, notes: [note('a', NOW + DAY)] });
+      expect(parseBackup(input, NOW).notes).toHaveLength(1);
+    });
+
+    it('checks against the current time by default', () => {
+      expect(() => parseBackup(withNote({ updatedAt: 9e15 }))).toThrow(InvalidBackupError);
+    });
+  });
+
   it('names a repeated id by its position, not its value', () => {
     const longId = 'x'.repeat(5000);
-    const input = text({ ...valid(), notes: [note(longId, 1), note(longId, 2)] });
+    const input = text({ ...valid(), notes: [note(longId, 100), note(longId, 200)] });
     expect(() => parseBackup(input)).toThrow('Invalid backup: note 1 repeats an earlier id');
   });
 });
