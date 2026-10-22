@@ -62,4 +62,21 @@ describe('createShutdown', () => {
     vi.advanceTimersByTime(1);
     expect(exit).toHaveBeenCalledExactlyOnceWith(1);
   });
+
+  it('ignores a repeated signal instead of closing the server twice', () => {
+    const server = fakeServer();
+    const exit = vi.fn();
+    const shutdown = createShutdown({ server, exit });
+    shutdown('SIGINT');
+    shutdown('SIGTERM');
+
+    expect(server.close).toHaveBeenCalledTimes(1);
+    expect(exit).not.toHaveBeenCalled();
+    expect(console.log).toHaveBeenLastCalledWith(
+      'SIGTERM received while already shutting down; still waiting for in-flight requests',
+    );
+
+    server.finishClosing();
+    expect(exit).toHaveBeenCalledExactlyOnceWith(0);
+  });
 });

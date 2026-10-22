@@ -20,7 +20,16 @@ export function createShutdown({
   exit = (code) => process.exit(code),
   timeoutMs = SHUTDOWN_TIMEOUT_MS,
 }: ShutdownDeps) {
+  let closing = false;
   return (signal: string) => {
+    // 第二次 server.close() 會回 ERR_SERVER_NOT_RUNNING 而立刻 exit 1，切斷第一次還在等的轉寫；期限計時器仍會兜底。
+    if (closing) {
+      console.log(
+        `${signal} received while already shutting down; still waiting for in-flight requests`,
+      );
+      return;
+    }
+    closing = true;
     console.log(`${signal} received, closing server`);
     const deadline = setTimeout(() => {
       console.error(`server did not close within ${timeoutMs} ms, forcing exit`);

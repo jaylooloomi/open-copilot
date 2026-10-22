@@ -69,6 +69,14 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   if (accessKeys.length === 0) {
     throw new Error('ACCESS_KEYS is required (comma-separated list of access keys)');
   }
+  // auth 只接受不含空白的 Bearer token，含空白的金鑰啟動後永遠驗證不過，所以啟動時就擋下（訊息不含金鑰本身）。
+  accessKeys.forEach((key, index) => {
+    if (/\s/.test(key)) {
+      throw new Error(
+        `ACCESS_KEYS entry ${index + 1} contains whitespace; access keys must not contain spaces`,
+      );
+    }
+  });
 
   const origins = splitList(env['ALLOWED_ORIGINS']);
   origins.forEach(assertOrigin);

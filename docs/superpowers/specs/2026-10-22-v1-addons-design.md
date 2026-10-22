@@ -144,3 +144,9 @@
 2. `apps/api` 設定新增 `TRANSCRIBE_PROVIDER`、`GROQ_API_KEY`、`GROQ_TRANSCRIBE_MODEL`、`GROQ_LLM_MODEL`；`ApiErrorCode` 新增 `ai_unavailable`。
 3. 上游 429 改為回 429，不再是 502。
 4. 新增 `SegmentRecorder` 的 `onLevel` 回呼、`backup/*` 模組，以及 AI 端點的型別（`packages/shared/src/ai.ts`）。
+5. M3a 實作時追加、已核准的行為（M6 改寫 `apps/api` 設定與轉寫服務時必須保留）：
+   - `Transcriber.transcribe` 的輸入多一個選填欄位 `signal?: AbortSignal`：`app.ts` 在用戶端斷線時中止上游請求，每個轉寫服務實作（含 M6 的 Groq）都要把它轉給上游 SDK。
+   - `loadConfig` 去除 `ACCESS_KEYS`、`ALLOWED_ORIGINS` 的重複項；`ALLOWED_ORIGINS` 每項必須是完整 origin（`scheme://host[:port]`，無路徑、無尾斜線），否則 throw；`ACCESS_KEYS` 任一項含空白就 throw。另匯出 `MIN_ACCESS_KEY_LENGTH`（16）與 `accessKeyWarning()`，短金鑰只警告不拒絕。
+   - `apps/api/.env.example` 的 `ACCESS_KEYS` 刻意留空，直接複製後啟動會因缺金鑰而失敗，逼使用者自填長隨機金鑰（計畫 Task 10 原寫 `change-me-1,change-me-2`）。
+   - `rateLimit` 找不到 `accessKey` 時 throw（經 `app.onError` 成 500），不退回 `anonymous` 桶；依契約的中介層順序不會發生。
+   - 關機處理只處理第一個 SIGINT／SIGTERM，之後的訊號只記錄，不再呼叫 `server.close()`。

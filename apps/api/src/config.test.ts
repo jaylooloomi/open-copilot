@@ -22,6 +22,13 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, ACCESS_KEYS: ' , ,' })).toThrow('ACCESS_KEYS');
   });
 
+  it('rejects access keys with whitespace inside, which a Bearer header can never carry', () => {
+    expect(() => loadConfig({ ...base, ACCESS_KEYS: 'key-a,my key' })).toThrow(
+      'ACCESS_KEYS entry 2 contains whitespace',
+    );
+    expect(() => loadConfig({ ...base, ACCESS_KEYS: 'tab\tkey' })).toThrow('whitespace');
+  });
+
   it('splits and trims comma-separated lists', () => {
     const config = loadConfig({
       ...base,
