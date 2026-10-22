@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+**/*.test.ts
+.git
+playwright-report
+test-results
+apps/web/android
+apps/desktop/release
+docs
