@@ -62,6 +62,23 @@ describe('Editor + useNoteEditor', () => {
     });
   });
 
+  it('does not report edits while there is no note', () => {
+    const onChange = vi.fn();
+    let editor: TiptapEditor | undefined;
+    function NoNote() {
+      editor = useNoteEditor({ noteId: undefined, content: doc('Hello'), onChange });
+      return <Editor editor={editor} />;
+    }
+    render(<NoNote />);
+
+    act(() => {
+      editor?.chain().setTextSelection(6).insertContent('!').run();
+    });
+
+    expect(editor?.getText()).toBe('Hello!');
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('loads the new note and starts a fresh undo history when noteId changes', () => {
     const editorRef = { current: null as TiptapEditor | null };
     const { rerender } = render(
@@ -81,7 +98,9 @@ describe('Editor + useNoteEditor', () => {
     const editors: TiptapEditor[] = [];
     let lateWriteText: string | undefined;
     // Mutates the editor from a layout effect: after the commit that carries the new noteId
-    // but before useEditor's passive effect replaces the old editor instance.
+    // but before useEditor's passive effect replaces the old editor instance. This relies on
+    // that timing in @tiptap/react 3.32; the lateWriteText check below fails loudly if a later
+    // version replaces the editor earlier, instead of letting the test pass by accident.
     function LateWriter(props: {
       noteId: string;
       content: JSONContent;

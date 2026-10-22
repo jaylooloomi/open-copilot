@@ -14,6 +14,7 @@ export interface UseNoteEditorOptions {
    * "active note" state (such as `useNotes.updateActive`) must keep that state in step with the
    * rendered `noteId`. If the active note moves before React re-renders (an async rollback or
    * create), an edit typed into the still-mounted editor in that gap goes to the new active note.
+   * Never called while `noteId` is undefined.
    */
   onChange(content: JSONContent): void;
 }
@@ -53,8 +54,12 @@ export function useNoteEditor({ noteId, content, onChange }: UseNoteEditorOption
         // Not an edit: StarterKit's TrailingNode appends an empty paragraph to a note that ends
         // in a list, heading or quote on any transaction, even a click that only moves the
         // selection. The paragraph is saved with the next real edit.
+        // Tiptap emits 'update' when any transaction of the batch changed the doc but passes only
+        // the root one, so this check assumes no extension makes a real edit through
+        // appendTransaction alone (none in createExtensions does); such an edit would be dropped.
         if (!transaction.docChanged) return;
-        if (owners.get(editor) === noteId) onChange(editor.getJSON());
+        // No note, no owner to report to.
+        if (noteId !== undefined && owners.get(editor) === noteId) onChange(editor.getJSON());
       },
     },
     [noteId],
