@@ -65,6 +65,34 @@ describe('selectPlatform', () => {
     expect(await platform.storage.list()).toEqual([]);
   });
 
+  it('downloads exports through the browser outside the Android app', async () => {
+    // jsdom has no object URLs; fake them and catch the download link click.
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:fake-url');
+    const revokeObjectURL = vi.fn((_url: string) => {});
+    Object.assign(URL, { createObjectURL, revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    try {
+      const platform = await selectPlatform();
+      // Only the delayed revoke; fake-indexeddb needs the real scheduler above.
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const blob = new Blob(['# 筆記'], { type: 'text/markdown' });
+      await platform.fileSaver.save('筆記.md', blob);
+      vi.runAllTimers();
+
+      expect(createObjectURL).toHaveBeenCalledWith(blob);
+      expect(click).toHaveBeenCalledTimes(1);
+      expect((click.mock.contexts[0] as HTMLAnchorElement).download).toBe('筆記.md');
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:fake-url');
+      expect(writeFile).not.toHaveBeenCalled();
+      expect(share).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      click.mockRestore();
+      Reflect.deleteProperty(URL, 'createObjectURL');
+      Reflect.deleteProperty(URL, 'revokeObjectURL');
+    }
+  });
+
   it('shares exports and hides PDF inside the Android app', async () => {
     isNativePlatform.mockReturnValueOnce(true);
     const platform = await selectPlatform();
