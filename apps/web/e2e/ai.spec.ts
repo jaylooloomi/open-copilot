@@ -45,6 +45,8 @@ test('AI 摘要：第一次先顯示隱私說明，摘要插入到筆記開頭',
 
   const notice = page.getByRole('dialog', { name: 'AI 功能說明' });
   await expect(notice).toContainText('筆記內容會送到 Groq 處理');
+  await expect(notice.getByRole('button', { name: '我知道了' })).toBeVisible();
+  // Still nothing sent while the notice is open.
   expect(requests).toHaveLength(0);
   await notice.getByRole('button', { name: '我知道了' }).click();
   await expect(notice).toBeHidden();
@@ -81,9 +83,10 @@ test('待辦事項：勾選清單插入筆記結尾，匯出 Markdown 為 - [ ] 
 
   await writeNote(page, '週會', '會議紀錄');
   await page.getByRole('button', { name: '待辦事項' }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
 
   const panel = page.getByRole('complementary', { name: '待辦事項' });
+  await expect(panel.getByRole('checkbox', { name: '預約會議室' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await panel.getByRole('checkbox', { name: '預約會議室' }).check();
   await panel.getByRole('button', { name: '插入到筆記結尾' }).click();
   await expect(panel).toBeHidden();
