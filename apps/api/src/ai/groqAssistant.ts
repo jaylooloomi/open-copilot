@@ -3,7 +3,7 @@ import OpenAI from 'openai';
 import { toUpstreamError } from '../transcriber/errors';
 import { GROQ_BASE_URL } from '../transcriber/groqTranscriber';
 import { OPENAI_MAX_RETRIES, type UpstreamClientOptions } from '../transcriber/openaiTranscriber';
-import { normalizeSummary, parseTodoItems } from './output';
+import { AiOutputError, normalizeSummary, parseTodoItems } from './output';
 import { buildUserMessage, SUMMARY_SYSTEM_PROMPT, TODOS_SYSTEM_PROMPT } from './prompts';
 import type { AiInput, NoteAssistant } from './types';
 
@@ -50,14 +50,20 @@ export function createGroqAssistant(
       ],
     };
     if (jsonMode) body.response_format = { type: 'json_object' };
+    let completion: OpenAI.ChatCompletion;
     try {
       // 用戶端斷線時取消上游呼叫，不讓已被放棄的請求繼續計費。
-      const completion = await groq.chat.completions.create(body, { signal });
-      return completion.choices[0]?.message.content;
+      completion = await groq.chat.completions.create(body, { signal });
     } catch (err) {
       // Groq 限流時回 429：轉成 UpstreamRateLimitError，app.ts 回 429 並轉傳 Retry-After。
       throw toUpstreamError(err);
     }
+    const choice = completion.choices[0];
+    // 模型在長度上限停下時輸出不完整：回 502，讓用戶端知道並可重試，而不是把截斷的摘要當成正常結果。
+    if (choice?.finish_reason === 'length') {
+      throw new AiOutputError('LLM output was cut off at the length limit');
+    }
+    return choice?.message.content;
   }
 
   return {

@@ -115,4 +115,11 @@ describe('parseTodoItems', () => {
     expect((err as Error).name).toBe('AiOutputError');
     expect((err as Error).message).not.toContain('機密內容');
   });
+
+  it('collapses internal whitespace and drops control characters so one item stays one line', () => {
+    const content = JSON.stringify({
+      items: ['寄出\n- 報價單', 'a\u0000b', '確認\t\t場地', '\u0007- 訂便當', '寄出 - 報價單'],
+    });
+    expect(parseTodoItems(content)).toEqual(['寄出 - 報價單', 'ab', '確認 場地', '訂便當']);
+  });
 });

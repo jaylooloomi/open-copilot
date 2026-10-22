@@ -171,6 +171,28 @@ describe("createGroqAssistant", () => {
     }
   });
 
+  it("throws AiOutputError when the model stopped at the length limit", async () => {
+    const cut = {
+      choices: [
+        {
+          index: 0,
+          finish_reason: "length",
+          message: { role: "assistant", content: "• 重點一\n• 重點" },
+        },
+      ],
+    };
+    const { client } = createFakeClient(async () => cut);
+    const assistant = createGroqAssistant("gsk-test", undefined, client);
+
+    await expect(assistant.summarize(input)).rejects.toThrow(AiOutputError);
+    await expect(assistant.summarize(input)).rejects.toThrow(
+      "LLM output was cut off at the length limit",
+    );
+    await expect(assistant.extractTodos(input)).rejects.toThrow(
+      "LLM output was cut off at the length limit",
+    );
+  });
+
   it("throws AiOutputError when the todo output is not valid JSON", async () => {
     const { client } = createFakeClient(async () =>
       completion("待辦：寄出報價單"),
