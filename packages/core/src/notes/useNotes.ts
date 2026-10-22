@@ -71,8 +71,11 @@ export interface UseNotesResult {
   /**
    * Merges notes from a backup (see mergeNotes: unknown ids are added, a strictly newer
    * `updatedAt` replaces the local note) and stores the added or replaced ones, one by one.
-   * The active note stays selected. If a write fails, the notes stored before it are kept in the
-   * list and the promise rejects with an ImportNotesError that carries this partial result.
+   * The active note stays selected. A note edited or deleted while the import runs keeps that
+   * change: its imported version is not written (or not shown) and counts as skipped.
+   * If a write fails, the notes stored before it are kept in the list and the promise rejects
+   * with an ImportNotesError that carries this partial result. Rejects without writing while
+   * the notes are loading or failed to load.
    */
   importNotes(incoming: readonly Note[]): Promise<ImportNotesResult>;
 }
@@ -94,6 +97,8 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
   // Unsaved versions by note id: each edit replaces its note's entry, so edits to different
   // notes inside one debounce window are all written.
   const pendingRef = useRef(new Map<string, Note>());
+  // True once the notes are loaded; false while loading or after a failed load.
+  const loadedRef = useRef(false);
 
   const commit = useCallback((next: Note[], nextActiveId: string | undefined) => {
     notesRef.current = next;
@@ -148,6 +153,7 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      loadedRef.current = false;
       setLoading(true);
       setLoadError(false);
       let list = await storage.list();
@@ -159,6 +165,7 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
         list = [first];
       }
       commit(list, list[0].id);
+      loadedRef.current = true;
       setLoading(false);
     };
     load().catch((error: unknown) => {
@@ -279,13 +286,24 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
 
   const importNotes = useCallback(
     async (incoming: readonly Note[]): Promise<ImportNotesResult> => {
+      // Before the load commits, the list is empty and would be replaced by the loaded one.
+      if (!loadedRef.current) throw new Error('Notes are not loaded yet');
       // Pending edits go to storage first, so no older autosave lands after the imported notes.
       flushSaves();
+      const before = new Map(notesRef.current.map((n) => [n.id, n]));
       const { toWrite, skipped } = mergeNotes(notesRef.current, incoming);
+      // A local note edited (a new object) or deleted since the import began keeps that change.
+      const changedSinceStart = (id: string) =>
+        before.has(id) && notesRef.current.find((n) => n.id === id) !== before.get(id);
       const stored: Note[] = [];
+      let kept = 0;
       let failed = false;
       let failure: unknown;
       for (const note of toWrite) {
+        if (changedSinceStart(note.id)) {
+          kept += 1;
+          continue;
+        }
         try {
           await storage.put(note);
         } catch (error) {
@@ -296,15 +314,18 @@ export function useNotes(storage: NoteStorage, options: UseNotesOptions = {}): U
         stored.push(note);
       }
 
-      // Merge into the latest list: an edit made during the writes is newer and wins, and its
-      // pending autosave writes it back over the imported version.
+      // A note edited or deleted during its own write keeps that change too: a later edit's
+      // autosave writes it after the imported version, and a delete removes it.
+      const shown = stored.filter((note) => !changedSinceStart(note.id));
+      kept += stored.length - shown.length;
       const activeId = activeIdRef.current;
-      const merged = mergeNotes(notesRef.current, stored);
-      if (merged.toWrite.length > 0) commit(merged.notes, activeId);
+      const byId = new Map(notesRef.current.map((n) => [n.id, n]));
+      for (const note of shown) byId.set(note.id, note);
+      if (shown.length > 0) commit(sortByUpdatedDesc([...byId.values()]), activeId);
       const result: ImportNotesResult = {
-        imported: stored.length,
-        skipped,
-        replacedActive: merged.toWrite.some((note) => note.id === activeId),
+        imported: shown.length,
+        skipped: skipped + kept,
+        replacedActive: shown.some((note) => note.id === activeId),
       };
       if (failed) throw new ImportNotesError(failure, result);
       return result;

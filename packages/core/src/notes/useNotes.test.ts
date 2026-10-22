@@ -594,3 +594,135 @@ describe('useNotes importNotes', () => {
     expect(result.current.activeNote).toMatchObject({ id: 'b', title: 'B2' });
   });
 });
+
+describe('useNotes importNotes during other changes', () => {
+  /** Makes the next put of `id` store at once but resolve only when `gate` resolves. */
+  function holdPut(
+    storage: Awaited<ReturnType<typeof setup>>['storage'],
+    notes: Map<string, Note>,
+    id: string,
+    gate: Promise<void>,
+  ) {
+    const original = storage.put.getMockImplementation()!;
+    storage.put.mockImplementation(async (n: Note) => {
+      if (n.id !== id) return original(n);
+      notes.set(n.id, structuredClone(n));
+      await gate;
+    });
+  }
+
+  it('does not bring back a note deleted before its imported version is written', async () => {
+    const { result, storage, notes } = await setup([note('a', 100), note('b', 200)]);
+    const gate = deferred();
+    holdPut(storage, notes, 'x', gate.promise);
+
+    let summary: Awaited<ReturnType<typeof result.current.importNotes>> | undefined;
+    let importing!: Promise<void>;
+    act(() => {
+      importing = result.current.importNotes([note('x', 50), note('a', 300, 'A2')]).then((s) => {
+        summary = s;
+      });
+    });
+    await act(async () => {
+      await result.current.deleteNote('a');
+    });
+    await act(async () => {
+      gate.resolve();
+      await importing;
+    });
+
+    expect(result.current.notes.map((n) => n.id)).toEqual(['b', 'x']);
+    expect(notes.has('a')).toBe(false);
+    expect(storage.put.mock.calls.map(([n]) => n.id)).toEqual(['x']);
+    expect(summary).toEqual({ imported: 1, skipped: 1, replacedActive: false });
+  });
+
+  it('does not show a note deleted while its imported version is being written', async () => {
+    const { result, storage, notes } = await setup([note('a', 100), note('b', 200)]);
+    const gate = deferred();
+    holdPut(storage, notes, 'a', gate.promise);
+
+    let importing!: Promise<unknown>;
+    act(() => {
+      importing = result.current.importNotes([note('a', 300, 'A2')]);
+    });
+    await act(async () => {
+      await result.current.deleteNote('a');
+    });
+    await act(async () => {
+      gate.resolve();
+      await importing;
+    });
+
+    expect(result.current.notes.map((n) => n.id)).toEqual(['b']);
+    expect(notes.has('a')).toBe(false);
+  });
+
+  it('keeps an edit made during the import even when the imported version has a later clock', async () => {
+    const { result, storage, notes } = await setup([note('a', 100), note('b', 200)]);
+    const gate = deferred();
+    holdPut(storage, notes, 'x', gate.promise);
+
+    let summary: Awaited<ReturnType<typeof result.current.importNotes>> | undefined;
+    let importing!: Promise<void>;
+    act(() => {
+      importing = result.current.importNotes([note('x', 50), note('b', 99_999, 'B2')]).then((s) => {
+        summary = s;
+      });
+    });
+    act(() => result.current.updateNote('b', { title: 'edited' }));
+    await act(async () => {
+      gate.resolve();
+      await importing;
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(result.current.notes.find((n) => n.id === 'b')?.title).toBe('edited');
+    expect(notes.get('b')?.title).toBe('edited');
+    expect(storage.put.mock.calls.map(([n]) => n.title)).not.toContain('B2');
+    expect(summary).toEqual({ imported: 1, skipped: 1, replacedActive: false });
+  });
+
+  it('keeps an edit made while the imported version of that note is being written', async () => {
+    const { result, storage, notes } = await setup([note('a', 100), note('b', 200)]);
+    const gate = deferred();
+    holdPut(storage, notes, 'b', gate.promise);
+
+    let importing!: Promise<unknown>;
+    act(() => {
+      importing = result.current.importNotes([note('b', 99_999, 'B2')]);
+    });
+    act(() => result.current.updateNote('b', { title: 'edited' }));
+    await act(async () => {
+      gate.resolve();
+      await importing;
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(result.current.activeNote).toMatchObject({ id: 'b', title: 'edited' });
+    expect(notes.get('b')?.title).toBe('edited');
+  });
+
+  it('rejects without writing while the notes are still loading', async () => {
+    const { storage } = createMemoryStorage([note('a', 100)]);
+    const gate = deferred();
+    const list = storage.list.getMockImplementation()!;
+    storage.list.mockImplementation(async () => {
+      await gate.promise;
+      return list();
+    });
+    const { result } = renderHook(() => useNotes(storage));
+
+    await expect(result.current.importNotes([note('x', 50)])).rejects.toThrow(/not loaded/);
+    expect(storage.put).not.toHaveBeenCalled();
+
+    await act(async () => {
+      gate.resolve();
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+  });
+});
