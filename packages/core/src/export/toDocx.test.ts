@@ -40,6 +40,7 @@ interface ParagraphInfo {
   style: string | null;
   align: string | null;
   indentLeft: string | null;
+  indentHanging: string | null;
   list: { format: string | null; start: string | null; level: number; numId: string } | null;
   text: string;
   runs: RunInfo[];
@@ -91,6 +92,7 @@ async function readDocx(blob: Blob) {
       style: val(child(pPr, 'pStyle')),
       align: val(child(pPr, 'jc')),
       indentLeft: child(pPr, 'ind')?.getAttribute('w:left') ?? null,
+      indentHanging: child(pPr, 'ind')?.getAttribute('w:hanging') ?? null,
       list,
       text: runs.map((r) => r.text).join(''),
       runs,
@@ -373,6 +375,16 @@ describe('toDocx task lists', () => {
     expect(paragraphs.map((x) => [x.text, x.list, x.indentLeft])).toEqual([
       ['☐ 寄出報價單', null, '720'],
       ['☑ 預約會議室', null, '720'],
+    ]);
+  });
+
+  it('hangs the box line so wrapped text lines up with the item text, but not later paragraphs', async () => {
+    const { paragraphs } = await readDocx(
+      await toDocx(note('', tasks(task(false, p(text('第一段')), p(text('第二段')))))),
+    );
+    expect(paragraphs.map((x) => [x.text, x.indentLeft, x.indentHanging])).toEqual([
+      ['☐ 第一段', '720', '360'],
+      ['第二段', '720', null],
     ]);
   });
 

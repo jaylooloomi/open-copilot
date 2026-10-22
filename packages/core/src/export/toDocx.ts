@@ -175,7 +175,9 @@ function renderList(list: JSONContent, context: Context, depth: number): Paragra
  * numbering). A task item always starts with a paragraph; should it not, the box gets its own line.
  */
 function renderTaskList(list: JSONContent, context: Context, depth: number): Paragraph[] {
-  const indent = { left: levelIndent(Math.min(depth, LEVELS - 1)).left };
+  // The box line hangs like a bullet (box in the hanging space) so wrapped lines line up with the item text.
+  const boxIndent = levelIndent(Math.min(depth, LEVELS - 1));
+  const indent = { left: boxIndent.left };
   const paragraphs: Paragraph[] = [];
   for (const item of list.content ?? []) {
     const box = isTaskChecked(item) ? TASK_CHECKED : TASK_UNCHECKED;
@@ -186,7 +188,7 @@ function renderTaskList(list: JSONContent, context: Context, depth: number): Par
     children.forEach((child, index) => {
       if (isListNode(child)) paragraphs.push(...renderAnyList(child, context, depth + 1));
       // Only a leading paragraph carries the box; any other first child was given its own box line above.
-      else if (index === 0 && child.type === 'paragraph') paragraphs.push(textParagraph(child, { indent }, `${box} `));
+      else if (index === 0 && child.type === 'paragraph') paragraphs.push(textParagraph(child, { indent: boxIndent }, `${box} `));
       else paragraphs.push(...renderBlock(child, context, { indent }));
     });
   }
