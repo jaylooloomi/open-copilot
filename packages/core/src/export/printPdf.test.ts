@@ -164,6 +164,8 @@ describe('printPdf task lists', () => {
     expect(printed[0]!.body).toContain('data-type="taskList"');
     expect(printed[0]!.body).toMatch(/<input type="checkbox" checked="checked"\s*\/?>/);
     expect(printed[0]!.css).toMatch(/ul\[data-type="taskList"\]\s*\{[^}]*list-style:\s*none/);
-    expect(printed[0]!.css).toMatch(/ul\[data-type="taskList"\] li\s*\{[^}]*display:\s*flex/);
+    expect(printed[0]!.css).toMatch(/ul\[data-type="taskList"\] > li\s*\{[^}]*display:\s*flex/);
+    // A plain list nested inside a task item keeps its normal layout.
+    expect(printed[0]!.css).not.toContain('ul[data-type="taskList"] li');
   });
 });

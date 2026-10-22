@@ -88,9 +88,15 @@ describe('app.css', () => {
 
   it('shows task list items with the checkbox beside the text and no bullet', () => {
     expect(css).toMatch(/\.oc-editor \.ProseMirror ul\[data-type='taskList'\]\s*\{[^}]*list-style:\s*none/);
-    expect(css).toMatch(/\.oc-editor \.ProseMirror ul\[data-type='taskList'\] li\s*\{[^}]*display:\s*flex/);
+    expect(css).toMatch(/\.oc-editor \.ProseMirror ul\[data-type='taskList'\] > li\s*\{[^}]*display:\s*flex/);
+    // Only the item's own paragraph is struck through: unchecked nested items stay plain.
     expect(css).toMatch(
-      /\.oc-editor \.ProseMirror ul\[data-type='taskList'\] li\[data-checked='true'\] > div\s*\{[^}]*text-decoration:\s*line-through/,
+      /\.oc-editor \.ProseMirror ul\[data-type='taskList'\] > li\[data-checked='true'\] > div > p\s*\{[^}]*text-decoration:\s*line-through/,
     );
+  });
+
+  it('styles only the direct items of a task list, not a plain list nested inside one', () => {
+    const task = selectorLists(css).filter((s) => s.includes("ul[data-type='taskList'] li"));
+    expect(task).toEqual([]);
   });
 });
