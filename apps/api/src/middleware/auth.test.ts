@@ -17,12 +17,28 @@ describe('bearerAuth', () => {
     expect(res.headers.get('WWW-Authenticate')).toBe('Bearer');
   });
 
-  it('returns 401 for a wrong key, a non-Bearer scheme or an empty token', async () => {
+  it('returns 401 for a wrong key, a non-Bearer scheme, an empty token, extra tokens or a near-miss key', async () => {
     const app = createProtectedApp();
-    for (const value of ['Bearer wrong', 'Basic key-a', 'Bearer ', 'key-a']) {
+    const rejected = [
+      'Bearer wrong',
+      'Basic key-a',
+      'Bearer ',
+      'key-a',
+      'Bearer key-a extra',
+      'Bearer key-a-x',
+      'Bearer key-',
+    ];
+    for (const value of rejected) {
       const res = await app.request('/protected', { headers: { Authorization: value } });
       expect(res.status, value).toBe(401);
+      expect(await res.json(), value).toEqual({ error: 'unauthorized' });
+      expect(res.headers.get('WWW-Authenticate'), value).toBe('Bearer');
     }
+  });
+
+  it('throws at construction when the key list is empty or contains an empty key', () => {
+    expect(() => bearerAuth([])).toThrow();
+    expect(() => bearerAuth(['key-a', ''])).toThrow();
   });
 
   it('passes through and exposes the matched key', async () => {

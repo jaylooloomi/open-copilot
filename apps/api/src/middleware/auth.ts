@@ -9,6 +9,14 @@ function sha256(value: string): Buffer {
 }
 
 export function bearerAuth(accessKeys: string[]) {
+  // 接線錯誤要在啟動時就爆出來，而不是上線後每個請求都默默回 401。
+  if (accessKeys.length === 0) {
+    throw new Error('bearerAuth requires at least one access key');
+  }
+  if (accessKeys.some((key) => key === '')) {
+    throw new Error('bearerAuth access keys must not be empty strings');
+  }
+
   // 先雜湊成固定 32 bytes，timingSafeEqual 才不會因長度不同而丟錯或洩漏長度。
   const known = accessKeys.map((key) => ({ key, digest: sha256(key) }));
 
