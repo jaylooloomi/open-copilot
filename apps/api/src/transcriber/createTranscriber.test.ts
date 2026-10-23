@@ -2,6 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { blockRealNetwork, createFakeUpstream, jsonResponse } from '../test/fakeUpstream';
 import { createTranscriber } from './createTranscriber';
 import { PROMPT_PREFIX } from './prompt';
+import { createWindowsTranscriber } from './windowsTranscriber';
+
+vi.mock('./windowsTranscriber', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./windowsTranscriber')>();
+  return { ...actual, createWindowsTranscriber: vi.fn(actual.createWindowsTranscriber) };
+});
 
 const file = new File([new Uint8Array([1, 2, 3])], 'segment-1.webm', { type: 'audio/webm' });
 
@@ -63,8 +69,11 @@ describe('createTranscriber', () => {
     const transcriber = createTranscriber({
       provider: 'windows',
       model: 'System.Speech zh-TW',
-      ffmpegPath: 'ffmpeg',
+      ffmpegPath: 'C:/tools/ffmpeg.exe',
     });
     expect(typeof transcriber.transcribe).toBe('function');
+    expect(vi.mocked(createWindowsTranscriber)).toHaveBeenCalledWith({
+      ffmpegPath: 'C:/tools/ffmpeg.exe',
+    });
   });
 });

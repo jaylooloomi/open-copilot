@@ -42,8 +42,9 @@ export function createTranscriber(
       // 離線辨識不連網，options.fetch 用不到。
       return createWindowsTranscriber({ ffmpegPath: config.ffmpegPath });
     default: {
-      const unknownProvider: never = config;
-      throw new Error(`Unknown transcribe provider: ${String((unknownProvider as { provider: unknown }).provider)}`);
+      const unreachable: never = config;
+      const { provider } = unreachable as TranscriberConfig;
+      throw new Error(`Unknown transcribe provider: ${String(provider)}`);
     }
   }
 }
