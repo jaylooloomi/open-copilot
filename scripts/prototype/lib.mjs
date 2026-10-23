@@ -9,8 +9,11 @@ import QRCode from 'qrcode';
 
 export const API_PORT = 8787;
 export const WEB_PORT = 5173;
+/** `vite preview` of the built app; the only web server --share puts behind the public tunnel. */
+export const PREVIEW_PORT = 4173;
 export const API_ORIGIN = `http://localhost:${API_PORT}`;
 export const WEB_ORIGIN = `http://localhost:${WEB_PORT}`;
+export const PREVIEW_ORIGIN = `http://localhost:${PREVIEW_PORT}`;
 /** Same-origin backend through the Vite proxy (apps/web/vite.config.ts), so the web app needs no CORS. */
 export const PROXY_API_BASE_URL = `${WEB_ORIGIN}/api`;
 
@@ -243,6 +246,34 @@ export function parseFlags(argv) {
 
 export const SHARE_WARNING =
   '[prototype] 注意：分享網址是公開的，請只在測試時開啟，用完按 Ctrl+C 關閉；後端仍然需要存取金鑰。';
+
+/**
+ * Which web server the launcher runs. Locally: the Vite dev server (5173). With --share: build
+ * apps/web, then `vite preview` (4173), and the tunnel points there. Never tunnel the dev server:
+ * its `/@fs/` endpoint, HMR socket and source transforms would let anyone with the URL read the
+ * repo. vite.config.ts accepts *.trycloudflare.com on `preview` only.
+ * @returns {{ origin: string, build: boolean, viteArgs: string[] }}
+ */
+export function webServerPlan(share) {
+  return share
+    ? { origin: PREVIEW_ORIGIN, build: true, viteArgs: ['preview'] }
+    : { origin: WEB_ORIGIN, build: false, viteArgs: [] };
+}
+
+/**
+ * The shortest access key allowed behind the public share URL. Failed attempts are not rate
+ * limited (the backend limits per valid key), so a short key could be guessed over the tunnel.
+ */
+export const MIN_SHARE_KEY_LENGTH = 16;
+
+/** Why `access` must not guard the public share URL, or null when it may. Never echoes the key. */
+export function shareKeyProblem(access) {
+  if (access.key.length >= MIN_SHARE_KEY_LENGTH) return null;
+  return (
+    `[prototype] ACCESS_KEYS 的第一把金鑰只有 ${access.key.length} 個字元，不能用在公開的分享網址` +
+    `（至少 ${MIN_SHARE_KEY_LENGTH} 個）。請換一把較長的金鑰，或刪掉 ACCESS_KEYS 讓啟動器自動產生。`
+  );
+}
 
 /** `cloudflared tunnel --url <target>`: a Cloudflare quick tunnel, no account needed. */
 export function cloudflaredArgs(target) {

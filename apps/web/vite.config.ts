@@ -8,7 +8,9 @@ export const API_PROXY_TARGET = 'http://localhost:8787';
 export const API_PROXY_PATH = '^/api(?:[/?]|$)';
 /**
  * Hosts a Cloudflare quick tunnel uses (`npm run prototype -- --share`), e.g.
- * quiet-river-1234.trycloudflare.com. Vite rejects any other non-localhost Host with 403.
+ * quiet-river-1234.trycloudflare.com. Only `vite preview` (the built app) accepts them; the dev
+ * server keeps Vite's default (localhost only), because through a public tunnel its `/@fs/`
+ * endpoint would let anyone read the files in the repo.
  */
 export const SHARE_ALLOWED_HOSTS = ['.trycloudflare.com'];
 /** The brand color: --oc-primary in packages/core/src/styles/app.css and theme-color in index.html. */
@@ -65,23 +67,31 @@ export const PWA_OPTIONS: Partial<VitePWAOptions> = {
   },
 };
 
+/**
+ * Same-origin backend for the prototype: <web origin>/api/* → http://localhost:8787/*, so the web
+ * app needs no CORS, and the share URL (M9) reaches the backend the same way.
+ */
+const API_PROXY = {
+  [API_PROXY_PATH]: { target: API_PROXY_TARGET, changeOrigin: true, rewrite: stripApiPrefix },
+};
+
 export default defineConfig({
   plugins: [react(), VitePWA(PWA_OPTIONS)],
   server: {
     port: 5173,
     strictPort: true,
-    // The share URL (npm run prototype -- --share) reaches this server through a quick tunnel.
-    allowedHosts: SHARE_ALLOWED_HOSTS,
     // apps/web/android is the Capacitor project; Gradle writes thousands of files there.
     watch: { ignored: ['**/android/**'] },
-    // Same-origin backend for the prototype: http://localhost:5173/api/* → http://localhost:8787/*,
-    // so the web app needs no CORS, and a shared tunnel URL (M9) reaches the backend the same way.
-    proxy: {
-      [API_PROXY_PATH]: { target: API_PROXY_TARGET, changeOrigin: true, rewrite: stripApiPrefix },
-    },
+    proxy: API_PROXY,
   },
-  // A busy 4173 should fail `vite preview`, not silently move it to 4174+.
-  preview: { port: 4173, strictPort: true },
+  preview: {
+    // A busy 4173 should fail `vite preview`, not silently move it to 4174+.
+    port: 4173,
+    strictPort: true,
+    // The share URL (npm run prototype -- --share) reaches the built app through a quick tunnel.
+    allowedHosts: SHARE_ALLOWED_HOSTS,
+    proxy: API_PROXY,
+  },
   optimizeDeps: {
     // Pre-bundle from the app entry only, not from the build copy in android/app/src/main/assets.
     entries: ['index.html'],

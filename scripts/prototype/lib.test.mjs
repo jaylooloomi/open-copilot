@@ -8,6 +8,8 @@ import { PassThrough } from 'node:stream';
 import {
   GROQ_KEY_STEPS,
   LAUNCHER_FLAGS,
+  MIN_SHARE_KEY_LENGTH,
+  PREVIEW_ORIGIN,
   PROXY_API_BASE_URL,
   SHARE_WARNING,
   WEB_ORIGIN,
@@ -26,10 +28,12 @@ import {
   parseFlags,
   renderQr,
   setupUrl,
+  shareKeyProblem,
   shareSetupUrl,
   supervise,
   waitForOk,
   watchTunnel,
+  webServerPlan,
 } from './lib.mjs';
 
 function tempDir(t) {
@@ -416,4 +420,19 @@ test('the real cloudflared package resolves to an installed binary', async () =>
   const bin = await ensureCloudflaredBin({ exists: () => true });
   const { existsSync } = await import('node:fs');
   assert.ok(existsSync(bin), `${bin} is missing: reinstall with npm install`);
+});
+
+test('webServerPlan: the dev server locally, the built app (vite preview, 4173) when sharing', () => {
+  assert.equal(PREVIEW_ORIGIN, 'http://localhost:4173');
+  assert.deepEqual(webServerPlan(false), { origin: WEB_ORIGIN, build: false, viteArgs: [] });
+  // A public tunnel must never reach the dev server: its /@fs/ endpoint serves the whole repo.
+  assert.deepEqual(webServerPlan(true), { origin: PREVIEW_ORIGIN, build: true, viteArgs: ['preview'] });
+});
+
+test('shareKeyProblem refuses a short reused key for the public share URL', () => {
+  assert.equal(MIN_SHARE_KEY_LENGTH, 16);
+  assert.match(shareKeyProblem({ key: 'short-key', source: 'env' }), /16/);
+  assert.ok(!shareKeyProblem({ key: 'short-key', source: 'env' }).includes('short-key'), 'never echoes the key');
+  assert.equal(shareKeyProblem({ key: 'k'.repeat(16), source: 'env' }), null);
+  assert.equal(shareKeyProblem({ key: generateAccessKey(), source: 'created' }), null);
 });

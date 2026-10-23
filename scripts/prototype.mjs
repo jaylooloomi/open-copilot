@@ -1,20 +1,20 @@
 // npm run prototype: start apps/api (8787) and the Vite dev server (5173) together, then open the
 // web app with its settings filled in through #oc-setup (add-ons design 1.3).
+// With --share the web server is the built app instead (`vite build`, then `vite preview` on
+// 4173): the public tunnel must never reach the dev server, whose /@fs/ serves the whole repo.
 //   --no-open  do not open a browser (the setup URL is still printed)
 //   --check    start everything, check /health directly, through the Vite /api proxy and (with
 //              --share) through the tunnel, then stop
-//   --share    also open a Cloudflare quick tunnel to the web app and print a phone URL and a QR
-//              code (add-ons design 4)
-import { spawn } from 'node:child_process';
+//   --share    build the web app, serve it with vite preview, open a Cloudflare quick tunnel to it
+//              and print a phone URL and a QR code (add-ons design 4)
+import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   API_ORIGIN,
   GROQ_KEY_STEPS,
-  PROXY_API_BASE_URL,
   SHARE_WARNING,
-  WEB_ORIGIN,
   WINDOWS_HINT,
   apiEnvironment,
   chooseTranscriber,
@@ -27,10 +27,12 @@ import {
   parseFlags,
   renderQr,
   setupUrl,
+  shareKeyProblem,
   shareSetupUrl,
   supervise,
   waitForOk,
   watchTunnel,
+  webServerPlan,
 } from './prototype/lib.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -45,6 +47,8 @@ try {
   process.exit(1);
 }
 const { checkOnly, openInBrowser, share } = options;
+const webServer = webServerPlan(share);
+const webApiBaseUrl = `${webServer.origin}/api`;
 
 // 1. Transcription service: cloud key → cloud; none → Windows offline (needs ffmpeg);
 //    neither → explain how to get a Groq key and exit 1 before starting anything.
@@ -66,6 +70,12 @@ const access = ensureAccessKey({ env, envLocalPath: join(apiDir, '.env.local') }
 if (access.source === 'created') {
   console.log('[prototype] 已產生存取金鑰並存到 apps/api/.env.local，之後會重複使用');
 }
+// The share URL is public and failed key attempts are not rate limited: refuse a short key.
+const keyProblem = share ? shareKeyProblem(access) : null;
+if (keyProblem) {
+  console.error(keyProblem);
+  process.exit(1);
+}
 
 // 3. --share needs the cloudflared binary (npm devDependency `cloudflared`), before anything starts.
 let cloudflaredBin = null;
@@ -78,20 +88,31 @@ if (share) {
   }
 }
 
-// 4. Both servers (and the tunnel); when one stops, supervise() stops the others.
-const apiEnv = apiEnvironment(env, access);
 const viteBin = join(
   dirname(createRequire(join(webDir, 'package.json')).resolve('vite/package.json')),
   'bin',
   'vite.js',
 );
+
+// 4. --share serves the built app: build it first (nothing is listening yet).
+if (webServer.build) {
+  console.log('[prototype] 分享模式：先建置網頁（vite build），通道只會連到建置後的檔案和 /api');
+  const built = spawnSync(process.execPath, [viteBin, 'build'], { cwd: webDir, env: process.env, stdio: 'inherit' });
+  if (built.status !== 0) {
+    console.error('[prototype] 網頁建置失敗（見上方訊息）');
+    process.exit(1);
+  }
+}
+
+// 5. Both servers (and the tunnel); when one stops, supervise() stops the others.
+const apiEnv = apiEnvironment(env, access);
 const children = {
   api: spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
     cwd: apiDir,
     env: apiEnv,
     stdio: ['ignore', 'inherit', 'inherit'],
   }),
-  web: spawn(process.execPath, [viteBin], {
+  web: spawn(process.execPath, [viteBin, ...webServer.viteArgs], {
     cwd: webDir,
     env: process.env,
     stdio: ['ignore', 'inherit', 'inherit'],
@@ -100,7 +121,7 @@ const children = {
 let tunnelWatch = null;
 if (cloudflaredBin) {
   // cloudflared's log (which carries the URL) goes to pipes, not the terminal: it is long and noisy.
-  const tunnel = spawn(cloudflaredBin, cloudflaredArgs(WEB_ORIGIN), {
+  const tunnel = spawn(cloudflaredBin, cloudflaredArgs(webServer.origin), {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -165,10 +186,10 @@ async function startSharing(accessKey) {
   return reachable ? 'ok' : 'unreachable';
 }
 
-// 5. Wait for both (the second check goes through the Vite /api proxy), then share and open the browser.
+// 6. Wait for both (the second check goes through the Vite /api proxy), then share and open the browser.
 const ready =
   (await waitForOk(`${API_ORIGIN}/health`, { isCancelled })) &&
-  (await waitForOk(`${PROXY_API_BASE_URL}/health`, { isCancelled }));
+  (await waitForOk(`${webApiBaseUrl}/health`, { isCancelled }));
 
 let ok = true;
 if (!ready) {
@@ -182,8 +203,8 @@ if (!ready) {
   }
   shutDown();
 } else {
-  const url = setupUrl(WEB_ORIGIN, { apiBaseUrl: PROXY_API_BASE_URL, accessKey: access.key });
-  console.log(`[prototype] 後端 ${API_ORIGIN}，網頁 ${WEB_ORIGIN}（/api 經 Vite proxy 轉到後端）`);
+  const url = setupUrl(webServer.origin, { apiBaseUrl: webApiBaseUrl, accessKey: access.key });
+  console.log(`[prototype] 後端 ${API_ORIGIN}，網頁 ${webServer.origin}（/api 經 Vite proxy 轉到後端）`);
   console.log(`[prototype] 用這個網址開啟會自動填好設定（含存取金鑰，請勿分享）：\n  ${url}`);
   console.log(
     `[prototype] 桌面版：設定頁的後端網址填 ${API_ORIGIN}，存取金鑰` +

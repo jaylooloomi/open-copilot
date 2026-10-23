@@ -64,12 +64,18 @@ describe('vite.config', () => {
     expect(stripApiPrefix('/api?probe=1')).toBe('/?probe=1');
   });
 
-  it('lets Cloudflare quick tunnel hosts reach the dev server (npm run prototype -- --share)', () => {
+  it('lets Cloudflare quick tunnel hosts reach only the built app (vite preview), never the dev server', () => {
     expect(SHARE_ALLOWED_HOSTS).toEqual(['.trycloudflare.com']);
-    expect(config.server?.allowedHosts).toBe(SHARE_ALLOWED_HOSTS);
-    // vite preview inherits server.allowedHosts and server.proxy, so a tunnel to 4173 works too.
-    expect(config.preview?.allowedHosts).toBeUndefined();
-    expect(config.preview?.proxy).toBeUndefined();
+    // npm run prototype -- --share tunnels `vite preview` (4173): built files and /api only.
+    expect(config.preview?.allowedHosts).toBe(SHARE_ALLOWED_HOSTS);
+    // The dev server (/@fs/, HMR, source transforms) answers localhost only.
+    expect(config.server?.allowedHosts).toBeUndefined();
+  });
+
+  it('gives vite preview the same /api proxy as the dev server', () => {
+    const proxy = config.preview?.proxy as Record<string, ProxyRule>;
+    expect(proxy).toBe(config.server?.proxy);
+    expect(Object.keys(proxy)).toEqual([API_PROXY_PATH]);
   });
 
   it('builds a PWA (generateSW, autoUpdate) that src/main.tsx registers itself', () => {

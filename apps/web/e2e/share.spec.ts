@@ -1,4 +1,5 @@
 import { request as httpRequest } from 'node:http';
+import { fileURLToPath } from 'node:url';
 import { devices, expect, test, type Page } from '@playwright/test';
 
 // The phone that opens the share URL: a typical Android phone (412 CSS px, touch, Android Chrome).
@@ -8,7 +9,8 @@ test.use(pixel7);
 
 /**
  * What the phone opens: <tunnel>/#oc-setup=… with apiBaseUrl <tunnel>/api (shareSetupUrl in
- * scripts/prototype/lib.mjs). The dev server stands in for the tunnel origin, and page.route
+ * scripts/prototype/lib.mjs). The dev server stands in for the tunnel origin (the real share mode
+ * tunnels `vite preview`; e2e-pwa/share.spec.ts checks that one), and page.route
  * answers /api before the Vite proxy, so no backend is involved. The API URL is built from
  * baseURL so it stays same-origin with the page, which #oc-setup requires.
  */
@@ -17,11 +19,11 @@ const ACCESS_KEY = 'share-key-0123456789';
 /** What scripts/prototype.mjs puts after #oc-setup=. */
 const encode = (value: unknown) => Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
 
-/** Status of GET / on the dev server when the request says it is for `host` (as a tunnel does). */
-function statusForHost(baseURL: string, host: string): Promise<number> {
+/** Status of GET `path` on the dev server when the request says it is for `host` (as a tunnel does). */
+function statusForHost(baseURL: string, host: string, path = '/'): Promise<number> {
   const { hostname, port } = new URL(baseURL);
   return new Promise((resolve, reject) => {
-    const req = httpRequest({ host: hostname, port: Number(port), path: '/', headers: { host } }, (res) => {
+    const req = httpRequest({ host: hostname, port: Number(port), path, headers: { host } }, (res) => {
       res.resume();
       resolve(res.statusCode ?? 0);
     });
@@ -58,9 +60,16 @@ function savedNotesContain(page: Page, text: string): Promise<boolean> {
   );
 }
 
-test('開發伺服器接受 Cloudflare quick tunnel 的網域，其他網域仍然擋下', async ({ baseURL }) => {
+test('開發伺服器不接受 Cloudflare quick tunnel 的網域（分享模式改用建置版），本機照常', async ({ baseURL }) => {
   expect(baseURL).toBeTruthy();
-  expect(await statusForHost(baseURL!, 'quiet-river-1234.trycloudflare.com')).toBe(200);
+  const repoPackageJson = fileURLToPath(new URL('../../../package.json', import.meta.url)).replace(/\\/g, '/');
+  const fsPath = `/@fs/${repoPackageJson.replace(/^\//, '')}`;
+  // Through localhost the dev server works as usual (and can read the repo, as Vite needs to).
+  expect(await statusForHost(baseURL!, 'localhost:5173')).toBe(200);
+  expect(await statusForHost(baseURL!, 'localhost:5173', fsPath)).toBe(200);
+  // A tunnel Host reaches nothing: not the page, and not /@fs/ (repo files).
+  expect(await statusForHost(baseURL!, 'quiet-river-1234.trycloudflare.com')).toBe(403);
+  expect(await statusForHost(baseURL!, 'quiet-river-1234.trycloudflare.com', fsPath)).toBe(403);
   expect(await statusForHost(baseURL!, 'evil.example')).toBe(403);
 });
 
