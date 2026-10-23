@@ -9,6 +9,9 @@ export const DEFAULT_SILENCE_THRESHOLD = 0.01;
 export const DEFAULT_MIN_SEGMENT_MS = 8000;
 export const DEFAULT_MAX_SEGMENT_MS = 12000;
 
+/** A pause must last this long before a cut, unless a caller passes its own length. */
+export const DEFAULT_SILENCE_MS = 300;
+
 export interface SegmentPolicyOptions {
   /** No cut before this much audio (default 8000ms). */
   minMs?: number;
@@ -35,7 +38,7 @@ export class SegmentPolicy {
   constructor(options: SegmentPolicyOptions = {}) {
     this.minMs = options.minMs ?? DEFAULT_MIN_SEGMENT_MS;
     this.maxMs = options.maxMs ?? DEFAULT_MAX_SEGMENT_MS;
-    this.silenceMs = options.silenceMs ?? 300;
+    this.silenceMs = options.silenceMs ?? DEFAULT_SILENCE_MS;
     this.threshold = options.threshold ?? DEFAULT_SILENCE_THRESHOLD;
     for (const [name, value] of Object.entries({
       minMs: this.minMs,

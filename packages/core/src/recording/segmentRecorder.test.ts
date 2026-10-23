@@ -118,6 +118,20 @@ describe('SegmentRecorder', () => {
     await recorder.stop();
   });
 
+  it('does not cut at a pause before 8 s with the default policy', async () => {
+    const { recorder, segments, audio } = setup({ policy: 'default' });
+    recorder.start();
+    await vi.advanceTimersByTimeAsync(5000);
+    audio.setLevel(0);
+    // The pause has lasted far longer than 300ms by 7950ms, but 8 s have not passed yet.
+    await vi.advanceTimersByTimeAsync(2950);
+    expect(recorders()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(recorders()).toHaveLength(2);
+    expect(segments.map((s) => s.seq)).toEqual([1]);
+    await recorder.stop();
+  });
+
   it('stop() delivers the last segment, then stops polling and closes the audio context', async () => {
     const { recorder, segments, audio } = setup();
     recorder.start();

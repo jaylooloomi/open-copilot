@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_MAX_SEGMENT_MS, DEFAULT_MIN_SEGMENT_MS, SegmentPolicy } from './segmentPolicy';
+import {
+  DEFAULT_MAX_SEGMENT_MS,
+  DEFAULT_MIN_SEGMENT_MS,
+  DEFAULT_SILENCE_MS,
+  SegmentPolicy,
+} from './segmentPolicy';
 
 const SPEECH = 0.2;
 const SILENCE = 0.001;
@@ -16,6 +21,7 @@ describe('SegmentPolicy', () => {
   it('defaults to 8–12 second segments (Groq bills every request as at least 10 s)', () => {
     expect(DEFAULT_MIN_SEGMENT_MS).toBe(8000);
     expect(DEFAULT_MAX_SEGMENT_MS).toBe(12000);
+    expect(DEFAULT_SILENCE_MS).toBe(300);
   });
 
   it('never cuts before 8 seconds, even during a pause', () => {
