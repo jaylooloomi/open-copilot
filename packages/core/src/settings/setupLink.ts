@@ -1,4 +1,10 @@
-import { isValidBaseUrl, normalizeSettings, saveSettings, type Settings } from './settingsStore';
+import {
+  isValidBaseUrl,
+  loadSettings,
+  normalizeSettings,
+  saveSettings,
+  type Settings,
+} from './settingsStore';
 
 /** `#oc-setup=<base64url(JSON)>`，由 `npm run prototype`（之後也包含 M9 的分享網址）產生。 */
 export const SETUP_HASH_PARAM = 'oc-setup';
@@ -52,6 +58,7 @@ function readSetupParam(hash: string): string | null {
 /**
  * App 啟動時呼叫（在讀取設定之前）：hash 有 `oc-setup` 就驗證，合法才存進設定；
  * 不論合不合法都立刻用 history.replaceState 把 hash 移除，因為裡面可能有存取金鑰。
+ * 存檔失敗（例如 localStorage 已滿或被封鎖）也回 'invalid'，舊設定維持不變。
  */
 export function applySetupLink(
   win: Pick<Window, 'location' | 'history'> = window,
@@ -59,7 +66,12 @@ export function applySetupLink(
   const encoded = readSetupParam(win.location.hash);
   if (encoded === null) return 'none';
   const settings = decodeSetupPayload(encoded);
-  if (settings) saveSettings(settings);
+  let saved = false;
+  if (settings) {
+    saveSettings(settings);
+    const stored = loadSettings();
+    saved = stored.apiBaseUrl === settings.apiBaseUrl && stored.accessKey === settings.accessKey;
+  }
   win.history.replaceState(win.history.state, '', win.location.pathname + win.location.search);
-  return settings ? 'applied' : 'invalid';
+  return saved ? 'applied' : 'invalid';
 }

@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadSettings, saveSettings } from './settingsStore';
 import {
   applySetupLink,
   decodeSetupPayload,
   encodeSetupPayload,
   MAX_SETUP_KEY_LENGTH,
+  MAX_SETUP_PAYLOAD_LENGTH,
   SETUP_HASH_PARAM,
 } from './setupLink';
 
@@ -19,6 +20,7 @@ function toBase64Url(text: string): string {
 const API = 'http://localhost:5173/api';
 
 afterEach(() => {
+  vi.restoreAllMocks();
   localStorage.clear();
   window.history.replaceState(null, '', '/');
 });
@@ -54,6 +56,8 @@ describe('encodeSetupPayload / decodeSetupPayload', () => {
       toBase64Url(JSON.stringify({ apiBaseUrl: API, accessKey: 'k'.repeat(MAX_SETUP_KEY_LENGTH + 1) })),
     ],
     ['bytes that are not UTF-8', '__4'],
+    ['an empty payload', ''],
+    ['an over-long payload', 'A'.repeat(MAX_SETUP_PAYLOAD_LENGTH + 1)],
   ])('rejects %s', (_label, encoded) => {
     expect(decodeSetupPayload(encoded)).toBeNull();
   });
@@ -75,6 +79,30 @@ describe('applySetupLink', () => {
   it('keeps the old settings but still removes the hash when the payload is invalid', () => {
     saveSettings({ apiBaseUrl: 'https://old.example.com', accessKey: 'old-key' });
     window.history.replaceState(null, '', `/#${SETUP_HASH_PARAM}=not-a-valid-payload`);
+
+    expect(applySetupLink(window)).toBe('invalid');
+
+    expect(loadSettings()).toEqual({ apiBaseUrl: 'https://old.example.com', accessKey: 'old-key' });
+    expect(window.location.hash).toBe('');
+  });
+
+  it('treats an empty oc-setup value as invalid and removes the hash', () => {
+    window.history.replaceState(null, '', `/#${SETUP_HASH_PARAM}=`);
+
+    expect(applySetupLink(window)).toBe('invalid');
+
+    expect(window.location.hash).toBe('');
+    expect(localStorage.getItem('oc.settings')).toBeNull();
+  });
+
+  it('reports invalid, keeps the old settings and removes the hash when saving fails', () => {
+    saveSettings({ apiBaseUrl: 'https://old.example.com', accessKey: 'old-key' });
+    const encoded = encodeSetupPayload({ apiBaseUrl: API, accessKey: 'prototype-key-0123' });
+    window.history.replaceState(null, '', `/#${SETUP_HASH_PARAM}=${encoded}`);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
 
     expect(applySetupLink(window)).toBe('invalid');
 
