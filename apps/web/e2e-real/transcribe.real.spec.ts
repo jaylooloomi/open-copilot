@@ -20,7 +20,8 @@ test('真實語音：合成的中文語音經真的後端轉寫成繁體中文',
   expect(accessKey, 'set by playwright.real.config.ts').toBeTruthy();
 
   await page.goto(`/${encodeSetupHash({ apiBaseUrl: 'http://localhost:5173/api', accessKey: accessKey! })}`);
-  const record = page.locator('.oc-record-btn');
+  // Its label changes with the recording state, so match the class and still require a button.
+  const record = page.locator('.oc-record-btn').and(page.getByRole('button'));
   await expect(record).toHaveText('錄製');
   await expect(record).toBeEnabled();
   expect(new URL(page.url()).hash).toBe('');
