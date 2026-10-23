@@ -2,11 +2,13 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { UpstreamRateLimitError } from './errors';
 import type { ProcessResult, ProcessRunner } from './processRunner';
 import {
   createWindowsTranscriber,
   findFfmpegProblem,
   parseSttOutput,
+  WINDOWS_STT_MAX_QUEUED,
   WINDOWS_STT_TIMEOUT_MS,
 } from './windowsTranscriber';
 
@@ -170,11 +172,13 @@ describe('createWindowsTranscriber', () => {
 
     const first = transcriber.transcribe({ file: audio('segment-1.webm'), prompt: '' });
     const second = transcriber.transcribe({ file: audio('segment-2.webm'), prompt: '' });
+    // It now fails as soon as its budget runs out, so attach the expectation before waiting.
+    const secondFails = expect(second).rejects.toThrow(/queue/);
     await vi.waitFor(() => expect(calls).toHaveLength(1));
     await new Promise((resolve) => setTimeout(resolve, 150));
     release();
     await first;
-    await expect(second).rejects.toThrow(/queue/);
+    await secondFails;
     expect(calls.filter((c) => c.command === 'ffmpeg')).toHaveLength(1);
   });
 
@@ -279,6 +283,68 @@ describe('createWindowsTranscriber', () => {
     gates[2]!();
     await expect(Promise.all(results)).resolves.toEqual(['好', '好', '好']);
     expect(maxActive).toBe(2);
+  });
+
+  it('answers 429 at once when the queue is full instead of holding more uploads in memory', async () => {
+    const gates: (() => void)[] = [];
+    const { run } = fakeRunner((command) =>
+      command === 'powershell.exe'
+        ? ok(sttJson('好'))
+        : new Promise<ProcessResult>((resolve) => gates.push(() => resolve(ok()))),
+    );
+    const transcriber = createWindowsTranscriber({ run, tempDir, concurrency: 1, maxQueued: 1 });
+
+    const running = transcriber.transcribe({ file: audio('segment-1.webm'), prompt: '' });
+    await vi.waitFor(() => expect(gates).toHaveLength(1));
+    const queued = transcriber.transcribe({ file: audio('segment-2.webm'), prompt: '' });
+    const refused = transcriber.transcribe({ file: audio('segment-3.webm'), prompt: '' });
+    await expect(refused).rejects.toBeInstanceOf(UpstreamRateLimitError);
+
+    gates[0]!();
+    await vi.waitFor(() => expect(gates).toHaveLength(2));
+    gates[1]!();
+    await expect(Promise.all([running, queued])).resolves.toEqual(['好', '好']);
+    expect(WINDOWS_STT_MAX_QUEUED).toBeGreaterThanOrEqual(1);
+  });
+
+  it('drops a queued segment when its client disconnects, without waiting for its turn', async () => {
+    let release: () => void = () => {};
+    const { run, calls } = fakeRunner(async (command) => {
+      if (command === 'ffmpeg' && calls.length === 1) {
+        await new Promise<void>((resolve) => (release = resolve));
+      }
+      return answerAll(command);
+    });
+    const transcriber = createWindowsTranscriber({ run, tempDir, concurrency: 1 });
+
+    const first = transcriber.transcribe({ file: audio('segment-1.webm'), prompt: '' });
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    const controller = new AbortController();
+    const second = transcriber.transcribe({ file: audio('segment-2.webm'), prompt: '', signal: controller.signal });
+    controller.abort();
+    await expect(second).rejects.toMatchObject({ name: 'AbortError' });
+    release();
+    await first;
+    expect(calls.filter((c) => c.command === 'ffmpeg')).toHaveLength(1);
+  });
+
+  it('fails a queued segment as soon as its budget runs out, while the other one still runs', async () => {
+    let release: () => void = () => {};
+    const { run, calls } = fakeRunner(async (command) => {
+      if (command === 'ffmpeg' && calls.length === 1) {
+        await new Promise<void>((resolve) => (release = resolve));
+      }
+      return answerAll(command);
+    });
+    const transcriber = createWindowsTranscriber({ run, tempDir, concurrency: 1, timeoutMs: 100 });
+
+    const first = transcriber.transcribe({ file: audio('segment-1.webm'), prompt: '' });
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    const second = transcriber.transcribe({ file: audio('segment-2.webm'), prompt: '' });
+    // The first segment is still running: the second one gives up on its own.
+    await expect(second).rejects.toThrow(/queue/);
+    release();
+    await first;
   });
 
   it('does not start anything for a request that was already cancelled', async () => {

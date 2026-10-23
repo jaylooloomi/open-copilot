@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { MAX_STDERR_CHARS, createLimiter, runProcess } from './processRunner';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  LimiterQueueFullError,
+  LimiterWaitTimeoutError,
+  MAX_STDERR_CHARS,
+  createLimiter,
+  runProcess,
+} from './processRunner';
 
 const node = process.execPath;
 
@@ -129,8 +135,59 @@ describe('createLimiter', () => {
     await expect(limit(() => Promise.resolve('next'))).resolves.toBe('next');
   });
 
+  it('refuses a task at once when the queue is full', async () => {
+    const limit = createLimiter(1, { maxQueued: 1 });
+    let finish: () => void = () => {};
+    const running = limit(() => new Promise<void>((resolve) => (finish = resolve)));
+    const queued = limit(() => Promise.resolve('queued'));
+    await expect(limit(() => Promise.resolve('third'))).rejects.toBeInstanceOf(LimiterQueueFullError);
+    finish();
+    await running;
+    await expect(queued).resolves.toBe('queued');
+    // The queue has room again.
+    await expect(limit(() => Promise.resolve('later'))).resolves.toBe('later');
+  });
+
+  it('drops a waiter as soon as its signal aborts, freeing its queue place', async () => {
+    const limit = createLimiter(1, { maxQueued: 1 });
+    let finish: () => void = () => {};
+    const running = limit(() => new Promise<void>((resolve) => (finish = resolve)));
+    const controller = new AbortController();
+    const task = vi.fn(() => Promise.resolve('never'));
+    const waiting = limit(task, { signal: controller.signal });
+    controller.abort();
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+    // Its place in the queue is free before the running task ends.
+    const next = limit(() => Promise.resolve('next'));
+    finish();
+    await running;
+    await expect(next).resolves.toBe('next');
+    expect(task).not.toHaveBeenCalled();
+  });
+
+  it('drops a waiter when its deadline passes, before the running task ends', async () => {
+    const limit = createLimiter(1);
+    let finish: () => void = () => {};
+    const running = limit(() => new Promise<void>((resolve) => (finish = resolve)));
+    const task = vi.fn(() => Promise.resolve('never'));
+    const waiting = limit(task, { deadline: Date.now() + 30 });
+    await expect(waiting).rejects.toBeInstanceOf(LimiterWaitTimeoutError);
+    finish();
+    await running;
+    expect(task).not.toHaveBeenCalled();
+    await expect(limit(() => Promise.resolve('next'))).resolves.toBe('next');
+  });
+
+  it('does not queue a task whose signal is already aborted', async () => {
+    const limit = createLimiter(1);
+    const task = vi.fn(() => Promise.resolve('never'));
+    await expect(limit(task, { signal: AbortSignal.abort() })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(task).not.toHaveBeenCalled();
+  });
+
   it('rejects a limit below 1', () => {
     expect(() => createLimiter(0)).toThrow(RangeError);
     expect(() => createLimiter(1.5)).toThrow(RangeError);
+    expect(() => createLimiter(1, { maxQueued: -1 })).toThrow(RangeError);
   });
 });

@@ -3,7 +3,15 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createLimiter, runProcess, type ProcessResult, type ProcessRunner } from './processRunner';
+import { UpstreamRateLimitError } from './errors';
+import {
+  createLimiter,
+  LimiterQueueFullError,
+  LimiterWaitTimeoutError,
+  runProcess,
+  type ProcessResult,
+  type ProcessRunner,
+} from './processRunner';
 import type { Transcriber } from './types';
 
 /** 啟動紀錄顯示的「模型」名稱。 */
@@ -15,6 +23,13 @@ export const WINDOWS_STT_MODEL = 'System.Speech zh-TW';
 export const WINDOWS_STT_TIMEOUT_MS = 30_000;
 /** 同時處理的段數上限，其餘排隊。 */
 export const WINDOWS_STT_CONCURRENCY = 2;
+/**
+ * 最多幾段排隊等辨識（不含執行中的）。每段都帶著解析好的上傳內容（最多 5 MiB），
+ * 所以佇列滿了就立刻回 429，不讓記憶體跟著請求數長大。
+ */
+export const WINDOWS_STT_MAX_QUEUED = 8;
+/** 佇列滿時要前端等待的秒數（Retry-After）。 */
+export const WINDOWS_STT_QUEUE_FULL_RETRY_SECONDS = 5;
 /** FFMPEG_PATH 沒設定時，用 PATH 上的 ffmpeg。 */
 export const DEFAULT_FFMPEG_PATH = 'ffmpeg';
 /** UTF-8 with BOM 的辨識腳本（apps/api/scripts/windows-stt.ps1）。 */
@@ -36,6 +51,8 @@ export interface WindowsTranscriberOptions {
   run?: ProcessRunner;
   timeoutMs?: number;
   concurrency?: number;
+  /** 最多幾段排隊（預設 WINDOWS_STT_MAX_QUEUED）；滿了就丟 UpstreamRateLimitError（429）。 */
+  maxQueued?: number;
   scriptPath?: string;
   /** 暫存目錄的上層，預設 os.tmpdir()。 */
   tempDir?: string;
@@ -114,10 +131,11 @@ export function createWindowsTranscriber(options: WindowsTranscriberOptions = {}
     run = runProcess,
     timeoutMs = WINDOWS_STT_TIMEOUT_MS,
     concurrency = WINDOWS_STT_CONCURRENCY,
+    maxQueued = WINDOWS_STT_MAX_QUEUED,
     scriptPath = WINDOWS_STT_SCRIPT,
     tempDir = tmpdir(),
   } = options;
-  const limit = createLimiter(concurrency);
+  const limit = createLimiter(concurrency, { maxQueued });
 
   async function transcribeOnce(
     file: File,
@@ -171,7 +189,19 @@ export function createWindowsTranscriber(options: WindowsTranscriberOptions = {}
     transcribe({ file, signal }) {
       // 期限從請求進來就開始算，排隊時間也算在內。
       const deadline = Date.now() + timeoutMs;
-      return limit(() => transcribeOnce(file, signal, deadline));
+      return limit(() => transcribeOnce(file, signal, deadline), { signal, deadline }).catch(
+        (err: unknown) => {
+          if (err instanceof LimiterQueueFullError) {
+            throw new UpstreamRateLimitError(WINDOWS_STT_QUEUE_FULL_RETRY_SECONDS, { cause: err });
+          }
+          if (err instanceof LimiterWaitTimeoutError) {
+            throw new WindowsTranscribeError(
+              `timed out after waiting in the queue (${timeoutMs}ms budget per segment)`,
+            );
+          }
+          throw err;
+        },
+      );
     },
   };
 }
