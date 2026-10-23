@@ -3,6 +3,8 @@
 //   5:  "workspaces": ["packages/*", "apps/*"],
 // npm rewrites package.json as multi-line JSON whenever it adds a dependency,
 // so this check catches that reformat before the plan checks do.
+// Because the plan checks expect line 5, do not insert keys above "workspaces"
+// in package.json; if those plan greps change, relax this to a single-line check.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
