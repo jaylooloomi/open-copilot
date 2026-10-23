@@ -25,6 +25,8 @@ interface PwaRegisterOptions {
   immediate?: boolean;
   onRegisteredSW?: (swScriptUrl: string, registration: ServiceWorkerRegistration | undefined) => void;
   onRegisterError?: (error: unknown) => void;
+  /** Called when a new service worker took over; without it vite-plugin-pwa reloads at once. */
+  onNeedReload?: () => void;
 }
 
 /**
@@ -32,13 +34,18 @@ interface PwaRegisterOptions {
  * once and reports a failed registration (SecurityError, a missing sw.js) only through
  * `onRegisterError`, so this turns that callback into a rejection that registerServiceWorker
  * warns about. In `vite dev` registerSW is a no-op and the promise never settles, which is harmless.
+ * `onNeedReload` replaces vite-plugin-pwa's immediate reload after an update (see updateReloadGate).
  */
-export function registerWithPwa(registerSW: (options: PwaRegisterOptions) => unknown): Promise<void> {
+export function registerWithPwa(
+  registerSW: (options: PwaRegisterOptions) => unknown,
+  onNeedReload?: () => void,
+): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     registerSW({
       immediate: true,
       onRegisteredSW: () => resolve(),
       onRegisterError: (error) => reject(error),
+      ...(onNeedReload ? { onNeedReload } : {}),
     });
   });
 }

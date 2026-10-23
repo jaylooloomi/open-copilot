@@ -50,7 +50,11 @@ npm run prototype -- --share
 2. 經過通道檢查 `/api/health`，再印出手機用的網址和 QR code（60 秒內檢查不過仍會印出並加上警告，見下方疑難排解）。網址的 `#oc-setup` 帶入 `apiBaseUrl = https://<隨機名稱>.trycloudflare.com/api` 和存取金鑰，手機開啟後自動填好設定；`/api` 由 Vite proxy 轉到本機後端，所以不需要 CORS 設定。
 3. 印出警告：**分享網址是公開的，請只在測試時開啟，用完按 Ctrl+C 關閉；後端仍然需要存取金鑰。**網址含存取金鑰，只給自己的手機使用。
 
-Vite 的 `server.allowedHosts` 已允許 `.trycloudflare.com`，其他網域仍會被擋（403）。每次執行的網址都不一樣。`npm run prototype -- --share --check` 會在分享網址也能連上後自動結束。
+Vite 的 `server.allowedHosts` 已允許 `.trycloudflare.com`，其他網域仍會被擋（403）。每次執行的網址都不一樣。
+
+用分享網址前要知道：
+- **筆記跟著網址走。**手機上的筆記存在那個 `*.trycloudflare.com` 網域的 IndexedDB，下次執行換了網址就看不到上次的筆記。要留下來，關閉前先在手機上用「備份」匯出。
+- **整個開發伺服器都公開了，不只網頁。**拿到網址的人可以透過 Vite 的 `/@fs/` 讀取 repo 裡的任何檔案（原始碼、`node_modules` 等）；只有 `.env*`、憑證（`*.pem`、`*.crt`）和 `.git` 會被擋。repo 裡不要放其他機密檔案。`npm run prototype -- --share --check` 會在分享網址也能連上後自動結束。
 
 疑難排解：
 - 等不到通道網址：確認這台電腦能連到 Cloudflare（公司網路可能擋掉），終端機會印出 cloudflared 最後的訊息。`~/.cloudflared/config.yml` 存在時 quick tunnel 無法使用，請先改名。
@@ -87,7 +91,7 @@ npm run e2e:real -w @oc/web
 - `vite-plugin-pwa`（`generateSW`、`registerType: 'autoUpdate'`）產生 `manifest.webmanifest` 和 `sw.js`。manifest 名稱 `open-copilot`、`display: standalone`、`lang: zh-TW`，`theme_color` 與 `background_color` 都是主色 `#c026d3`；圖示是 `public/icons/` 的 192、512 與 maskable 512（由 `icons/*.svg` 以 `npm run icons -w @oc/web` 產生並 commit）。
 - Service worker 只快取網頁本身（`**/*.{js,css,html,png,svg}`），所以沒有網路時重新整理仍看得到筆記（筆記在 IndexedDB）。`/api/*` 和任何跨網域請求一律直接走網路，不會快取。
 - 只有一般瀏覽器會註冊 service worker（`src/main.tsx` 依 `detectPlatformKind()` 判斷）；桌面版（`app://`）和 Android App（Capacitor）不註冊。開發伺服器（`npm run dev`）也不註冊。
-- 新版部署後，已開啟的頁面會在新的 service worker 啟用時自動重新整理（`autoUpdate`）。錄音中遇到更新時，已上傳但未插入的段落會留在 IndexedDB，重新整理後可用「⚠ 第 N 段未轉寫・重試」補上。
+- 新版部署後，已開啟的頁面會在新的 service worker 啟用時自動重新整理（`autoUpdate`）。正在錄音或還有段落在上傳時不會重新整理，等錄音結束、上傳都完成後才會（`src/platform/updateReloadGate.ts`）。
 
 ### 在真的手機上安裝（手動檢查）
 

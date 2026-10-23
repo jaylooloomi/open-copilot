@@ -67,3 +67,17 @@ describe('registerWithPwa', () => {
     expect(warn).toHaveBeenCalledWith('Service worker registration failed', error);
   });
 });
+
+describe('registerWithPwa onNeedReload', () => {
+  type Options = { onNeedReload?: () => void };
+
+  it('hands vite-plugin-pwa the reload handler, so it does not reload the page itself', async () => {
+    const onNeedReload = vi.fn();
+    let options: Options = {};
+    void registerWithPwa((o: Options) => {
+      options = o;
+      return async () => undefined;
+    }, onNeedReload);
+    expect(options.onNeedReload).toBe(onNeedReload);
+  });
+});
