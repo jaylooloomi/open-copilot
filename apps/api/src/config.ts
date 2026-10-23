@@ -12,6 +12,8 @@ export interface AppConfig {
   accessKeys: string[];
   allowedOrigins: string[];
   port: number;
+  /** 監聽的介面；預設只聽本機（127.0.0.1），Docker 或區網要連時設 HOST=0.0.0.0。 */
+  host: string;
 }
 
 /**
@@ -27,6 +29,7 @@ export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
 ];
 
 export const DEFAULT_PORT = 8787;
+export const DEFAULT_HOST = '127.0.0.1';
 
 /** 短於這個長度的存取金鑰只發警告、不拒絕啟動（各里程碑的人工檢查用 dev-key）。 */
 export const MIN_ACCESS_KEY_LENGTH = 16;
@@ -181,7 +184,9 @@ export function loadConfig(
     throw new Error(`PORT must be an integer between 1 and 65535, got "${rawPort}"`);
   }
 
-  return { transcriber, ai, accessKeys, allowedOrigins, port };
+  const host = readValue(env, 'HOST') ?? DEFAULT_HOST;
+
+  return { transcriber, ai, accessKeys, allowedOrigins, port, host };
 }
 
 /**

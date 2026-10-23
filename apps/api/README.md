@@ -97,6 +97,7 @@ curl -s https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_AP
 | `ACCESS_KEYS` | 是 | 存取金鑰，逗號分隔。每把請用至少 16 字元的隨機值（例如 `node -e "console.log(crypto.randomUUID())"`）；較短的金鑰仍可啟動，但會印出警告 |
 | `ALLOWED_ORIGINS` | 否 | CORS 允許來源，逗號分隔；預設 `http://localhost:5173,https://localhost,capacitor://localhost,app://bundle`。每項只能是 `scheme://host[:port]`（例如 `https://notes.example.com`），不可有路徑或結尾斜線；格式不對會拒絕啟動 |
 | `PORT` | 否 | 監聽埠，預設 `8787` |
+| `HOST` | 否 | 監聽介面，預設 `127.0.0.1`（只有本機能連）。要讓區網裝置（例如手機）直接連後端時設 `HOST=0.0.0.0`；Docker 映像已內建 `HOST=0.0.0.0` |
 
 伺服器固定連 `https://api.groq.com/openai/v1`（Groq）或 `https://api.openai.com/v1`（OpenAI）：OpenAI SDK 平常會讀的 `OPENAI_BASE_URL`、`OPENAI_ORG_ID`、`OPENAI_PROJECT_ID` 一律忽略，避免主機上為別的工具設定的值把音訊、筆記與金鑰送到別處。
 
@@ -113,7 +114,7 @@ npm run dev -w @oc/api                   # tsx watch，改檔自動重啟；會�
 注意：Node 的 `--env-file` 不會覆寫已存在的環境變數。若 shell 或 Windows 使用者環境變數已設定 `GROQ_API_KEY`、`OPENAI_API_KEY` 等同名變數，會以那個值為準、忽略 `.env`；例如主機上只有 `OPENAI_API_KEY`、`.env` 填了 `GROQ_API_KEY` 時，仍會選 Groq，但主機上的 `TRANSCRIBE_PROVIDER=openai` 會蓋過 `.env`。要確定使用 `.env` 的值，請這樣啟動：
 
 ```bash
-(unset TRANSCRIBE_PROVIDER GROQ_API_KEY GROQ_TRANSCRIBE_MODEL GROQ_LLM_MODEL OPENAI_API_KEY ACCESS_KEYS ALLOWED_ORIGINS PORT; npm run dev -w @oc/api)
+(unset TRANSCRIBE_PROVIDER GROQ_API_KEY GROQ_TRANSCRIBE_MODEL GROQ_LLM_MODEL OPENAI_API_KEY ACCESS_KEYS ALLOWED_ORIGINS PORT HOST; npm run dev -w @oc/api)
 ```
 
 驗證：
@@ -154,6 +155,8 @@ docker run --rm -p 8787:8787 --env-file apps/api/.env open-copilot-api
 ```
 
 `--env-file` 內若設定了 `PORT`，`-p` 的容器埠要跟著改。
+
+映像內建 `HOST=0.0.0.0`，`-p` 才轉得進容器。`--env-file` 裡不要放 `HOST=127.0.0.1` 或留空的 `HOST=`，否則會蓋掉這個設定，容器只聽自己的 loopback、外面連不進來。
 
 Docker 映像是 Linux，不支援 `windows` provider：容器裡必須設定 `GROQ_API_KEY` 或 `OPENAI_API_KEY`，否則拒絕啟動。
 

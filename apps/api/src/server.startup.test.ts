@@ -100,6 +100,8 @@ describe('server startup', () => {
     });
 
     expect(stdout).toContain('[ai] provider groq, model startup-test-llm');
+    // HOST is unset, so only this machine can connect.
+    expect(stdout).toMatch(/listening on http:\/\/127\.0\.0\.1:\d+/);
     expect(stdout).not.toContain('gsk-startup-ai-secret');
     expect(stderr).not.toContain('gsk-startup-ai-secret');
   }, 30_000);
