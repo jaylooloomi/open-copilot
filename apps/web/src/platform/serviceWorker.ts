@@ -19,3 +19,26 @@ export async function registerServiceWorker(
     return false;
   }
 }
+
+/** The part of vite-plugin-pwa's `registerSW` options this app uses. */
+interface PwaRegisterOptions {
+  immediate?: boolean;
+  onRegisteredSW?: (swScriptUrl: string, registration: ServiceWorkerRegistration | undefined) => void;
+  onRegisterError?: (error: unknown) => void;
+}
+
+/**
+ * Calls vite-plugin-pwa's `registerSW` and settles when it reports back. `registerSW` returns at
+ * once and reports a failed registration (SecurityError, a missing sw.js) only through
+ * `onRegisterError`, so this turns that callback into a rejection that registerServiceWorker
+ * warns about. In `vite dev` registerSW is a no-op and the promise never settles, which is harmless.
+ */
+export function registerWithPwa(registerSW: (options: PwaRegisterOptions) => unknown): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    registerSW({
+      immediate: true,
+      onRegisteredSW: () => resolve(),
+      onRegisterError: (error) => reject(error),
+    });
+  });
+}
