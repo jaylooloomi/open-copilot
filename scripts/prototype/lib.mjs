@@ -100,8 +100,9 @@ export function ensureAccessKey({ env, envLocalPath, createKey = generateAccessK
     // Only a blank ACCESS_KEYS= can be here (a filled one was returned above).
     text = before.replace(/^ACCESS_KEYS=.*$/m, line);
   } else {
-    const separator = before === '' || before.endsWith('\n') ? '' : '\n';
-    text = `${before}${separator}# Written by npm run prototype; reused on every run.\n${line}\n`;
+    const eol = before.includes('\r\n') ? '\r\n' : '\n';
+    const separator = before === '' || before.endsWith('\n') ? '' : eol;
+    text = `${before}${separator}# Written by npm run prototype; reused on every run.${eol}${line}${eol}`;
   }
   writeFileSync(envLocalPath, text, 'utf8');
   return { key, source: 'created' };
@@ -187,7 +188,12 @@ export function supervise(children) {
   };
   for (const [name, child] of entries) {
     child.once('exit', (code) => settle(name, code));
-    child.once('error', () => settle(name, null));
+    // 'error' also fires when kill() or send() fails on a running child; only a child that never
+    // started (no pid) counts as exited. on(), so a repeated error is never unhandled.
+    child.on('error', (error) => {
+      if (child.pid === undefined) settle(name, null);
+      else console.error(`[prototype] ${name}: ${error.message}`);
+    });
   }
   return {
     done,

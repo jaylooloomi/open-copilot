@@ -206,3 +206,27 @@ test('stopAll kills each running child once', async () => {
   assert.equal(api.killCount, 1);
   assert.equal(web.killCount, 1);
 });
+
+test('supervise keeps a running child whose kill() failed, and survives repeated errors', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const api = fakeChild();
+  const web = fakeChild();
+  api.pid = 1234;
+  const supervisor = supervise({ api, web });
+  api.emit('error', new Error('kill EPERM'));
+  api.emit('error', new Error('kill EPERM'));
+  assert.equal(supervisor.anyExited, false);
+  assert.equal(web.killCount, 0);
+  api.emit('exit', 0, null);
+  assert.deepEqual(await supervisor.done, { name: 'api', code: 0 });
+});
+
+test('ensureAccessKey keeps CRLF line endings when appending', (t) => {
+  const envLocalPath = join(tempDir(t), '.env.local');
+  writeFileSync(envLocalPath, 'GROQ_API_KEY=gsk-x\r\nPORT=8787');
+  ensureAccessKey({ env: {}, envLocalPath, createKey: () => 'crlf-key-0123456789' });
+  assert.equal(
+    readFileSync(envLocalPath, 'utf8'),
+    'GROQ_API_KEY=gsk-x\r\nPORT=8787\r\n# Written by npm run prototype; reused on every run.\r\nACCESS_KEYS=crlf-key-0123456789\r\n',
+  );
+});
