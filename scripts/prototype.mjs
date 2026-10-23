@@ -142,7 +142,7 @@ async function startSharing(accessKey) {
   const tunnelOrigin = await Promise.race([tunnelWatch.ready, supervisor.done.then(() => null)]);
   if (isCancelled()) return 'cancelled';
   if (!tunnelOrigin) {
-    console.error('[prototype] 等不到 Cloudflare 通道網址，已全部關閉。cloudflared 最後的訊息：');
+    console.error('[prototype] 等不到 Cloudflare 通道網址，正在全部關閉。cloudflared 最後的訊息：');
     for (const line of tunnelWatch.tail()) console.error(`  ${line}`);
     return 'failed';
   }
@@ -150,7 +150,11 @@ async function startSharing(accessKey) {
   if (isCancelled()) return 'cancelled';
   const link = shareSetupUrl(tunnelOrigin, accessKey);
   console.log(`[prototype] 手機分享網址（含存取金鑰，只給自己的手機使用）：\n  ${link}`);
-  console.log(await renderQr(link));
+  try {
+    console.log(await renderQr(link));
+  } catch {
+    console.warn('[prototype] 無法產生 QR code，請直接在手機開啟上面的網址');
+  }
   console.warn(SHARE_WARNING);
   if (!reachable) {
     console.warn(
