@@ -57,7 +57,7 @@ prompt：前端會送前一段最後 200 字當 `prompt`。Whisper 系列的 pro
 
 1. 寫進暫存檔，用 `ffmpeg -i <in> -ar 16000 -ac 1 -f wav <out.wav>` 轉成 16 kHz 單聲道 WAV（ffmpeg 取 `FFMPEG_PATH`，沒設定就用 PATH 上的 `ffmpeg`）。
 2. 執行 `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File apps/api/scripts/windows-stt.ps1 -Wav <out.wav>`，用 `System.Speech` 的 zh-TW 聽寫辨識，輸出 UTF-8 JSON `{ "text": "..." }`。
-3. 從轉檔開始算 30 秒逾時；最多同時處理 2 段，其餘排隊；暫存檔一律刪除。ffmpeg 或 PowerShell 失敗、逾時都回 502 `upstream_error`。
+3. 從開始處理該段起算 30 秒逾時（排隊時間不算）；最多同時處理 2 段，其餘排隊；暫存檔一律刪除。ffmpeg 或 PowerShell 失敗、逾時都回 502 `upstream_error`。
 
 限制：不加標點、準確度比 Groq 低（例：「請小明」可能變成「井小民」）；`prompt` 會被忽略。啟動時找不到 ffmpeg 會印出 `[config] ffmpeg not found at "..."` 並以 exit code 1 結束；不在 Windows 上指定 `windows` 也會拒絕啟動。安裝 ffmpeg：`winget install Gyan.FFmpeg`（裝好後重開終端機），或把 `FFMPEG_PATH` 設成 `ffmpeg.exe` 的完整路徑。
 
