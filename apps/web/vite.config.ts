@@ -1,6 +1,17 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
+/** The local backend started by `npm run prototype` (apps/api). */
+export const API_PROXY_TARGET = 'http://localhost:8787';
+/** `/api`, `/api/...` and `/api?...`, but not lookalikes such as `/apiary`. */
+export const API_PROXY_PATH = '^/api(?:[/?]|$)';
+
+/** `/api/transcribe` → `/transcribe`, `/api` → `/`; the query string is kept. */
+export function stripApiPrefix(path: string): string {
+  const stripped = path.replace(/^\/api(?=[/?]|$)/, '');
+  return stripped.startsWith('/') ? stripped : `/${stripped}`;
+}
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -8,6 +19,11 @@ export default defineConfig({
     strictPort: true,
     // apps/web/android is the Capacitor project; Gradle writes thousands of files there.
     watch: { ignored: ['**/android/**'] },
+    // Same-origin backend for the prototype: http://localhost:5173/api/* → http://localhost:8787/*,
+    // so the web app needs no CORS, and a shared tunnel URL (M9) reaches the backend the same way.
+    proxy: {
+      [API_PROXY_PATH]: { target: API_PROXY_TARGET, changeOrigin: true, rewrite: stripApiPrefix },
+    },
   },
   // A busy 4173 should fail `vite preview`, not silently move it to 4174+.
   preview: { port: 4173, strictPort: true },
