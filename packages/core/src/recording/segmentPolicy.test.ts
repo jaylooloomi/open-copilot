@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SegmentPolicy } from './segmentPolicy';
+import { DEFAULT_MAX_SEGMENT_MS, DEFAULT_MIN_SEGMENT_MS, SegmentPolicy } from './segmentPolicy';
 
 const SPEECH = 0.2;
 const SILENCE = 0.001;
@@ -13,54 +13,59 @@ function run(policy: SegmentPolicy, fromMs: number, toMs: number, rmsAt: (t: num
 }
 
 describe('SegmentPolicy', () => {
-  it('never cuts before 4 seconds, even during a pause', () => {
-    const policy = new SegmentPolicy();
-    policy.start(0);
-    expect(run(policy, 50, 3950, () => SILENCE)).toBeUndefined();
+  it('defaults to 8–12 second segments (Groq bills every request as at least 10 s)', () => {
+    expect(DEFAULT_MIN_SEGMENT_MS).toBe(8000);
+    expect(DEFAULT_MAX_SEGMENT_MS).toBe(12000);
   });
 
-  it('cuts at 4 seconds when a pause of 300ms is already going on', () => {
+  it('never cuts before 8 seconds, even during a pause', () => {
     const policy = new SegmentPolicy();
     policy.start(0);
-    expect(run(policy, 50, 8000, (t) => (t < 3500 ? SPEECH : SILENCE))).toBe(4000);
+    expect(run(policy, 50, 7950, () => SILENCE)).toBeUndefined();
   });
 
-  it('cuts once a pause after 4 seconds has lasted 300ms', () => {
+  it('cuts at 8 seconds when a pause of 300ms is already going on', () => {
     const policy = new SegmentPolicy();
     policy.start(0);
-    // Silence starts at 5000; 300ms later is 5300.
-    expect(run(policy, 50, 8000, (t) => (t < 5000 ? SPEECH : SILENCE))).toBe(5300);
+    expect(run(policy, 50, 12_000, (t) => (t < 7500 ? SPEECH : SILENCE))).toBe(8000);
+  });
+
+  it('cuts once a pause after 8 seconds has lasted 300ms', () => {
+    const policy = new SegmentPolicy();
+    policy.start(0);
+    // Silence starts at 9000; 300ms later is 9300.
+    expect(run(policy, 50, 12_000, (t) => (t < 9000 ? SPEECH : SILENCE))).toBe(9300);
   });
 
   it('restarts the pause timer when speech comes back', () => {
     const policy = new SegmentPolicy();
     policy.start(0);
     const rmsAt = (t: number) => {
-      if (t >= 5000 && t < 5200) return SILENCE; // too short
-      if (t >= 6000) return SILENCE;
+      if (t >= 9000 && t < 9200) return SILENCE; // too short
+      if (t >= 10_000) return SILENCE;
       return SPEECH;
     };
-    expect(run(policy, 50, 8000, rmsAt)).toBe(6300);
+    expect(run(policy, 50, 12_000, rmsAt)).toBe(10_300);
   });
 
-  it('forces a cut at 8 seconds without any pause', () => {
+  it('forces a cut at 12 seconds without any pause', () => {
     const policy = new SegmentPolicy();
     policy.start(0);
-    expect(run(policy, 50, 10_000, () => SPEECH)).toBe(8000);
+    expect(run(policy, 50, 15_000, () => SPEECH)).toBe(12_000);
   });
 
   it('treats values at or above the 0.01 threshold as speech', () => {
     const policy = new SegmentPolicy();
     policy.start(0);
-    expect(run(policy, 50, 10_000, () => 0.01)).toBe(8000);
+    expect(run(policy, 50, 15_000, () => 0.01)).toBe(12_000);
   });
 
   it('measures each segment from its own start', () => {
     const policy = new SegmentPolicy();
     policy.start(0);
-    expect(run(policy, 50, 10_000, () => SPEECH)).toBe(8000);
-    policy.start(8000);
-    expect(run(policy, 8050, 20_000, () => SPEECH)).toBe(16_000);
+    expect(run(policy, 50, 15_000, () => SPEECH)).toBe(12_000);
+    policy.start(12_000);
+    expect(run(policy, 12_050, 30_000, () => SPEECH)).toBe(24_000);
   });
 
   it('accepts custom limits', () => {
@@ -75,6 +80,8 @@ describe('SegmentPolicy', () => {
     expect(() => new SegmentPolicy({ silenceMs: Number.POSITIVE_INFINITY })).toThrow(RangeError);
     expect(() => new SegmentPolicy({ threshold: -0.1 })).toThrow(RangeError);
     expect(() => new SegmentPolicy({ minMs: 9000, maxMs: 8000 })).toThrow(RangeError);
+    // A custom minimum above the default maximum needs its own maximum.
+    expect(() => new SegmentPolicy({ minMs: 13_000 })).toThrow(RangeError);
     expect(() => new SegmentPolicy({ minMs: 5000, maxMs: 5000 })).not.toThrow();
   });
 
@@ -82,10 +89,10 @@ describe('SegmentPolicy', () => {
     const policy = new SegmentPolicy();
     policy.start(0);
     const rmsAt = (t: number) => {
-      if (t === 5100) return Number.NaN;
-      return t < 5000 ? SPEECH : SILENCE;
+      if (t === 9100) return Number.NaN;
+      return t < 9000 ? SPEECH : SILENCE;
     };
-    // Silence from 5000 is interrupted by NaN at 5100; the pause restarts at 5150 and cuts at 5450.
-    expect(run(policy, 50, 8000, rmsAt)).toBe(5450);
+    // Silence from 9000 is interrupted by NaN at 9100; the pause restarts at 9150 and cuts at 9450.
+    expect(run(policy, 50, 12_000, rmsAt)).toBe(9450);
   });
 });

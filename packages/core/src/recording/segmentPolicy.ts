@@ -1,10 +1,18 @@
 /** RMS below this counts as silence unless a caller passes its own threshold. */
 export const DEFAULT_SILENCE_THRESHOLD = 0.01;
 
+/**
+ * Default segment length limits. Groq bills every request as at least 10 s of audio, so 8–12 s
+ * segments keep an hour of recording near 6,000 billed seconds, under the free tier's 7,200 per
+ * hour (add-ons design 1.2).
+ */
+export const DEFAULT_MIN_SEGMENT_MS = 8000;
+export const DEFAULT_MAX_SEGMENT_MS = 12000;
+
 export interface SegmentPolicyOptions {
-  /** No cut before this much audio (default 4000ms). */
+  /** No cut before this much audio (default 8000ms). */
   minMs?: number;
-  /** Always cut at this length (default 8000ms). */
+  /** Always cut at this length (default 12000ms). */
   maxMs?: number;
   /** A pause must last this long (default 300ms). */
   silenceMs?: number;
@@ -25,8 +33,8 @@ export class SegmentPolicy {
   private silenceStartMs: number | null = null;
 
   constructor(options: SegmentPolicyOptions = {}) {
-    this.minMs = options.minMs ?? 4000;
-    this.maxMs = options.maxMs ?? 8000;
+    this.minMs = options.minMs ?? DEFAULT_MIN_SEGMENT_MS;
+    this.maxMs = options.maxMs ?? DEFAULT_MAX_SEGMENT_MS;
     this.silenceMs = options.silenceMs ?? 300;
     this.threshold = options.threshold ?? DEFAULT_SILENCE_THRESHOLD;
     for (const [name, value] of Object.entries({

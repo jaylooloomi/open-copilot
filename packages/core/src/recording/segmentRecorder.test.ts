@@ -5,13 +5,20 @@ import { SegmentRecorder } from './segmentRecorder';
 
 const SPEECH = 0.2;
 
+/**
+ * Most tests below were written for 4–8 s segments. They test the recorder (cuts, stop, interruptions),
+ * not the policy's defaults (segmentPolicy.test.ts covers those), so they pin these limits.
+ * Pass policy: 'default' to get the recorder's own default policy.
+ */
+const SHORT_SEGMENTS = { minMs: 4000, maxMs: 8000 } as const;
+
 function setup(
   options: {
     mimeType?: string;
     audioContext?: 'fake' | 'throws';
     onLevel?: (rms: number) => void;
     levelMs?: number;
-    policy?: SegmentPolicy;
+    policy?: SegmentPolicy | 'default';
     now?: () => number;
   } = {},
 ) {
@@ -27,7 +34,8 @@ function setup(
     onInterrupted,
     onLevel: options.onLevel,
     levelMs: options.levelMs,
-    policy: options.policy,
+    policy:
+      options.policy === 'default' ? undefined : (options.policy ?? new SegmentPolicy(SHORT_SEGMENTS)),
     now: options.now,
     createAudioContext:
       options.audioContext === 'throws'
@@ -97,6 +105,17 @@ describe('SegmentRecorder', () => {
     await vi.advanceTimersByTimeAsync(8000);
     expect(recorders()).toHaveLength(3);
     expect(segments.map((s) => s.seq)).toEqual([1, 2]);
+  });
+
+  it('uses the 8–12 s default policy when none is given', async () => {
+    const { recorder, segments } = setup({ policy: 'default' });
+    recorder.start();
+    await vi.advanceTimersByTimeAsync(11_950);
+    expect(recorders()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(recorders()).toHaveLength(2);
+    expect(segments.map((s) => s.seq)).toEqual([1]);
+    await recorder.stop();
   });
 
   it('stop() delivers the last segment, then stops polling and closes the audio context', async () => {
