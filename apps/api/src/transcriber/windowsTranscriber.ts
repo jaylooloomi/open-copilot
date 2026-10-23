@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +36,44 @@ export const DEFAULT_FFMPEG_PATH = 'ffmpeg';
 export const WINDOWS_STT_SCRIPT = fileURLToPath(
   new URL('../../scripts/windows-stt.ps1', import.meta.url),
 );
+
+/** 暫存目錄名稱的前綴（mkdtemp 會在後面加隨機字元）。 */
+const TEMP_DIR_PREFIX = 'oc-stt-';
+/**
+ * 超過這個時間沒動過的 oc-stt-* 目錄視為伺服器被終止時留下的：每段最多 30 秒，10 分鐘還在就不會有人在用。
+ */
+export const STALE_TEMP_DIR_MS = 10 * 60_000;
+
+/**
+ * 刪除 tempDir 底下超過 maxAgeMs 沒動過的 oc-stt-* 目錄（程序在辨識途中被終止時，finally 來不及清）。
+ * 回傳刪掉的數量；個別項目刪不掉就略過，不會丟錯。
+ */
+export async function removeStaleTempDirs(
+  tempDir: string,
+  maxAgeMs: number = STALE_TEMP_DIR_MS,
+): Promise<number> {
+  let names: string[];
+  try {
+    names = await readdir(tempDir);
+  } catch {
+    return 0;
+  }
+  const cutoff = Date.now() - maxAgeMs;
+  let removed = 0;
+  for (const name of names) {
+    if (!name.startsWith(TEMP_DIR_PREFIX)) continue;
+    const dir = join(tempDir, name);
+    try {
+      const info = await stat(dir);
+      if (!info.isDirectory() || info.mtimeMs >= cutoff) continue;
+      await rm(dir, { recursive: true, force: true });
+      removed += 1;
+    } catch {
+      // 其他程序剛好刪掉或還鎖著：下次啟動再說。
+    }
+  }
+  return removed;
+}
 
 /** ffmpeg 或辨識腳本失敗、逾時、輸出格式不對；app.ts 對應成 502 upstream_error。 */
 export class WindowsTranscribeError extends Error {
@@ -136,6 +174,10 @@ export function createWindowsTranscriber(options: WindowsTranscriberOptions = {}
     tempDir = tmpdir(),
   } = options;
   const limit = createLimiter(concurrency, { maxQueued });
+  // 上次被終止的伺服器留下的暫存目錄；背景清掉，不擋啟動。
+  void removeStaleTempDirs(tempDir).then((count) => {
+    if (count > 0) console.log(`[transcribe] deleted ${count} leftover temp folder(s)`);
+  });
 
   async function transcribeOnce(
     file: File,
@@ -150,7 +192,7 @@ export function createWindowsTranscriber(options: WindowsTranscriberOptions = {}
       );
     }
     const remaining = () => Math.max(1, deadline - Date.now());
-    const dir = await mkdtemp(join(tempDir, 'oc-stt-'));
+    const dir = await mkdtemp(join(tempDir, TEMP_DIR_PREFIX));
     try {
       const input = join(dir, `input${inputExtension(file.name)}`);
       const wav = join(dir, 'audio.wav');
