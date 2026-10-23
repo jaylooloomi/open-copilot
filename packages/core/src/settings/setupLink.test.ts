@@ -66,7 +66,7 @@ describe('encodeSetupPayload / decodeSetupPayload', () => {
 
 describe('applySetupLink', () => {
   it('saves valid settings and removes the hash, keeping the path and query', () => {
-    saveSettings({ apiBaseUrl: 'https://old.example.com', accessKey: 'old-key' });
+    const confirm = vi.spyOn(window, 'confirm');
     const encoded = encodeSetupPayload({ apiBaseUrl: API, accessKey: 'prototype-key-0123' });
     window.history.replaceState(null, '', `/notes?view=1#${SETUP_HASH_PARAM}=${encoded}`);
 
@@ -75,6 +75,45 @@ describe('applySetupLink', () => {
     expect(loadSettings()).toEqual({ apiBaseUrl: API, accessKey: 'prototype-key-0123' });
     expect(window.location.hash).toBe('');
     expect(window.location.pathname + window.location.search).toBe('/notes?view=1');
+    // Nothing was stored yet, so there is nothing to ask about.
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('asks before replacing a different stored access key, and keeps it when the user says no', () => {
+    saveSettings({ apiBaseUrl: 'https://old.example.com', accessKey: 'old-key' });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const encoded = encodeSetupPayload({ apiBaseUrl: API, accessKey: 'link-key-0123' });
+    window.history.replaceState(null, '', `/#${SETUP_HASH_PARAM}=${encoded}`);
+
+    expect(applySetupLink(window)).toBe('invalid');
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    // The question never shows either key.
+    expect(String(confirm.mock.calls[0]![0])).not.toMatch(/old-key|link-key/);
+    expect(loadSettings()).toEqual({ apiBaseUrl: 'https://old.example.com', accessKey: 'old-key' });
+    expect(window.location.hash).toBe('');
+  });
+
+  it('replaces stored settings when the user agrees', () => {
+    saveSettings({ apiBaseUrl: 'https://old.example.com', accessKey: 'old-key' });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const encoded = encodeSetupPayload({ apiBaseUrl: API, accessKey: 'link-key-0123' });
+    window.history.replaceState(null, '', `/#${SETUP_HASH_PARAM}=${encoded}`);
+
+    expect(applySetupLink(window)).toBe('applied');
+
+    expect(loadSettings()).toEqual({ apiBaseUrl: API, accessKey: 'link-key-0123' });
+  });
+
+  it('does not ask when the link carries the settings already stored', () => {
+    saveSettings({ apiBaseUrl: API, accessKey: 'link-key-0123' });
+    const confirm = vi.spyOn(window, 'confirm');
+    const encoded = encodeSetupPayload({ apiBaseUrl: API, accessKey: 'link-key-0123' });
+    window.history.replaceState(null, '', `/#${SETUP_HASH_PARAM}=${encoded}`);
+
+    expect(applySetupLink(window)).toBe('applied');
+
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   it('keeps the old settings but still removes the hash when the payload is invalid', () => {
@@ -98,6 +137,7 @@ describe('applySetupLink', () => {
 
   it('reports invalid, keeps the old settings and removes the hash when saving fails', () => {
     saveSettings({ apiBaseUrl: 'https://old.example.com', accessKey: 'old-key' });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const encoded = encodeSetupPayload({ apiBaseUrl: API, accessKey: 'prototype-key-0123' });
     window.history.replaceState(null, '', `/#${SETUP_HASH_PARAM}=${encoded}`);
     vi.spyOn(console, 'error').mockImplementation(() => {});

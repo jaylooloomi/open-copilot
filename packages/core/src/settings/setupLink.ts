@@ -15,6 +15,11 @@ export const MAX_SETUP_PAYLOAD_LENGTH = 4096;
 
 export type SetupLinkResult = 'none' | 'applied' | 'invalid';
 
+/** 連結要取代另一把已存的存取金鑰時，先問使用者（不顯示任何金鑰）。 */
+export const SETUP_REPLACE_CONFIRM =
+  '這個連結會把後端網址與存取金鑰換成新的值，取代目前的設定。' +
+  '只有在開啟自己的 npm run prototype 印出的網址時才按「確定」。要取代嗎？';
+
 /** `{ apiBaseUrl, accessKey }` → 無 padding 的 base64url（與 Node 的 Buffer `base64url` 相同）。 */
 export function encodeSetupPayload(settings: Settings): string {
   const json = JSON.stringify({ apiBaseUrl: settings.apiBaseUrl, accessKey: settings.accessKey });
@@ -55,6 +60,21 @@ function readSetupParam(hash: string): string | null {
   return new URLSearchParams(hash.slice(1)).get(SETUP_HASH_PARAM);
 }
 
+/** 沒存金鑰、或連結帶的就是目前的設定時不必問；否則要使用者按「確定」。 */
+function mayReplace(
+  current: Settings,
+  next: Settings,
+  win: Partial<Pick<Window, 'confirm'>>,
+): boolean {
+  if (current.accessKey === '') return true;
+  if (current.accessKey === next.accessKey && current.apiBaseUrl === next.apiBaseUrl) return true;
+  try {
+    return win.confirm?.(SETUP_REPLACE_CONFIRM) === true;
+  } catch {
+    return false;
+  }
+}
+
 function isSameOrigin(url: string, origin: string): boolean {
   try {
     return new URL(url).origin === origin;
@@ -69,15 +89,21 @@ function isSameOrigin(url: string, origin: string): boolean {
  * 存檔失敗（例如 localStorage 已滿或被封鎖）也回 'invalid'，舊設定維持不變。
  * 後端網址必須和目前頁面同源（prototype 用 `<網頁>/api`、M9 用 `<tunnel>/api`）：別人做的連結
  * 若指向其他網站，會把之後的錄音和金鑰送過去，所以一律當成 'invalid'，不覆蓋設定。
+ * 已經存了另一把存取金鑰時，先用 `win.confirm` 問過才覆蓋（任何網頁都能把人導到這個連結，
+ * 不問就會默默換掉金鑰）；使用者不同意、或 `win` 沒有 confirm，也回 'invalid'，舊設定不變。
  */
 export function applySetupLink(
-  win: Pick<Window, 'location' | 'history'> = window,
+  win: Pick<Window, 'location' | 'history'> & Partial<Pick<Window, 'confirm'>> = window,
 ): SetupLinkResult {
   const encoded = readSetupParam(win.location.hash);
   if (encoded === null) return 'none';
   const settings = decodeSetupPayload(encoded);
   let saved = false;
-  if (settings && isSameOrigin(settings.apiBaseUrl, win.location.origin)) {
+  if (
+    settings &&
+    isSameOrigin(settings.apiBaseUrl, win.location.origin) &&
+    mayReplace(loadSettings(), settings, win)
+  ) {
     saveSettings(settings);
     const stored = loadSettings();
     saved = stored.apiBaseUrl === settings.apiBaseUrl && stored.accessKey === settings.accessKey;

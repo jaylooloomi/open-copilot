@@ -76,3 +76,27 @@ test('按過「測試連線」後，Esc 仍能關閉設定視窗', async ({ page
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 });
+
+test('連結要換掉另一把已存的金鑰時會先詢問，按取消就保留原設定', async ({ page }) => {
+  await page.route(`${API}/health`, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }),
+  );
+  await page.goto(`/#oc-setup=${encode({ apiBaseUrl: API, accessKey: 'prototype-key-0123' })}`);
+  await expect(page.locator('.oc-record-btn')).toHaveText('錄製');
+
+  const questions: string[] = [];
+  page.once('dialog', (dialog) => {
+    questions.push(`${dialog.type()}:${dialog.message()}`);
+    void dialog.dismiss();
+  });
+  await page.goto(`/#oc-setup=${encode({ apiBaseUrl: API, accessKey: 'other-key-0123' })}`);
+  await page.reload();
+
+  await expect(page.locator('.oc-record-btn')).toHaveText('錄製');
+  expect(questions).toHaveLength(1);
+  expect(questions[0]).toMatch(/^confirm:.*取代/);
+  expect(questions[0]).not.toContain('key-0123');
+  expect(await page.evaluate(() => localStorage.getItem('oc.settings'))).toBe(
+    JSON.stringify({ apiBaseUrl: API, accessKey: 'prototype-key-0123' }),
+  );
+});
