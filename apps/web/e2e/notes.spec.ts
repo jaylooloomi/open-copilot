@@ -208,12 +208,15 @@ test('置中的清單項目，項目符號跟著文字一起置中', async ({ pa
       liLeft: box.left,
       liTop: box.top,
       liRight: box.right,
+      lineHeight: text.height,
     };
   });
   // The marker sits inside the item, just before the text, instead of at the far left edge.
   expect(layout.position).toBe('inside');
   // Marker and text share the first line (the paragraph is not pushed below the marker).
-  expect(layout.textTop - layout.liTop).toBeLessThan(4);
+  // A pushed-down paragraph would start a whole line lower; font metrics differ per OS
+  // (Linux CI renders a few px of half-leading), so allow anything under half a line.
+  expect(layout.textTop - layout.liTop).toBeLessThan(layout.lineHeight / 2);
   // The text itself is centred in the item.
   const middle = (layout.liLeft + layout.liRight) / 2;
   expect(layout.textLeft).toBeGreaterThan(middle - 120);
