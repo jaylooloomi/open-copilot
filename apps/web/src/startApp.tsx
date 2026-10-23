@@ -13,7 +13,7 @@ export async function startApp(
 ): Promise<void> {
   // `npm run prototype` opens /#oc-setup=…: save those settings before NotesApp reads them, and
   // drop the hash (it carries the access key) from the address bar right away.
-  applySetupLink(window);
+  if (applySetupLink(window) === 'invalid') console.warn('Ignored an invalid #oc-setup link');
   const root = createRoot(container);
   let platform: Platform;
   try {

@@ -66,4 +66,19 @@ describe('startApp', () => {
       expect(container.querySelector('.oc-record-btn')?.textContent).toBe('錄製'),
     );
   });
+
+  it('ignores an invalid #oc-setup link with a warning, drops the hash and still renders', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const container = mount();
+    window.history.replaceState(null, '', '/#oc-setup=not-valid');
+
+    await startApp(container, async () => fakePlatform());
+
+    expect(window.location.hash).toBe('');
+    expect(localStorage.getItem('oc.settings')).toBeNull();
+    expect(consoleWarn).toHaveBeenCalledWith('Ignored an invalid #oc-setup link');
+    await waitFor(() =>
+      expect(container.querySelector('.oc-record-btn')?.textContent).toBe('請先設定'),
+    );
+  });
 });
