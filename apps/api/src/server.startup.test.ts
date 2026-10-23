@@ -42,6 +42,11 @@ function freePort(): Promise<number> {
   });
 }
 
+/** PATH 上的 ffmpeg 能不能執行（決定 windows provider 的啟動測試要不要跑）。 */
+function hasFfmpeg(): boolean {
+  return spawnSync('ffmpeg', ['-version'], { stdio: 'ignore', windowsHide: true }).status === 0;
+}
+
 /**
  * 以子程序啟動 server.ts，等到 stdout 出現 [ai] 那一行（或子程序結束）就收掉，
  * 回傳目前收到的 stdout/stderr。
@@ -117,6 +122,35 @@ describe('server startup', () => {
       );
       expect(result.stderr).toContain('TRANSCRIBE_PROVIDER=windows only works on Windows');
       expect(result.stderr).not.toContain('at loadConfig');
+    },
+    30_000,
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'exits 1 naming ffmpeg when the Windows provider cannot find it',
+    () => {
+      // 不存在的 FFMPEG_PATH：在 listen 之前就失敗，不會佔用任何連接埠。
+      const result = startServer({
+        ACCESS_KEYS: 'startup-test-key-0123',
+        FFMPEG_PATH: 'C:\\oc-missing\\ffmpeg.exe',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('[config] ffmpeg not found at "C:\\oc-missing\\ffmpeg.exe"');
+      expect(result.stderr).toContain('FFMPEG_PATH');
+      expect(result.stderr).not.toContain('    at ');
+    },
+    30_000,
+  );
+
+  it.runIf(process.platform === 'win32' && hasFfmpeg())(
+    'starts with the Windows offline provider when no key is set',
+    async () => {
+      const { stdout } = await startServerUntilAiLine({ ACCESS_KEYS: 'startup-test-key-0123' });
+
+      expect(stdout).toContain('[transcribe] provider windows, model System.Speech zh-TW');
+      expect(stdout).toContain('[transcribe] Windows built-in offline recognition');
+      expect(stdout).toContain('[ai] disabled: set GROQ_API_KEY');
     },
     30_000,
   );
