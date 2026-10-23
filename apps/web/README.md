@@ -44,30 +44,60 @@ Windows 離線辨識需要 ffmpeg（`winget install Gyan.FFmpeg`，或用 `FFMPE
 npm run prototype -- --share
 ```
 
-除了上面的步驟，啟動器還會：
+分享模式和一般模式有兩點不同，其餘步驟相同：
 
-1. 用 npm 套件 `cloudflared`（根目錄的 devDependency，安裝時下載執行檔，不用另外安裝系統軟體）執行 `cloudflared tunnel --url http://localhost:5173`，向 Cloudflare 要一個免帳號的 quick tunnel，得到 `https://<隨機名稱>.trycloudflare.com`。
-2. 經過通道檢查 `/api/health`，再印出手機用的網址和 QR code（60 秒內檢查不過仍會印出並加上警告，見下方疑難排解）。網址的 `#oc-setup` 帶入 `apiBaseUrl = https://<隨機名稱>.trycloudflare.com/api` 和存取金鑰，手機開啟後自動填好設定；`/api` 由 Vite proxy 轉到本機後端，所以不需要 CORS 設定。
+- **網頁用建置版，不用開發伺服器。**啟動器先執行 `vite build`，再用 `vite preview` 在 `http://localhost:4173` 提供 `apps/web/dist`（本機開啟的網址也改成 4173）。開發伺服器的 `/@fs/`、HMR 和原始碼轉換能讀到整個 repo，絕不能放上公開網址；建置版只有 `dist/` 裡的檔案和 `/api`。
+- **存取金鑰至少 16 個字元。**自訂的 `ACCESS_KEYS` 第一把太短時，啟動器直接結束，不開分享網址（後端不會限制猜錯金鑰的次數）。自動產生的金鑰是 32 個字元。
+
+接著啟動器會：
+
+1. 用 npm 套件 `cloudflared`（根目錄的 devDependency，安裝時下載執行檔，不用另外安裝系統軟體）執行 `cloudflared tunnel --url http://localhost:4173`，向 Cloudflare 要一個免帳號的 quick tunnel，得到 `https://<隨機名稱>.trycloudflare.com`。
+2. 經過通道檢查 `/api/health`，再印出手機用的網址和 QR code（60 秒內檢查不過仍會印出並加上警告，見下方疑難排解）。網址的 `#oc-setup` 帶入 `apiBaseUrl = https://<隨機名稱>.trycloudflare.com/api` 和存取金鑰，手機開啟後自動填好設定；`/api` 由 `vite preview` 的 proxy 轉到本機後端，所以不需要 CORS 設定。
 3. 印出警告：**分享網址是公開的，請只在測試時開啟，用完按 Ctrl+C 關閉；後端仍然需要存取金鑰。**網址含存取金鑰，只給自己的手機使用。
 
-Vite 的 `server.allowedHosts` 已允許 `.trycloudflare.com`，其他網域仍會被擋（403）。每次執行的網址都不一樣。
+`vite.config.ts` 只讓 `vite preview`（`preview.allowedHosts`）接受 `.trycloudflare.com`；開發伺服器只接受 localhost，其他網域一律 403。每次執行的網址都不一樣。`npm run prototype -- --share --check` 會在分享網址也能連上後自動結束。
 
 用分享網址前要知道：
 - **筆記跟著網址走。**手機上的筆記存在那個 `*.trycloudflare.com` 網域的 IndexedDB，下次執行換了網址就看不到上次的筆記。要留下來，關閉前先在手機上用「備份」匯出。
-- **整個開發伺服器都公開了，不只網頁。**拿到網址的人可以透過 Vite 的 `/@fs/` 讀取 repo 裡的任何檔案（原始碼、`node_modules` 等）；只有 `.env*`、憑證（`*.pem`、`*.crt`）和 `.git` 會被擋。repo 裡不要放其他機密檔案。`npm run prototype -- --share --check` 會在分享網址也能連上後自動結束。
+- **改了程式要重新執行。**建置版不會熱更新；改完 `packages/core` 或 `apps/web` 後按 Ctrl+C，再執行一次 `npm run prototype -- --share`。
+- **已經存了另一把金鑰時會先詢問。**網頁裡已存的存取金鑰和連結帶的不同時，開啟連結會跳出確認視窗；按「取消」就保留原本的設定。
 
 疑難排解：
 - 等不到通道網址：確認這台電腦能連到 Cloudflare（公司網路可能擋掉），終端機會印出 cloudflared 最後的訊息。`~/.cloudflared/config.yml` 存在時 quick tunnel 無法使用，請先改名。
 - 印出「這台電腦 60 秒內連不到分享網址」：通常是本機 DNS 還沒更新，手機多半仍能開啟；打不開就重新執行。
-- 分享模式跑的是開發伺服器，不會註冊 service worker，所以不能在手機上「安裝」；要測安裝請見「PWA」一節。
+- 分享模式跑的是建置版，會註冊 service worker，手機上也能「安裝」；但每次執行網址都不同，裝好的 App 下次就連不到，正式使用請部署（見「PWA」一節）。
 
 ### 桌面版搭配原型後端
 
 1. 先執行 `npm run prototype`，讓後端保持執行。
-2. 開啟桌面版（`npm run dev -w @oc/desktop` 或安裝版），按右上齒輪開啟「設定」。
+2. 開啟桌面版（`npm run dev -w @oc/desktop`，或用 `npm run dist -w @oc/desktop` 建置的安裝版，見 `apps/desktop/README.md`），按右上齒輪開啟「設定」。
 3. 「後端網址」填 `http://localhost:8787`；「存取金鑰」填 `apps/api/.env.local` 裡 `ACCESS_KEYS=` 後面的值（自訂了 `ACCESS_KEYS` 時填第一把）。按「測試連線」，再按「儲存」。
 
 後端的 CORS 預設允許 `app://bundle`，不用另外設定。
+
+## Android App（Capacitor）
+
+`apps/web/android` 是 Capacitor 專案，包住同一份建置產物（`dist/`），App 的來源是 `https://localhost`（後端預設的 `ALLOWED_ORIGINS` 已包含）。
+
+需要先自行安裝（這台開發機目前沒有，屬於手動項目）：
+
+- JDK 21（Android Gradle Plugin 需要；設定 `JAVA_HOME`）
+- Android Studio，以及 Android SDK Platform 36（`compileSdk = 36`）和 Build-Tools；設定 `ANDROID_HOME`，或在 `apps/web/android/local.properties` 寫 `sdk.dir=...`
+
+| 指令（repo 根目錄） | 用途 |
+|---|---|
+| `npm run cap:sync -w @oc/web` | 建置網頁並把 `dist/` 複製進 Android 專案（每次改完網頁都要再跑一次） |
+| `npm run android:open -w @oc/web` | 用 Android Studio 開啟 Android 專案，可在那裡建置 APK 或按 Run |
+| `npm run android:run -w @oc/web` | 建置並安裝到已連接的手機或模擬器（手機要開啟 USB 偵錯） |
+
+也可以不開 Android Studio，直接用 Gradle 建置除錯版 APK：先 `npm run cap:sync -w @oc/web`，再在 `apps/web/android` 執行 `./gradlew assembleDebug`（Windows：`gradlew.bat assembleDebug`），輸出在 `apps/web/android/app/build/outputs/apk/debug/app-debug.apk`。
+
+App 裡的後端設定（手動，需要真的手機）：App 是 HTTPS 來源，不能呼叫 `http://<區網 IP>:8787`（混合內容會被擋），後端必須是 HTTPS：
+
+- 部署好的後端：「設定」的「後端網址」填 `https://api.example.com`，「存取金鑰」填 `ACCESS_KEYS` 其中一把。
+- 本機後端：在電腦執行 `npm run prototype -- --share`，「後端網址」填印出的 `https://<隨機名稱>.trycloudflare.com/api`，「存取金鑰」填 `apps/api/.env.local`（或你自訂的 `ACCESS_KEYS` 第一把）。每次執行網址都不同，要重新填。
+
+按「測試連線」顯示「連線成功」後按「儲存」，再按「錄製」確認麥克風權限與轉寫結果。
 
 ## 真實語音端對端測試（`npm run e2e:real`）
 
@@ -98,16 +128,22 @@ npm run e2e:real -w @oc/web
 需要 HTTPS 的建置版，兩種做法擇一：
 
 - 部署到 Vercel 或 Cloudflare Pages（見下方），用手機開正式網址。
-- 本機建置版加 quick tunnel：
+- 本機建置版加 quick tunnel：直接執行 `npm run prototype -- --share`（建置、`vite preview`、後端和通道一次啟動，並印出含 `#oc-setup` 的網址與 QR code），用手機開啟那個網址。
+
+  要自己一步一步來時，後端也要另外啟動，設定要手動輸入：
 
   ```bash
+  # 1. 後端（8787）。npm run dev -w @oc/api 只讀 apps/api/.env（不讀 prototype 寫的 .env.local），
+  #    所以 apps/api/.env 要有 ACCESS_KEYS（至少 16 字元）和轉寫服務設定，見 apps/api/README.md。
+  npm run dev -w @oc/api
+  # 2. 另開一個終端機：建置版（4173，/api 經 proxy 轉到 8787）
   npm run build -w @oc/web
   npm run preview -w @oc/web
-  # 另開一個終端機（repo 根目錄）：
+  # 3. 再開一個終端機（repo 根目錄）：
   npx cloudflared tunnel --url http://localhost:4173
   ```
 
-  `vite preview` 沿用 `server.allowedHosts` 和 `/api` proxy，用手機開啟印出的 `https://<隨機名稱>.trycloudflare.com`。
+  用手機開啟印出的 `https://<隨機名稱>.trycloudflare.com`，按右上齒輪開啟「設定」：「後端網址」填 `https://<隨機名稱>.trycloudflare.com/api`，「存取金鑰」填 `apps/api/.env` 的 `ACCESS_KEYS` 第一把，按「測試連線」再按「儲存」。
 
 手機上確認：Chrome 選單出現「安裝應用程式」（或「加到主畫面」），安裝後從主畫面以獨立視窗開啟，圖示是桃紫底白色麥克風；開飛航模式再開啟，筆記仍在。
 
@@ -180,6 +216,7 @@ npm run e2e:real -w @oc/web
 
 - Node 用 24（與開發機相同；Vite 7 最低需要 20.19 或 22.12）。
 - M4 起，根目錄安裝依賴時也會安裝 `@oc/desktop` 的 `electron`，它會額外下載約 100 MB 的 Electron 執行檔。網頁建置用不到它，可在部署平台加上環境變數 `ELECTRON_SKIP_BINARY_DOWNLOAD` = `1` 跳過下載。
+- 根目錄的 devDependency `cloudflared`（只有 `npm run prototype -- --share` 用到）在安裝時也會從 GitHub 下載 cloudflared 執行檔，預設是最新版；GitHub 連不上時安裝會失敗。部署平台可加上環境變數 `CLOUDFLARED_VERSION`（例如 `2026.10.3`）固定版本，讓每次建置下載同一個檔案。缺少執行檔時，`--share` 第一次執行會自己下載。
 
 ## 連接後端（M3 起）
 
