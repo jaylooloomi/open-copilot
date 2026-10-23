@@ -4,21 +4,32 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import {
   GROQ_KEY_STEPS,
+  LAUNCHER_FLAGS,
   PROXY_API_BASE_URL,
+  SHARE_WARNING,
+  WEB_ORIGIN,
   WINDOWS_HINT,
   chooseTranscriber,
+  cloudflaredArgs,
   encodeSetup,
   apiEnvironment,
   ensureAccessKey,
+  ensureCloudflaredBin,
   ffmpegUsable,
+  findTunnelUrl,
   generateAccessKey,
   loadEnvLayers,
   openBrowserCommand,
+  parseFlags,
+  renderQr,
   setupUrl,
+  shareSetupUrl,
   supervise,
   waitForOk,
+  watchTunnel,
 } from './lib.mjs';
 
 function tempDir(t) {
@@ -257,4 +268,131 @@ test('apiEnvironment gives the backend the key the setup link carries', (t) => {
     ACCESS_KEYS: 'new-key',
     PORT: '8787',
   });
+});
+
+test('parseFlags reads --no-open, --check and --share, and rejects anything else', () => {
+  assert.deepEqual(LAUNCHER_FLAGS, ['--no-open', '--check', '--share']);
+  assert.deepEqual(parseFlags([]), { checkOnly: false, openInBrowser: true, share: false });
+  assert.deepEqual(parseFlags(['--no-open']), { checkOnly: false, openInBrowser: false, share: false });
+  assert.deepEqual(parseFlags(['--check']), { checkOnly: true, openInBrowser: false, share: false });
+  assert.deepEqual(parseFlags(['--share', '--check']), { checkOnly: true, openInBrowser: false, share: true });
+  assert.throws(() => parseFlags(['--shar']), /不認得的選項：--shar/);
+});
+
+test('cloudflaredArgs opens a quick tunnel to the web app without auto-updating', () => {
+  assert.deepEqual(cloudflaredArgs(WEB_ORIGIN), ['tunnel', '--no-autoupdate', '--url', 'http://localhost:5173']);
+});
+
+test('findTunnelUrl picks the quick tunnel URL out of cloudflared logs', () => {
+  assert.equal(
+    findTunnelUrl('2026-10-23T01:02:03Z INF |  https://quiet-river-1234.trycloudflare.com                    |'),
+    'https://quiet-river-1234.trycloudflare.com',
+  );
+  assert.equal(findTunnelUrl('2026-10-23T01:02:03Z INF Requesting new quick Tunnel on trycloudflare.com...'), null);
+  assert.equal(findTunnelUrl('see https://api.trycloudflare.com for details'), null);
+  assert.equal(findTunnelUrl('terms: https://www.cloudflare.com/website-terms/'), null);
+});
+
+const URL_LINE = '2026-10-23T01:02:04Z INF |  https://quiet-river-1234.trycloudflare.com  |';
+const CONNECTED_LINE =
+  '2026-10-23T01:02:06Z INF Registered tunnel connection connIndex=0 connection=1b2c3d4e-0000-4000-8000-000000000000 ip=198.41.200.13 location=tpe01';
+
+test('watchTunnel resolves with the URL once a connection is registered, across chunk boundaries', async () => {
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const watch = watchTunnel([stdout, stderr], { timeoutMs: 5_000 });
+  stderr.write('2026-10-23T01:02:03Z INF Requesting new quick Tunnel on trycloudflare.com...\n');
+  stderr.write(URL_LINE.slice(0, 30));
+  stderr.write(`${URL_LINE.slice(30)}\r\n`);
+  let settled = false;
+  watch.ready.then(() => (settled = true));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false, 'the URL alone is not enough');
+  stderr.write(`${CONNECTED_LINE}\n`);
+  assert.equal(await watch.ready, 'https://quiet-river-1234.trycloudflare.com');
+  assert.equal(watch.tail().length, 3);
+  watch.cancel();
+});
+
+test('watchTunnel gives up when every stream ends, on timeout, or when cancelled, keeping the last lines', async () => {
+  const ended = new PassThrough();
+  const endedWatch = watchTunnel([ended], { timeoutMs: 5_000 });
+  ended.end('2026-10-23T01:02:03Z ERR failed to request quick Tunnel\n');
+  assert.equal(await endedWatch.ready, null);
+  assert.deepEqual(endedWatch.tail(), ['2026-10-23T01:02:03Z ERR failed to request quick Tunnel']);
+
+  const silent = new PassThrough();
+  assert.equal(await watchTunnel([silent], { timeoutMs: 20 }).ready, null);
+
+  const cancelled = watchTunnel([new PassThrough()], { timeoutMs: 5_000 });
+  cancelled.cancel();
+  assert.equal(await cancelled.ready, null);
+
+  const chatty = new PassThrough();
+  const chattyWatch = watchTunnel([chatty], { timeoutMs: 5_000, tailLines: 2 });
+  chatty.write('one\ntwo\nthree\n');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(chattyWatch.tail(), ['two', 'three']);
+  chattyWatch.cancel();
+});
+
+test('shareSetupUrl points the phone at <tunnel>/api through #oc-setup', () => {
+  const link = shareSetupUrl('https://quiet-river-1234.trycloudflare.com', 'k-0123456789abcdef');
+  assert.equal(
+    link,
+    setupUrl('https://quiet-river-1234.trycloudflare.com', {
+      apiBaseUrl: 'https://quiet-river-1234.trycloudflare.com/api',
+      accessKey: 'k-0123456789abcdef',
+    }),
+  );
+  assert.ok(link.startsWith('https://quiet-river-1234.trycloudflare.com/#oc-setup='));
+  // The launcher may open it with openBrowserCommand, which rejects odd characters.
+  assert.doesNotThrow(() => openBrowserCommand(link, 'win32'));
+});
+
+test('renderQr draws a terminal QR code', async () => {
+  const qr = await renderQr('https://quiet-river-1234.trycloudflare.com/#oc-setup=abc');
+  assert.ok(qr.split('\n').length > 10, qr);
+  assert.match(qr, /[█▀▄]/);
+  const calls = [];
+  const fake = async (text, options) => {
+    calls.push([text, options]);
+    return 'QR';
+  };
+  assert.equal(await renderQr('x', fake), 'QR');
+  assert.deepEqual(calls, [['x', { type: 'terminal', small: true }]]);
+});
+
+test('SHARE_WARNING says the URL is public, to close it with Ctrl+C, and that the key is still needed', () => {
+  assert.match(SHARE_WARNING, /分享網址是公開的/);
+  assert.match(SHARE_WARNING, /Ctrl\+C/);
+  assert.match(SHARE_WARNING, /存取金鑰/);
+});
+
+test('ensureCloudflaredBin returns the installed binary and downloads it only when missing', async () => {
+  const installed = [];
+  const logs = [];
+  const mod = { bin: 'C:\\cf\\cloudflared.exe', install: async (to) => installed.push(to) };
+  assert.equal(
+    await ensureCloudflaredBin({ load: async () => mod, exists: () => true, log: (m) => logs.push(m) }),
+    'C:\\cf\\cloudflared.exe',
+  );
+  assert.deepEqual(installed, []);
+  assert.equal(
+    await ensureCloudflaredBin({ load: async () => ({ default: mod }), exists: () => false, log: (m) => logs.push(m) }),
+    'C:\\cf\\cloudflared.exe',
+  );
+  assert.deepEqual(installed, ['C:\\cf\\cloudflared.exe']);
+  assert.equal(logs.length, 1);
+});
+
+test('the real cloudflared package resolves to an installed binary', async () => {
+  // cloudflared is CommonJS only, so its names may sit on the default export: check the real code path.
+  const raw = await import('cloudflared');
+  const mod = typeof raw.install === 'function' ? raw : raw.default;
+  assert.equal(typeof mod.bin, 'string');
+  assert.equal(typeof mod.install, 'function');
+  const bin = await ensureCloudflaredBin({ exists: () => true });
+  const { existsSync } = await import('node:fs');
+  assert.ok(existsSync(bin), `${bin} is missing: reinstall with npm install`);
 });

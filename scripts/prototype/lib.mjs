@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseEnv } from 'node:util';
+import QRCode from 'qrcode';
 
 export const API_PORT = 8787;
 export const WEB_PORT = 5173;
@@ -214,4 +215,125 @@ export function supervise(children) {
       return exited.size > 0;
     },
   };
+}
+
+// --- npm run prototype -- --share (add-ons design 4) ---
+
+export const LAUNCHER_FLAGS = ['--no-open', '--check', '--share'];
+
+/**
+ * Launcher options. Unknown flags throw before anything starts, so a typo such as --shar never
+ * silently runs a session without the share URL.
+ * @returns {{ checkOnly: boolean, openInBrowser: boolean, share: boolean }}
+ */
+export function parseFlags(argv) {
+  const unknown = argv.filter((arg) => !LAUNCHER_FLAGS.includes(arg));
+  if (unknown.length > 0) {
+    throw new Error(
+      `[prototype] 不認得的選項：${unknown.join(' ')}（可用的選項：${LAUNCHER_FLAGS.join('、')}）`,
+    );
+  }
+  const checkOnly = argv.includes('--check');
+  return {
+    checkOnly,
+    openInBrowser: !checkOnly && !argv.includes('--no-open'),
+    share: argv.includes('--share'),
+  };
+}
+
+export const SHARE_WARNING =
+  '[prototype] 注意：分享網址是公開的，請只在測試時開啟，用完按 Ctrl+C 關閉；後端仍然需要存取金鑰。';
+
+/** `cloudflared tunnel --url <target>`: a Cloudflare quick tunnel, no account needed. */
+export function cloudflaredArgs(target) {
+  return ['tunnel', '--no-autoupdate', '--url', target];
+}
+
+/** The quick tunnel URL cloudflared prints in a box; api.trycloudflare.com is its own API. */
+export const TUNNEL_URL_PATTERN = /https:\/\/(?!api\.)[a-z0-9-]+\.trycloudflare\.com/;
+/** Logged once an edge connection is up; querying the new hostname before that risks a cached NXDOMAIN. */
+export const TUNNEL_CONNECTED_PATTERN = /Registered tunnel connection/i;
+
+export function findTunnelUrl(line) {
+  return TUNNEL_URL_PATTERN.exec(line)?.[0] ?? null;
+}
+
+/**
+ * Reads cloudflared's output. `ready` resolves with the tunnel URL once the URL and a registered
+ * connection have both been logged, or with null when every stream ends, `timeoutMs` passes or
+ * cancel() is called. tail() returns the last `tailLines` non-blank lines for error messages.
+ * The streams keep being read after `ready`, so cloudflared never blocks on a full pipe.
+ */
+export function watchTunnel(streams, { timeoutMs = 90_000, tailLines = 20 } = {}) {
+  const tail = [];
+  let url = null;
+  let connected = false;
+  let settled = false;
+  let open = streams.length;
+  let resolveReady;
+  const ready = new Promise((resolve) => {
+    resolveReady = resolve;
+  });
+  const finish = (value) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    resolveReady(value);
+  };
+  const timer = setTimeout(() => finish(null), timeoutMs);
+  const onLine = (line) => {
+    if (line.trim() === '') return;
+    tail.push(line);
+    if (tail.length > tailLines) tail.shift();
+    url ??= findTunnelUrl(line);
+    if (TUNNEL_CONNECTED_PATTERN.test(line)) connected = true;
+    if (url && connected) finish(url);
+  };
+  for (const stream of streams) {
+    let buffer = '';
+    stream.setEncoding('utf8');
+    stream.on('data', (chunk) => {
+      buffer += chunk;
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? '';
+      for (const line of lines) onLine(line);
+    });
+    stream.on('end', () => {
+      if (buffer !== '') onLine(buffer);
+      buffer = '';
+    });
+    stream.on('close', () => {
+      open -= 1;
+      if (open === 0) finish(null);
+    });
+  }
+  return { ready, tail: () => [...tail], cancel: () => finish(null) };
+}
+
+/** The phone's link: the tunnel origin with #oc-setup pointing at <tunnel>/api (same origin). */
+export function shareSetupUrl(tunnelOrigin, accessKey) {
+  return setupUrl(tunnelOrigin, { apiBaseUrl: `${tunnelOrigin}/api`, accessKey });
+}
+
+/** A QR code made of block characters, for the phone camera. `toString` is injected by tests. */
+export function renderQr(text, toString = (value, options) => QRCode.toString(value, options)) {
+  return toString(text, { type: 'terminal', small: true });
+}
+
+/**
+ * Path of the cloudflared binary from the `cloudflared` npm package (its postinstall downloads
+ * it); downloads it now if it is missing. `load`, `exists` and `log` are injected by tests.
+ */
+export async function ensureCloudflaredBin({
+  load = () => import('cloudflared'),
+  exists = existsSync,
+  log = (message) => console.log(message),
+} = {}) {
+  const mod = await load();
+  const { bin, install } = typeof mod.install === 'function' ? mod : mod.default;
+  if (!exists(bin)) {
+    log('[prototype] 找不到 cloudflared，正在下載（只有第一次需要）…');
+    await install(bin);
+  }
+  return bin;
 }

@@ -12,6 +12,8 @@
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
+    "cloudflared": "^0.7.3",
+    "qrcode": "^1.5.4",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7",
     "yaml": "^2.9.1"
