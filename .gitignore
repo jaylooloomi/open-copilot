@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.env
+.env.*
+!.env.example
+apps/web/android/app/build/
+apps/desktop/release/
+apps/web/android/.idea/

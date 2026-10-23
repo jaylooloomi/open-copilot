@@ -1,0 +1,1429 @@
+:root {
+  --oc-primary: #c026d3;
+  --oc-primary-hover: #a21caf;
+  --oc-primary-end: #ec4899;
+  --oc-gradient: linear-gradient(135deg, var(--oc-primary) 0%, var(--oc-primary-end) 100%);
+  --oc-bg: #ffffff;
+  --oc-surface: #f9fafb;
+  --oc-hover: #f3f4f6;
+  --oc-active-bg: #fdf4ff;
+  --oc-border: #e5e7eb;
+  --oc-text: #111827;
+  --oc-muted: #6b7280;
+  --oc-placeholder: #9ca3af;
+  --oc-danger: #dc2626;
+  --oc-radius: 10px;
+  --oc-sidebar-width: 260px;
+  --oc-gear-size: 34px;
+  --oc-font: system-ui, -apple-system, 'Segoe UI', 'Noto Sans TC', 'PingFang TC',
+    'Microsoft JhengHei', sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--oc-font);
+  color: var(--oc-text);
+  background: var(--oc-bg);
+}
+
+button {
+  font: inherit;
+  /* Mobile Chromium and Android WebView paint a square blue box on tap that ignores rounded corners;
+     each button's own :hover/:active/:focus-visible styles give the feedback instead. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.oc-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--oc-muted);
+}
+
+/* Shown instead of the app when the notes cannot be loaded. */
+.oc-load-error {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  height: 100%;
+  padding: 16px;
+  color: #991b1b;
+  text-align: center;
+}
+
+.oc-load-error p {
+  margin: 0;
+}
+
+.oc-load-retry {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 999px;
+  background: var(--oc-gradient);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ---------- layout ---------- */
+.oc-app {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.oc-sidebar {
+  width: var(--oc-sidebar-width);
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--oc-border);
+  background: var(--oc-surface);
+}
+
+.oc-backdrop {
+  display: none;
+}
+
+.oc-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.oc-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--oc-border);
+}
+
+.oc-menu-btn {
+  display: none;
+}
+
+/* ---------- action bar ---------- */
+.oc-actionbar {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.oc-record-btn {
+  display: inline-flex;
+  align-items: center;
+  /* Wide enough for the longest label (請先設定 + icon), so the chips do not shift between states. */
+  min-width: calc(4em + 60px);
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 999px;
+  background: var(--oc-gradient);
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.oc-record-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---------- recording status: timer, level meter, 轉寫中 N 段 ---------- */
+.oc-rec-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  color: var(--oc-muted);
+  font-size: 13px;
+}
+
+.oc-rec-timer {
+  color: var(--oc-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.oc-level-meter {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+
+.oc-level-bar {
+  width: 4px;
+  border-radius: 1px;
+  background: var(--oc-border);
+}
+
+.oc-level-bar:nth-child(1) {
+  height: 20%;
+}
+
+.oc-level-bar:nth-child(2) {
+  height: 40%;
+}
+
+.oc-level-bar:nth-child(3) {
+  height: 60%;
+}
+
+.oc-level-bar:nth-child(4) {
+  height: 80%;
+}
+
+.oc-level-bar:nth-child(5) {
+  height: 100%;
+}
+
+.oc-level-bar.is-on {
+  background: var(--oc-primary);
+}
+
+.oc-no-sound {
+  margin: 12px 16px 0;
+  padding: 8px 14px;
+  border: 1px solid #fde68a;
+  border-radius: var(--oc-radius);
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 14px;
+}
+
+.oc-ai-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.oc-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: 1px solid var(--oc-border);
+  border-radius: 999px;
+  background: var(--oc-bg);
+  color: var(--oc-muted);
+  font-size: 13px;
+  cursor: not-allowed;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* M11: AI 摘要 and 待辦事項 work; AI 助理 and AI 對話 stay locked. */
+.oc-ai-btn.is-available {
+  border-color: rgba(192, 38, 211, 0.4);
+  color: var(--oc-primary);
+  cursor: pointer;
+}
+
+.oc-ai-btn.is-available:hover:not(:disabled) {
+  background: var(--oc-active-bg);
+}
+
+.oc-ai-btn.is-available:focus-visible {
+  outline: 2px solid var(--oc-primary);
+  outline-offset: 2px;
+}
+
+.oc-ai-btn.is-available:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ---------- banner ---------- */
+.oc-banner {
+  margin: 12px 16px 0;
+  padding: 10px 14px;
+  border-radius: var(--oc-radius);
+  background: linear-gradient(135deg, rgba(192, 38, 211, 0.08), rgba(236, 72, 153, 0.08));
+  font-size: 14px;
+}
+
+.oc-banner strong {
+  color: var(--oc-primary);
+}
+
+.oc-banner-backup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.oc-banner-action {
+  padding: 4px 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--oc-gradient);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.oc-banner-action:focus-visible {
+  outline: 2px solid var(--oc-primary);
+  outline-offset: 2px;
+}
+
+.oc-banner-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ---------- toolbar ---------- */
+.oc-toolbar {
+  /* Containing block for the palette popover on narrow screens (see the media query). */
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--oc-border);
+}
+
+.oc-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+  margin-right: 2px;
+  border-right: 1px solid var(--oc-border);
+}
+
+.oc-tool-group:last-child {
+  border-right: none;
+}
+
+/* A separate rule: a WebView without :has() drops only this one, not :last-child above. */
+.oc-tool-group:has(+ .oc-note-actions) {
+  border-right: none;
+}
+
+.oc-tool {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--oc-text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.oc-tool:hover:not(:disabled) {
+  background: var(--oc-active-bg);
+}
+
+/* Listed after the hover rule and as specific, so a toggle that is on keeps its filled look
+   (and its white icon stays visible) while the pointer is still over it after the click. */
+.oc-tool.is-active,
+.oc-tool.is-active:hover:not(:disabled) {
+  background: var(--oc-primary);
+  color: #ffffff;
+}
+
+.oc-tool.is-active:hover:not(:disabled) {
+  background: var(--oc-primary-hover);
+}
+
+.oc-tool:disabled {
+  color: var(--oc-placeholder);
+  cursor: default;
+}
+
+.oc-block-select {
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: var(--oc-bg);
+  color: var(--oc-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.oc-block-select:hover {
+  background: var(--oc-hover);
+}
+
+.oc-block-select:focus-visible {
+  outline: 2px solid var(--oc-primary);
+  outline-offset: 1px;
+}
+
+.oc-palette {
+  position: relative;
+}
+
+.oc-palette-indicator {
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  left: 8px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.oc-palette-popover {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, 28px);
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius);
+  background: var(--oc-bg);
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
+}
+
+.oc-swatch {
+  width: 28px;
+  height: 28px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--oc-border);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.oc-swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--oc-primary);
+}
+
+.oc-palette-clear {
+  grid-column: 1 / -1;
+  padding: 4px;
+  border: 1px solid var(--oc-border);
+  border-radius: 6px;
+  background: var(--oc-bg);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ---------- copy / export (right end of the toolbar) ---------- */
+.oc-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.oc-action-status {
+  color: var(--oc-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.oc-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--oc-border);
+  border-radius: 999px;
+  background: var(--oc-bg);
+  color: var(--oc-text);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.oc-action-btn:hover,
+.oc-action-btn[aria-expanded='true'] {
+  border-color: var(--oc-primary);
+  color: var(--oc-primary);
+}
+
+.oc-export {
+  position: relative;
+}
+
+.oc-export-menu {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 6px;
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius);
+  background: var(--oc-bg);
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
+}
+
+.oc-export-item {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--oc-text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.oc-export-item:hover,
+.oc-export-item:focus {
+  background: var(--oc-active-bg);
+  color: var(--oc-primary);
+  outline: none;
+}
+
+/* ---------- document ---------- */
+.oc-document {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px 48px;
+}
+
+.oc-title {
+  width: 100%;
+  padding: 0 0 12px;
+  margin-bottom: 16px;
+  border: none;
+  border-bottom: 1px solid var(--oc-border);
+  outline: none;
+  background: transparent;
+  color: var(--oc-text);
+  font: inherit;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.oc-title::placeholder {
+  color: var(--oc-placeholder);
+}
+
+/* The title has no border or outline, so keyboard focus needs its own cue (WCAG 2.4.7). */
+.oc-title:focus-visible {
+  box-shadow: inset 0 -2px 0 var(--oc-primary);
+}
+
+.oc-editor .ProseMirror {
+  min-height: 50vh;
+  outline: none;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.oc-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--oc-placeholder);
+  pointer-events: none;
+}
+
+.oc-editor .ProseMirror ul,
+.oc-editor .ProseMirror ol {
+  padding-left: 1.5em;
+}
+
+/* A centred or right-aligned item keeps its marker next to the text, not at the far left edge:
+   the marker moves inside and the first paragraph flows on the marker's line. Each :has() rule
+   stands alone, since an old WebView drops a whole selector list it cannot parse. */
+.oc-editor .ProseMirror li:has(> p:first-child[style*='text-align: center']) {
+  list-style-position: inside;
+  text-align: center;
+}
+
+.oc-editor .ProseMirror li:has(> p:first-child[style*='text-align: right']) {
+  list-style-position: inside;
+  text-align: right;
+}
+
+.oc-editor .ProseMirror li > p:first-child[style*='text-align: center'],
+.oc-editor .ProseMirror li > p:first-child[style*='text-align: right'] {
+  display: inline;
+}
+
+/* Later blocks of such an item (more paragraphs, nested lists) keep their own alignment. */
+.oc-editor .ProseMirror li:has(> p:first-child[style*='text-align: center']) > :not(:first-child) {
+  text-align: left;
+}
+
+.oc-editor .ProseMirror li:has(> p:first-child[style*='text-align: right']) > :not(:first-child) {
+  text-align: left;
+}
+
+/* Task lists (AI 待辦事項): the checkbox sits beside the item text instead of a bullet. */
+.oc-editor .ProseMirror ul[data-type='taskList'] {
+  padding-left: 0.25em;
+  list-style: none;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li > label {
+  flex: none;
+  /* Line height is 1.7: this centres the box on the first line of text. */
+  margin-top: 0.35em;
+  line-height: 1;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The item's content is a flex item, so its paragraph's default 1em margins stay inside it and would
+   push the text a line below the checkbox. Spacing between items goes on the items instead. */
+.oc-editor .ProseMirror ul[data-type='taskList'] > li > div > :first-child {
+  margin-top: 0;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li > div > :last-child {
+  margin-bottom: 0;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li + li {
+  margin-top: 0.25em;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] > li[data-checked='true'] > div > p {
+  color: var(--oc-muted);
+  text-decoration: line-through;
+}
+
+.oc-editor .ProseMirror ul[data-type='taskList'] input[type='checkbox'] {
+  accent-color: var(--oc-primary);
+  cursor: pointer;
+}
+
+.oc-editor .ProseMirror mark {
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+/* ---------- note list ---------- */
+.oc-notelist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 8px;
+}
+
+.oc-notelist-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.oc-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--oc-gradient);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.oc-notelist-items {
+  margin: 0;
+  padding: 0 8px 16px;
+  list-style: none;
+}
+
+.oc-note-item {
+  display: flex;
+  align-items: center;
+  border-radius: var(--oc-radius);
+}
+
+.oc-note-item:hover {
+  background: var(--oc-hover);
+}
+
+.oc-note-item.is-active {
+  background: var(--oc-active-bg);
+}
+
+.oc-note-select {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.oc-note-title {
+  max-width: 100%;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-note-item.is-active .oc-note-title {
+  color: var(--oc-primary);
+}
+
+.oc-note-time {
+  color: var(--oc-muted);
+  font-size: 12px;
+}
+
+.oc-note-delete {
+  display: inline-flex;
+  margin-right: 6px;
+  padding: 6px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--oc-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.oc-note-item:hover .oc-note-delete,
+.oc-note-item.is-active .oc-note-delete,
+.oc-note-delete:focus-visible {
+  opacity: 1;
+}
+
+.oc-note-delete:hover:not(:disabled) {
+  background: #fee2e2;
+  color: var(--oc-danger);
+}
+
+/* ---------- storage errors ---------- */
+/* Fixed above the drawer (z-index 40): a failed delete happens inside it. */
+.oc-storage-alert {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 8px 8px 8px 16px;
+  border: 1px solid #fecaca;
+  border-radius: var(--oc-radius);
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 14px;
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
+  transform: translateX(-50%);
+}
+
+.oc-storage-alert p {
+  margin: 0;
+}
+
+.oc-alert-dismiss {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 6px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.oc-alert-dismiss:hover {
+  background: #fee2e2;
+}
+
+.oc-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- recording ---------- */
+.oc-actionbar-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.oc-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--oc-gear-size);
+  height: var(--oc-gear-size);
+  border: 1px solid var(--oc-border);
+  border-radius: 50%;
+  background: var(--oc-bg);
+  color: var(--oc-muted);
+  cursor: pointer;
+}
+
+.oc-settings-btn:hover {
+  border-color: var(--oc-primary);
+  color: var(--oc-primary);
+}
+
+.oc-record-btn.is-recording {
+  background: var(--oc-danger);
+  animation: oc-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes oc-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(220, 38, 38, 0);
+  }
+}
+
+.oc-spin {
+  animation: oc-spin 1s linear infinite;
+}
+
+@keyframes oc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.oc-recorder-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 16px 0;
+  padding: 10px 14px;
+  border: 1px solid #fde68a;
+  border-radius: var(--oc-radius);
+  background: #fffbeb;
+  font-size: 14px;
+}
+
+.oc-recorder-alert-text {
+  flex: 1;
+}
+
+.oc-recorder-alert p {
+  margin: 0;
+}
+
+.oc-recorder-error {
+  color: var(--oc-danger);
+}
+
+.oc-recorder-notice {
+  color: #92400e;
+}
+
+.oc-alert-close {
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--oc-muted);
+  cursor: pointer;
+}
+
+.oc-editor .ProseMirror .oc-gap {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #b45309;
+  font-size: 0.9em;
+  line-height: 1.6;
+  cursor: pointer;
+  user-select: none;
+}
+
+.oc-editor .ProseMirror .oc-gap:hover {
+  background: #fde68a;
+}
+
+.oc-editor .ProseMirror .oc-gap.ProseMirror-selectednode {
+  outline: 2px solid var(--oc-primary);
+}
+
+.oc-icon-btn:disabled,
+.oc-note-select:disabled,
+.oc-note-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* While recording the delete buttons are disabled: they stay hidden where they normally are, and
+   show dimmed where they normally show (hover, the active note). */
+.oc-note-item .oc-note-delete:disabled {
+  opacity: 0;
+}
+
+.oc-note-item:hover .oc-note-delete:disabled,
+.oc-note-item.is-active .oc-note-delete:disabled {
+  opacity: 0.5;
+}
+
+/* ---------- backup ---------- */
+/* .oc-sidebar is the scroll container: keep the buttons visible below a long list. */
+.oc-notelist-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--oc-surface);
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--oc-border);
+}
+
+.oc-backup-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.oc-backup-btn {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.oc-backup-btn:hover:not(:disabled) {
+  background: var(--oc-hover);
+}
+
+.oc-backup-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.oc-backup-message {
+  margin: 8px 0 0;
+  color: var(--oc-muted);
+  font-size: 13px;
+}
+
+/* ---------- AI panel ---------- */
+.oc-ai-panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 320px;
+  overflow-y: auto;
+  border-left: 1px solid var(--oc-border);
+  background: var(--oc-surface);
+}
+
+.oc-ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--oc-border);
+}
+
+.oc-ai-panel-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+/* Focused by script when the panel opens; it is not a control, so no ring. */
+.oc-ai-panel-header h2:focus {
+  outline: none;
+}
+
+.oc-ai-panel-body {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.oc-ai-panel-status,
+.oc-ai-panel-error,
+.oc-ai-panel-note {
+  margin: 0;
+}
+
+.oc-ai-panel-status,
+.oc-ai-panel-note {
+  color: var(--oc-muted);
+}
+
+.oc-ai-panel-note {
+  min-height: 1.2em;
+  font-size: 13px;
+}
+
+.oc-ai-panel-error {
+  color: var(--oc-danger);
+}
+
+.oc-ai-summary p {
+  margin: 0 0 6px;
+}
+
+.oc-ai-todos {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.oc-ai-todos label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.oc-ai-todos input {
+  flex: none;
+  margin-top: 0.35em;
+  accent-color: var(--oc-primary);
+}
+
+.oc-ai-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.oc-ai-panel-actions .oc-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 複製 with an empty summary. Outranks `.oc-action-btn:hover`, so hovering it changes nothing. */
+.oc-ai-panel-actions .oc-action-btn:disabled {
+  border-color: var(--oc-border);
+  color: var(--oc-text);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.oc-ai-privacy-body {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+/* ---------- settings dialog ---------- */
+.oc-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(17, 24, 39, 0.4);
+}
+
+.oc-dialog {
+  width: min(440px, 100%);
+  padding: 20px;
+  border-radius: var(--oc-radius);
+  background: var(--oc-bg);
+  box-shadow: 0 16px 48px rgba(17, 24, 39, 0.2);
+}
+
+/* The dialog is focusable (tabindex -1) only to keep focus inside it; no ring on the container. */
+.oc-dialog[tabindex='-1']:focus {
+  outline: none;
+}
+
+.oc-dialog-title {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+
+.oc-dialog-form {
+  display: grid;
+  gap: 8px;
+}
+
+.oc-dialog-form label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.oc-dialog-form input {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--oc-border);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.oc-dialog-form input:focus {
+  border-color: var(--oc-primary);
+  outline: none;
+}
+
+.oc-dialog-hint {
+  margin: 0;
+  color: var(--oc-muted);
+  font-size: 13px;
+}
+
+.oc-dialog-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.oc-dialog-message {
+  margin: 0;
+  color: var(--oc-muted);
+  font-size: 13px;
+}
+
+.oc-dialog-message.is-error {
+  color: var(--oc-danger);
+}
+
+.oc-dialog-message.is-ok {
+  color: #15803d;
+}
+
+.oc-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.oc-primary-btn {
+  height: 32px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 999px;
+  background: var(--oc-gradient);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.oc-primary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ---------- narrow screens: note list becomes a drawer ---------- */
+@media (max-width: 767.98px) {
+  .oc-menu-btn {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--oc-text);
+    cursor: pointer;
+  }
+
+  .oc-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    width: min(80vw, 300px);
+    visibility: hidden;
+    transform: translateX(-100%);
+    /* Closing: stay visible while sliding out, then leave the Tab order. */
+    transition:
+      transform 0.2s ease,
+      visibility 0s linear 0.2s;
+    box-shadow: 0 0 24px rgba(17, 24, 39, 0.2);
+  }
+
+  .oc-app[data-drawer-open='true'] .oc-sidebar {
+    visibility: visible;
+    transform: translateX(0);
+    /* Opening: visible at once, so NotesApp can move focus into the drawer right away. */
+    transition: transform 0.2s ease;
+  }
+
+  .oc-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: block;
+    background: rgba(17, 24, 39, 0.35);
+  }
+
+  .oc-note-delete {
+    opacity: 1;
+  }
+
+  /* Always shown on phones, so always dimmed while disabled. */
+  .oc-note-item .oc-note-delete:disabled {
+    opacity: 0.5;
+  }
+
+  /* The toolbar wraps here; a divider would hang at the end of a row, so the gap separates groups. */
+  .oc-tool-group {
+    padding-right: 0;
+    margin-right: 6px;
+    border-right: none;
+  }
+
+  .oc-topbar {
+    align-items: flex-start;
+    padding: 8px 12px;
+  }
+
+  /* Keep 錄製 and the AI chips on one row: the chips scroll sideways instead of wrapping. */
+  .oc-actionbar {
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .oc-record-btn {
+    flex-shrink: 0;
+    min-width: calc(4em + 52px);
+    padding: 8px 14px;
+  }
+
+  /* The chips scroll sideways with no scrollbar: the faded edges show a cut chip is more to scroll,
+     and snapping keeps a chip's start at the left edge instead of half of it. */
+  .oc-ai-group {
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent);
+    /* End padding as wide as the fade lets the last chip scroll clear of it. */
+    padding-right: 12px;
+  }
+
+  .oc-ai-group::-webkit-scrollbar {
+    display: none;
+  }
+
+  .oc-ai-btn {
+    flex-shrink: 0;
+    scroll-snap-align: start;
+  }
+
+  /* The AI chips scroll inside .oc-actionbar-end; the gear stays visible at its end. Sized from 0, it
+     takes only the space 錄製 and the recording status leave (the chips give way first), never less
+     than the gear. Sized from the chips' full width, it squeezed the status to nothing at 375px. */
+  .oc-actionbar-end {
+    flex: 1 1 0;
+    flex-wrap: nowrap;
+    min-width: var(--oc-gear-size);
+    /* Its width never depends on the chips (flex-basis 0), so it can be the query container below. */
+    container: oc-actionbar-end / inline-size;
+  }
+
+  .oc-settings-btn {
+    flex-shrink: 0;
+    /* Stays at the right edge, also when the chips are hidden. */
+    margin-left: auto;
+  }
+
+  /* About 140px is left beside 錄製 and the gear at 375px: a smaller status fits there, and if it
+     still does not, only the 轉寫中 N 段 text is cut, never the timer, the meter or the gear. */
+  .oc-rec-status {
+    flex-shrink: 1;
+    min-width: 0;
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  .oc-rec-timer,
+  .oc-level-meter {
+    flex-shrink: 0;
+  }
+
+  .oc-level-meter {
+    gap: 1px;
+  }
+
+  .oc-level-bar {
+    width: 3px;
+  }
+
+  .oc-transcribing {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* A bottom sheet on phones. Below the drawer (40) and its backdrop (30): the open drawer covers it. */
+  .oc-ai-panel {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    width: auto;
+    max-height: 60vh;
+    border-top: 1px solid var(--oc-border);
+    border-left: none;
+    box-shadow: 0 -8px 24px rgba(17, 24, 39, 0.15);
+  }
+
+  /* Room for the sheet under the note, so its last lines can scroll clear. A rule of its own:
+     an old WebView without :has() drops only this one. */
+  .oc-app:has(.oc-ai-panel) .oc-editor {
+    padding-bottom: 60vh;
+  }
+
+  .oc-banner {
+    margin: 8px 12px 0;
+  }
+
+  .oc-no-sound {
+    margin: 8px 12px 0;
+  }
+
+  .oc-toolbar {
+    padding: 6px 12px;
+  }
+
+  /* Anchor the popover to the toolbar, not to its button: on phones the 字色/螢光筆 buttons sit
+     near the right edge and a button-anchored popover is clipped by .oc-main's overflow. */
+  .oc-palette {
+    position: static;
+  }
+
+  .oc-palette-popover {
+    top: calc(100% + 4px);
+    left: 12px;
+  }
+
+  /* A toast at the bottom of the screen instead of an inline slot: inline, '已複製全文' pushed 複製 and
+     匯出 onto another row for a few seconds and the note jumped down. Under the toolbar it would cover
+     the banner's 立即備份 button. Above the AI bottom sheet; it takes no taps. */
+  .oc-action-status {
+    position: fixed;
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    z-index: 50;
+    padding: 6px 14px;
+    border: 1px solid var(--oc-border);
+    border-radius: 999px;
+    background: var(--oc-bg);
+    color: var(--oc-text);
+    box-shadow: 0 4px 12px rgba(17, 24, 39, 0.16);
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  /* Empty: no visible box, but still rendered, so screen readers keep it as a live region. */
+  .oc-action-status:empty {
+    padding: 0;
+    border: none;
+    box-shadow: none;
+  }
+
+  .oc-document {
+    padding: 16px;
+  }
+
+  .oc-title {
+    font-size: 22px;
+  }
+}
+
+/* Up to about 1366px the AI side panel leaves the toolbar too narrow for one row, and the note would
+   jump down a row whenever the panel opens. 複製 and 匯出 keep their icons; their labels stay as the
+   buttons' accessible names. A rule of its own: an old WebView without :has() only wraps the row. */
+@media (min-width: 768px) and (max-width: 1366px) {
+  .oc-app:has(.oc-ai-panel) .oc-note-actions .oc-action-btn > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* Too narrow for the gear, the gap and one whole chip (86px with the default font; the limit leaves
+   room for a wider one): hide the chips instead of showing a clipped sliver of the first one, e.g.
+   at 390px with the timer, meter and 轉寫中 N 段 all shown. Only phones make .oc-actionbar-end a
+   container, so this never applies on wider screens. */
+@container oc-actionbar-end (max-width: 139.98px) {
+  .oc-ai-group {
+    display: none;
+  }
+}

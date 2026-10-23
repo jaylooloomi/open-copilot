@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">open-copilot</string>
+    <string name="title_activity_main">open-copilot</string>
+    <string name="package_name">com.think4u.opencopilot</string>
+    <string name="custom_url_scheme">com.think4u.opencopilot</string>
+</resources>

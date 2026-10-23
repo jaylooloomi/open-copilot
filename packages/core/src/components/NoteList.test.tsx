@@ -1,0 +1,127 @@
+import { EMPTY_DOC, type Note } from '@oc/shared';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+import { NoteList } from './NoteList';
+
+const note = (id: string, title: string, updatedAt: number): Note => ({
+  id,
+  title,
+  content: EMPTY_DOC,
+  createdAt: updatedAt,
+  updatedAt,
+});
+
+const NOTES = [note('b', '週會紀錄', 2), note('a', '', 1)];
+
+function setup(activeId = 'b') {
+  const handlers = { onSelect: vi.fn(), onCreate: vi.fn(), onDelete: vi.fn() };
+  render(<NoteList notes={NOTES} activeId={activeId} {...handlers} />);
+  return { ...handlers, user: userEvent.setup() };
+}
+
+describe('NoteList', () => {
+  it('lists notes in the given order with 未命名筆記 for blank titles', () => {
+    setup();
+    const items = within(screen.getByRole('list', { name: '筆記清單' })).getAllByRole('listitem');
+    expect(items.map((li) => li.querySelector('.oc-note-title')?.textContent)).toEqual([
+      '週會紀錄',
+      '未命名筆記',
+    ]);
+  });
+
+  it('shows when each note was last updated', () => {
+    setup();
+    const items = within(screen.getByRole('list', { name: '筆記清單' })).getAllByRole('listitem');
+    expect(items.map((li) => li.querySelector('time')?.getAttribute('dateTime'))).toEqual([
+      new Date(2).toISOString(),
+      new Date(1).toISOString(),
+    ]);
+  });
+
+  it('names the select button by its title, then its time', () => {
+    setup();
+    const time = screen.getAllByRole('listitem')[0].querySelector('time');
+    expect(time?.textContent).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^週會紀錄/ })).toHaveAccessibleName(
+      `週會紀錄 ${time?.textContent}`,
+    );
+  });
+
+  it('gives the delete button a tooltip that matches its name', () => {
+    setup();
+    expect(screen.getByRole('button', { name: '刪除「週會紀錄」' })).toHaveAttribute(
+      'title',
+      '刪除「週會紀錄」',
+    );
+  });
+
+  it('still lists a note whose updatedAt is not a valid time', () => {
+    const notes = [Infinity, Number.NaN, 9e15].map((t, i) => note(`x${i}`, `壞時間${i}`, t));
+    render(
+      <NoteList notes={notes} activeId={undefined} onSelect={vi.fn()} onCreate={vi.fn()} onDelete={vi.fn()} />,
+    );
+    const items = within(screen.getByRole('list', { name: '筆記清單' })).getAllByRole('listitem');
+    expect(items.map((li) => li.querySelector('.oc-note-title')?.textContent)).toEqual([
+      '壞時間0',
+      '壞時間1',
+      '壞時間2',
+    ]);
+    expect(items.map((li) => li.querySelector('time'))).toEqual([null, null, null]);
+  });
+
+  it('marks the active note', () => {
+    setup('b');
+    expect(screen.getByRole('button', { name: /^週會紀錄/ })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: /^未命名筆記/ })).not.toHaveAttribute('aria-current');
+  });
+
+  it('marks no note as active when there is no active id', () => {
+    render(
+      <NoteList notes={NOTES} activeId={undefined} onSelect={vi.fn()} onCreate={vi.fn()} onDelete={vi.fn()} />,
+    );
+    for (const name of [/^週會紀錄/, /^未命名筆記/]) {
+      expect(screen.getByRole('button', { name })).not.toHaveAttribute('aria-current');
+    }
+  });
+
+  it('selects a note', async () => {
+    const { user, onSelect } = setup();
+    await user.click(screen.getByRole('button', { name: /^未命名筆記/ }));
+    expect(onSelect).toHaveBeenCalledWith('a');
+  });
+
+  it('creates a note', async () => {
+    const { user, onCreate } = setup();
+    await user.click(screen.getByRole('button', { name: '新增筆記' }));
+    expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('deletes a note without selecting it', async () => {
+    const { user, onDelete, onSelect } = setup();
+    await user.click(screen.getByRole('button', { name: '刪除「週會紀錄」' }));
+    expect(onDelete).toHaveBeenCalledWith('b');
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('disables creating, switching and deleting while disabled (recording)', async () => {
+    const handlers = { onSelect: vi.fn(), onCreate: vi.fn(), onDelete: vi.fn() };
+    render(<NoteList notes={NOTES} activeId="b" disabled {...handlers} />);
+    const buttons = within(screen.getByRole('navigation', { name: '筆記' })).getAllByRole('button');
+    expect(buttons).toHaveLength(5);
+    for (const button of buttons) expect(button).toBeDisabled();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: /^未命名筆記/ }));
+    expect(handlers.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('shows the footer below the list, inside the note navigation', () => {
+    const handlers = { onSelect: vi.fn(), onCreate: vi.fn(), onDelete: vi.fn() };
+    render(<NoteList notes={NOTES} activeId="b" footer={<button type="button">備份</button>} {...handlers} />);
+    const nav = screen.getByRole('navigation', { name: '筆記' });
+    const footer = within(nav).getByRole('button', { name: '備份' });
+    const listEl = screen.getByRole('list', { name: '筆記清單' });
+    expect(listEl.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(listEl).queryByRole('button', { name: '備份' })).toBeNull();
+  });
+});
