@@ -11,7 +11,39 @@ async function rgba(input: Buffer | string) {
   return { data, width: info.width, height: info.height };
 }
 
+// Rasterizers round differently across platforms by a step or so; an edited SVG differs far more.
+// The mean catches broad changes; the count of strongly changed pixels catches small local edits.
+function drift(fresh: Uint8Array, committed: Uint8Array) {
+  let total = 0;
+  let changedPixels = 0;
+  for (let p = 0; p < fresh.length; p += 4) {
+    let strong = false;
+    for (let c = p; c < p + 4; c += 1) {
+      const d = Math.abs(fresh[c]! - committed[c]!);
+      total += d;
+      if (d > 64) strong = true;
+    }
+    if (strong) changedPixels += 1;
+  }
+  return { mean: total / fresh.length, changedShare: changedPixels / (fresh.length / 4) };
+}
+
+const MAX_MEAN = 2;
+const MAX_CHANGED_SHARE = 0.001;
+
 describe('PWA icons', () => {
+  it('flags a small recolored patch that the mean difference alone would miss', () => {
+    const size = 512;
+    const base = new Uint8Array(size * size * 4).fill(255);
+    const edited = base.slice();
+    for (let y = 0; y < 32; y += 1)
+      for (let x = 0; x < 32; x += 1) edited.fill(0, (y * size + x) * 4, (y * size + x) * 4 + 3);
+    const result = drift(edited, base);
+    expect(result.mean).toBeLessThan(MAX_MEAN);
+    expect(result.changedShare).toBeGreaterThan(MAX_CHANGED_SHARE);
+    expect(drift(base, base)).toEqual({ mean: 0, changedShare: 0 });
+  });
+
   it('lists the 192, 512 and maskable 512 icons from the two SVG sources', () => {
     expect(ICONS.map((icon) => [icon.source, icon.output, icon.size])).toEqual([
       ['icon.svg', 'icon-192.png', 192],
@@ -28,10 +60,10 @@ describe('PWA icons', () => {
       const committed = await rgba(file);
       const fresh = await rgba(await renderIcon(icon));
       expect([committed.width, committed.height]).toEqual([icon.size, icon.size]);
-      let diff = 0;
-      for (let i = 0; i < fresh.data.length; i += 1) diff += Math.abs(fresh.data[i]! - committed.data[i]!);
-      // Rasterizers round differently across platforms by a step or so; an edited SVG differs far more.
-      expect(diff / fresh.data.length, 'run npm run icons -w @oc/web and commit the PNGs').toBeLessThan(2);
+      const { mean, changedShare } = drift(fresh.data, committed.data);
+      const hint = 'run npm run icons -w @oc/web and commit the PNGs';
+      expect(mean, hint).toBeLessThan(MAX_MEAN);
+      expect(changedShare, hint).toBeLessThanOrEqual(MAX_CHANGED_SHARE);
     },
     30_000,
   );
