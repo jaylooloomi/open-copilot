@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_FFMPEG_PATH, probeFfmpeg } from './transcriber/windowsTranscriber';
 
 const apiDir = fileURLToPath(new URL('..', import.meta.url));
 
@@ -40,6 +41,14 @@ function freePort(): Promise<number> {
       probe.close(() => resolve(port));
     });
   });
+}
+
+/**
+ * server 預設的 ffmpeg 能不能執行（決定 windows provider 的啟動測試要不要跑）。
+ * 沿用 probeFfmpeg，與 server 檢查同一個路徑、也有逾時。
+ */
+function hasFfmpeg(): boolean {
+  return probeFfmpeg(DEFAULT_FFMPEG_PATH);
 }
 
 /**
@@ -106,15 +115,49 @@ describe('server startup', () => {
     expect(stderr).not.toContain('sk-startup-openai-secret');
   }, 30_000);
 
-  it('exits 1 with a one-line hint when no transcription key is set', () => {
-    const result = startServer({ ACCESS_KEYS: 'startup-test-key-0123' });
+  it.skipIf(process.platform === 'win32')(
+    'exits 1 with a one-line hint when no transcription key is set',
+    () => {
+      const result = startServer({ ACCESS_KEYS: 'startup-test-key-0123' });
 
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain(
-      '[config] No transcription API key: set GROQ_API_KEY (free key at https://console.groq.com/keys) or OPENAI_API_KEY',
-    );
-    expect(result.stderr).not.toContain('at loadConfig');
-  }, 30_000);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        '[config] No transcription API key: set GROQ_API_KEY (free key at https://console.groq.com/keys) or OPENAI_API_KEY',
+      );
+      expect(result.stderr).toContain('TRANSCRIBE_PROVIDER=windows only works on Windows');
+      expect(result.stderr).not.toContain('at loadConfig');
+    },
+    30_000,
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'exits 1 naming ffmpeg when the Windows provider cannot find it',
+    () => {
+      // 不存在的 FFMPEG_PATH：在 listen 之前就失敗，不會佔用任何連接埠。
+      const result = startServer({
+        ACCESS_KEYS: 'startup-test-key-0123',
+        FFMPEG_PATH: 'C:\\oc-missing\\ffmpeg.exe',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('[config] ffmpeg not found at "C:\\oc-missing\\ffmpeg.exe"');
+      expect(result.stderr).toContain('FFMPEG_PATH');
+      expect(result.stderr).not.toContain('    at ');
+    },
+    30_000,
+  );
+
+  it.runIf(process.platform === 'win32' && hasFfmpeg())(
+    'starts with the Windows offline provider when no key is set',
+    async () => {
+      const { stdout } = await startServerUntilAiLine({ ACCESS_KEYS: 'startup-test-key-0123' });
+
+      expect(stdout).toContain('[transcribe] provider windows, model System.Speech zh-TW');
+      expect(stdout).toContain('[transcribe] Windows built-in offline recognition');
+      expect(stdout).toContain('[ai] disabled: set GROQ_API_KEY');
+    },
+    30_000,
+  );
 
   it('exits 1 naming ACCESS_KEYS when only a Groq key is set, without printing the key', () => {
     const result = startServer({ GROQ_API_KEY: 'gsk-startup-secret' });

@@ -5,3 +5,11 @@ export type { AppDbSchema, PendingSegmentRecord } from './platform/db';
 export { createIndexedDbStorage } from './platform/indexedDbStorage';
 export { createBrowserFileSaver } from './platform/browserFileSaver';
 export type { FileSaver, NoteStorage, Platform } from './platform/types';
+export {
+  applySetupLink,
+  decodeSetupPayload,
+  encodeSetupPayload,
+  SETUP_HASH_PARAM,
+} from './settings/setupLink';
+export type { SetupLinkResult } from './settings/setupLink';
+export type { Settings } from './settings/settingsStore';

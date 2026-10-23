@@ -100,11 +100,11 @@ test('設定後端後錄音，轉寫結果依錄音順序插入游標位置', as
   await expect(record).toHaveText('停止');
   await expect(page.getByRole('button', { name: '新增筆記' })).toBeDisabled();
 
-  // The first cut comes after 4–8 seconds; stopping then sends the rest as segment 2.
-  await expect.poll(() => seen.length, { timeout: 15_000 }).toBeGreaterThan(0);
+  // The first cut comes after 8–12 seconds; stopping then sends the rest as segment 2.
+  await expect.poll(() => seen.length, { timeout: 25_000 }).toBeGreaterThan(0);
   // Give the tail segment real encoded audio first: a MediaRecorder stopped within ~100 ms of
   // starting can yield an empty Blob, which SegmentRecorder drops (no segment 2). Cuts are at
-  // least 4 s apart, so no second cut happens in this wait.
+  // least 8 s apart, so no second cut happens in this wait.
   await page.waitForTimeout(1_500);
   await record.click();
 
@@ -141,7 +141,7 @@ test('一段連續失敗 4 次變成未轉寫標記，重新整理後點擊標�
 
   await record.click();
   await expect(record).toHaveText('停止');
-  await expect.poll(() => segmentOneAttempts, { timeout: 15_000 }).toBeGreaterThan(0);
+  await expect.poll(() => segmentOneAttempts, { timeout: 25_000 }).toBeGreaterThan(0);
   // Same as above: the tail segment (segment 2) needs real encoded audio before stopping.
   await page.waitForTimeout(1_500);
   await record.click();

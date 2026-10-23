@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Settings } from '../settings/settingsStore';
@@ -153,6 +153,25 @@ describe('SettingsDialog', () => {
     await user.click(screen.getByRole('button', { name: '測試連線' }));
     expect(await screen.findByText('連線失敗，請確認後端網址')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '測試連線' })).toBeEnabled();
+  });
+
+  it('puts focus back on 測試連線 after a test, so Escape still closes the dialog', async () => {
+    let finish: (ok: boolean) => void = () => {};
+    const checkHealth = vi.fn((_url: string) => new Promise<boolean>((resolve) => (finish = resolve)));
+    const { user, onClose } = setup({ apiBaseUrl: 'https://a.test', accessKey: '' }, checkHealth);
+    const test = screen.getByRole('button', { name: '測試連線' });
+    await user.click(test);
+    // A browser drops focus to <body> when the focused button becomes disabled; jsdom does not.
+    // Simulate it by focusing an element outside the dialog and removing it.
+    const elsewhere = document.body.appendChild(document.createElement('input'));
+    elsewhere.focus();
+    elsewhere.remove();
+    expect(document.body).toHaveFocus();
+    await act(async () => finish(true));
+    expect(await screen.findByText('連線成功')).toBeInTheDocument();
+    expect(test).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('keeps Tab focus inside the dialog', async () => {

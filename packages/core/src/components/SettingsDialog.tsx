@@ -42,6 +42,8 @@ export function SettingsDialog({
   const [testing, setTesting] = useState(false);
   const urlRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const testButtonRef = useRef<HTMLButtonElement>(null);
+  const wasTesting = useRef(false);
   /** Bumped whenever a pending connection test should be ignored. */
   const testRequest = useRef(0);
   const titleId = useId();
@@ -56,6 +58,18 @@ export function SettingsDialog({
       if (opener?.isConnected) opener.focus();
     };
   }, []);
+
+  // The browser drops focus to <body> while 測試連線 is disabled, which would leave Escape and the
+  // Tab trap (both handled on the dialog) dead; put focus back on the button when the test ends.
+  useEffect(() => {
+    if (wasTesting.current && !testing) {
+      const active = document.activeElement;
+      if (!active || active === document.body || !dialogRef.current?.contains(active)) {
+        testButtonRef.current?.focus();
+      }
+    }
+    wasTesting.current = testing;
+  }, [testing]);
 
   /** Drops any pending test result and the old message: they describe settings that no longer apply. */
   const invalidateTest = () => {
@@ -164,6 +178,7 @@ export function SettingsDialog({
           <p className="oc-dialog-hint">存取金鑰只會儲存在這台裝置上。</p>
           <div className="oc-dialog-test">
             <button
+              ref={testButtonRef}
               type="button"
               className="oc-action-btn"
               disabled={testing}

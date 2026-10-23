@@ -3,6 +3,7 @@ import type { AiConfig } from './ai/types';
 import type { TranscribeProvider, TranscriberConfig } from './transcriber/createTranscriber';
 import { GROQ_DEFAULT_TRANSCRIBE_MODEL } from './transcriber/groqTranscriber';
 import { TRANSCRIBE_MODEL } from './transcriber/openaiTranscriber';
+import { DEFAULT_FFMPEG_PATH, WINDOWS_STT_MODEL } from './transcriber/windowsTranscriber';
 
 export interface AppConfig {
   transcriber: TranscriberConfig;
@@ -78,11 +79,20 @@ function readValue(env: Record<string, string | undefined>, name: string): strin
   return value ? value : undefined;
 }
 
+/** 沒有任何可用的轉寫服務時的訊息；開頭與 M6-backend 相同，README 與測試都引用它。 */
+const NO_PROVIDER_MESSAGE =
+  'No transcription API key: set GROQ_API_KEY (free key at https://console.groq.com/keys) or OPENAI_API_KEY ' +
+  '(the offline TRANSCRIBE_PROVIDER=windows only works on Windows)';
+
 /**
  * 轉寫服務：TRANSCRIBE_PROVIDER 未設定時，有 GROQ_API_KEY 就用 groq，否則有 OPENAI_API_KEY 就用 openai，
- * 兩者都沒有就拒絕啟動。錯誤訊息只列變數名稱，不含金鑰。
+ * 否則在 Windows（platform === 'win32'）上用 windows（內建離線辨識），都不符合就拒絕啟動。
+ * 錯誤訊息只列變數名稱，不含金鑰。
  */
-function loadTranscriberConfig(env: Record<string, string | undefined>): TranscriberConfig {
+function loadTranscriberConfig(
+  env: Record<string, string | undefined>,
+  platform: NodeJS.Platform,
+): TranscriberConfig {
   const groqKey = readValue(env, 'GROQ_API_KEY');
   const openaiKey = readValue(env, 'OPENAI_API_KEY');
   const rawProvider = readValue(env, 'TRANSCRIBE_PROVIDER');
@@ -91,20 +101,30 @@ function loadTranscriberConfig(env: Record<string, string | undefined>): Transcr
   if (rawProvider === undefined) {
     if (groqKey) provider = 'groq';
     else if (openaiKey) provider = 'openai';
-    else {
-      throw new Error(
-        'No transcription API key: set GROQ_API_KEY (free key at https://console.groq.com/keys) or OPENAI_API_KEY',
-      );
-    }
+    else if (platform === 'win32') provider = 'windows';
+    else throw new Error(NO_PROVIDER_MESSAGE);
   } else {
     const normalized = rawProvider.toLowerCase();
-    if (normalized !== 'groq' && normalized !== 'openai') {
+    if (normalized !== 'groq' && normalized !== 'openai' && normalized !== 'windows') {
       // 若誤把金鑰貼進 TRANSCRIBE_PROVIDER，不要讓它出現在啟動日誌裡。
       const looksLikeKey = rawProvider.length > 16 || /^(gsk_|sk-)/i.test(rawProvider);
       const shown = looksLikeKey ? 'an unrecognized value (not shown)' : `"${rawProvider}"`;
-      throw new Error(`TRANSCRIBE_PROVIDER must be "groq" or "openai", got ${shown}`);
+      throw new Error(`TRANSCRIBE_PROVIDER must be "groq", "openai" or "windows", got ${shown}`);
     }
     provider = normalized;
+  }
+
+  if (provider === 'windows') {
+    if (platform !== 'win32') {
+      throw new Error(
+        'TRANSCRIBE_PROVIDER=windows only works on Windows (it uses System.Speech); set GROQ_API_KEY or OPENAI_API_KEY instead',
+      );
+    }
+    return {
+      provider,
+      model: WINDOWS_STT_MODEL,
+      ffmpegPath: readValue(env, 'FFMPEG_PATH') ?? DEFAULT_FFMPEG_PATH,
+    };
   }
 
   if (provider === 'groq') {
@@ -130,8 +150,12 @@ function loadAiConfig(env: Record<string, string | undefined>): AiConfig | null 
   return { apiKey: groqKey, model: readValue(env, 'GROQ_LLM_MODEL') ?? GROQ_DEFAULT_LLM_MODEL };
 }
 
-export function loadConfig(env: Record<string, string | undefined>): AppConfig {
-  const transcriber = loadTranscriberConfig(env);
+/** platform 只給測試指定；server.ts 用預設的 process.platform。 */
+export function loadConfig(
+  env: Record<string, string | undefined>,
+  platform: NodeJS.Platform = process.platform,
+): AppConfig {
+  const transcriber = loadTranscriberConfig(env, platform);
   const ai = loadAiConfig(env);
 
   const accessKeys = splitList(env['ACCESS_KEYS']);

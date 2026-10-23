@@ -12,18 +12,153 @@ open-copilot 的網頁入口（Vite + React）。所有畫面與邏輯都在 `pa
 | `npm run dev -w @oc/web` | 開發伺服器 `http://localhost:5173` |
 | `npm test -w @oc/web` | 單元測試（Vitest） |
 | `npm run typecheck -w @oc/web` | 型別檢查 |
-| `npm run e2e -w @oc/web` | 端對端測試（Playwright；第一次先執行 `npm exec -w @oc/web -- playwright install chromium`） |
+| `npm run e2e -w @oc/web` | 端對端測試（Playwright；第一次先執行 `npm exec -w @oc/web -- playwright install chromium`）。同時啟動開發伺服器（5173）和建置後的 `vite preview`（4173），後者跑 `e2e-pwa/` 的 PWA 測試 |
+| `npm run icons -w @oc/web` | 由 `icons/*.svg` 重新產生 `public/icons/*.png`；改過 SVG 後執行並 commit PNG（`src/pwaIcons.test.ts` 會檢查是否一致） |
 | `npm run build -w @oc/web` | 正式建置，輸出到 `apps/web/dist` |
 | `npm run preview -w @oc/web` | 以靜態伺服器提供 `apps/web/dist`，網址 `http://localhost:4173` |
+
+## 一鍵啟動原型（`npm run prototype`）
+
+在 repo 根目錄執行：
+
+```bash
+npm run prototype
+```
+
+啟動器（`scripts/prototype.mjs`）會：
+
+1. 決定轉寫服務：環境變數、`apps/api/.env.local` 或 `apps/api/.env` 有 `GROQ_API_KEY` 或 `OPENAI_API_KEY` 就用雲端；都沒有時，在 Windows 上改用內建離線辨識，並印出「目前使用 Windows 內建離線辨識，設定 GROQ_API_KEY 可提高準確度」；沒有金鑰而且不是 Windows、或 Windows 上找不到 ffmpeg（`FFMPEG_PATH` 或 PATH 上的 `ffmpeg`）時，在啟動任何伺服器之前印出申請 Groq 金鑰的步驟並以 exit code 1 結束。
+2. 沒有 `ACCESS_KEYS` 時產生一把隨機存取金鑰，寫進 `apps/api/.env.local`（已被 `.gitignore` 排除），之後重複使用。
+3. 同時啟動後端（`http://localhost:8787`）和網頁開發伺服器（`http://localhost:5173`）。任何一個結束，另一個也會停止；按 Ctrl+C 會一起關閉。
+4. 開啟瀏覽器到 `http://localhost:5173/#oc-setup=...`。網頁讀到 `#oc-setup` 後，把後端網址 `http://localhost:5173/api` 和存取金鑰存進設定，並立刻從網址列移除；格式不對、或後端網址和網頁不同源（別人做的連結可能把錄音導到其他網站）就忽略、保留原設定，只在主控台印一行警告。
+
+選項：`npm run prototype -- --no-open`（不開瀏覽器，只印出網址）、`npm run prototype -- --check`（兩個服務和 `/api` proxy 都正常後自動結束，用來檢查環境）、`npm run prototype -- --share`（另外產生手機用的分享網址，見下一節）。不認得的選項會直接報錯結束。
+
+印出的網址含存取金鑰，不要分享。開發伺服器會把 `/api/*` 轉到 `http://localhost:8787/*`（`vite.config.ts` 的 `server.proxy`），所以網頁版是同源呼叫後端，不會遇到 CORS。8787 和 5173 必須空著。
+
+Windows 離線辨識需要 ffmpeg（`winget install Gyan.FFmpeg`，或用 `FFMPEG_PATH` 指定），結果不含標點，準確度也比 Groq 低。
+
+### 手機分享網址（`npm run prototype -- --share`）
+
+```bash
+npm run prototype -- --share
+```
+
+分享模式和一般模式有兩點不同，其餘步驟相同：
+
+- **網頁用建置版，不用開發伺服器。**啟動器先執行 `vite build`，再用 `vite preview` 在 `http://localhost:4173` 提供 `apps/web/dist`（本機開啟的網址也改成 4173）。開發伺服器的 `/@fs/`、HMR 和原始碼轉換能讀到整個 repo，絕不能放上公開網址；建置版只有 `dist/` 裡的檔案和 `/api`。
+- **存取金鑰至少 16 個字元。**自訂的 `ACCESS_KEYS` 第一把太短時，啟動器直接結束，不開分享網址（後端不會限制猜錯金鑰的次數）。自動產生的金鑰是 32 個字元。
+
+接著啟動器會：
+
+1. 用 npm 套件 `cloudflared`（根目錄的 devDependency，安裝時下載執行檔，不用另外安裝系統軟體）執行 `cloudflared tunnel --url http://localhost:4173`，向 Cloudflare 要一個免帳號的 quick tunnel，得到 `https://<隨機名稱>.trycloudflare.com`。
+2. 經過通道檢查 `/api/health`，再印出手機用的網址和 QR code（60 秒內檢查不過仍會印出並加上警告，見下方疑難排解）。網址的 `#oc-setup` 帶入 `apiBaseUrl = https://<隨機名稱>.trycloudflare.com/api` 和存取金鑰，手機開啟後自動填好設定；`/api` 由 `vite preview` 的 proxy 轉到本機後端，所以不需要 CORS 設定。
+3. 印出警告：**分享網址是公開的，請只在測試時開啟，用完按 Ctrl+C 關閉；後端仍然需要存取金鑰。**網址含存取金鑰，只給自己的手機使用。
+
+`vite.config.ts` 只讓 `vite preview`（`preview.allowedHosts`）接受 `.trycloudflare.com`；開發伺服器只接受 localhost，其他網域一律 403。每次執行的網址都不一樣。`npm run prototype -- --share --check` 會在分享網址也能連上後自動結束。
+
+用分享網址前要知道：
+- **筆記跟著網址走。**手機上的筆記存在那個 `*.trycloudflare.com` 網域的 IndexedDB，下次執行換了網址就看不到上次的筆記。要留下來，關閉前先在手機上用「備份」匯出。
+- **改了程式要重新執行。**建置版不會熱更新；改完 `packages/core` 或 `apps/web` 後按 Ctrl+C，再執行一次 `npm run prototype -- --share`。
+- **已經存了另一把金鑰時會先詢問。**網頁裡已存的存取金鑰和連結帶的不同時，開啟連結會跳出確認視窗；按「取消」就保留原本的設定。
+
+疑難排解：
+- 等不到通道網址：確認這台電腦能連到 Cloudflare（公司網路可能擋掉），終端機會印出 cloudflared 最後的訊息。`~/.cloudflared/config.yml` 存在時 quick tunnel 無法使用，請先改名。
+- 印出「這台電腦 60 秒內連不到分享網址」：通常是本機 DNS 還沒更新，手機多半仍能開啟；打不開就重新執行。
+- 分享模式跑的是建置版，會註冊 service worker，手機上也能「安裝」；但每次執行網址都不同，裝好的 App 下次就連不到，正式使用請部署（見「PWA」一節）。
+
+### 桌面版搭配原型後端
+
+1. 先執行 `npm run prototype`，讓後端保持執行。
+2. 開啟桌面版（`npm run dev -w @oc/desktop`，或用 `npm run dist -w @oc/desktop` 建置的安裝版，見 `apps/desktop/README.md`），按右上齒輪開啟「設定」。
+3. 「後端網址」填 `http://localhost:8787`；「存取金鑰」填 `apps/api/.env.local` 裡 `ACCESS_KEYS=` 後面的值（自訂了 `ACCESS_KEYS` 時填第一把）。按「測試連線」，再按「儲存」。
+
+後端的 CORS 預設允許 `app://bundle`，不用另外設定。
+
+## Android App（Capacitor）
+
+`apps/web/android` 是 Capacitor 專案，包住同一份建置產物（`dist/`），App 的來源是 `https://localhost`（後端預設的 `ALLOWED_ORIGINS` 已包含）。
+
+需要先自行安裝（這台開發機目前沒有，屬於手動項目）：
+
+- JDK 21（Android Gradle Plugin 需要；設定 `JAVA_HOME`）
+- Android Studio，以及 Android SDK Platform 36（`compileSdk = 36`）和 Build-Tools；設定 `ANDROID_HOME`，或在 `apps/web/android/local.properties` 寫 `sdk.dir=...`
+
+| 指令（repo 根目錄） | 用途 |
+|---|---|
+| `npm run cap:sync -w @oc/web` | 建置網頁並把 `dist/` 複製進 Android 專案（每次改完網頁都要再跑一次） |
+| `npm run android:open -w @oc/web` | 用 Android Studio 開啟 Android 專案，可在那裡建置 APK 或按 Run |
+| `npm run android:run -w @oc/web` | 建置並安裝到已連接的手機或模擬器（手機要開啟 USB 偵錯） |
+
+也可以不開 Android Studio，直接用 Gradle 建置除錯版 APK：先 `npm run cap:sync -w @oc/web`，再在 `apps/web/android` 執行 `./gradlew assembleDebug`（Windows：`gradlew.bat assembleDebug`），輸出在 `apps/web/android/app/build/outputs/apk/debug/app-debug.apk`。
+
+App 裡的後端設定（手動，需要真的手機）：App 是 HTTPS 來源，不能呼叫 `http://<區網 IP>:8787`（混合內容會被擋），後端必須是 HTTPS：
+
+- 部署好的後端：「設定」的「後端網址」填 `https://api.example.com`，「存取金鑰」填 `ACCESS_KEYS` 其中一把。
+- 本機後端：在電腦執行 `npm run prototype -- --share`，「後端網址」填印出的 `https://<隨機名稱>.trycloudflare.com/api`，「存取金鑰」填 `apps/api/.env.local`（或你自訂的 `ACCESS_KEYS` 第一把）。每次執行網址都不同，要重新填。
+
+按「測試連線」顯示「連線成功」後按「儲存」，再按「錄製」確認麥克風權限與轉寫結果。
+
+## 真實語音端對端測試（`npm run e2e:real`）
+
+不在預設的 `npm run e2e` 和 CI 裡，只能在 Windows 執行：
+
+```bash
+npm run e2e:real -w @oc/web
+```
+
+1. 用 PowerShell `System.Speech` 的繁中語音（優先 `Microsoft Hanhan`，沒有就用任一個 zh-TW 語音）把約 22 秒的固定句子合成 WAV（`apps/api/scripts/windows-tts.ps1`）。
+2. Chromium 以這個 WAV 當麥克風（`--use-file-for-fake-audio-capture`）。
+3. 啟動真的後端（8787，不讀 `apps/api/.env`）和網頁開發伺服器（5173），用 `#oc-setup` 填好設定，錄 25 秒後停止。
+4. 通過條件：「會議」「測試」「版本」至少出現 2 個；沒有簡體字樣本（例如「这」「们」）；沒有未轉寫標記。
+
+轉寫服務依後端的預設順序：這個 shell 有 `GROQ_API_KEY` 就真的呼叫 Groq，否則有 `OPENAI_API_KEY` 用 OpenAI，都沒有就用 Windows 離線辨識。輸出會印出 `[e2e:real] transcribe provider: ...` 和轉寫結果，HTML 報告（`apps/web/playwright-report/real`）的 annotation 也有記錄。
+
+## PWA（可安裝、可離線開啟）
+
+建置版（`npm run build -w @oc/web`）是 PWA：
+
+- `vite-plugin-pwa`（`generateSW`、`registerType: 'autoUpdate'`）產生 `manifest.webmanifest` 和 `sw.js`。manifest 名稱 `open-copilot`、`display: standalone`、`lang: zh-TW`，`theme_color` 與 `background_color` 都是主色 `#c026d3`；圖示是 `public/icons/` 的 192、512 與 maskable 512（由 `icons/*.svg` 以 `npm run icons -w @oc/web` 產生並 commit）。
+- Service worker 只快取網頁本身（`**/*.{js,css,html,png,svg}`），所以沒有網路時重新整理仍看得到筆記（筆記在 IndexedDB）。`/api/*` 和任何跨網域請求一律直接走網路，不會快取。
+- 只有一般瀏覽器會註冊 service worker（`src/main.tsx` 依 `detectPlatformKind()` 判斷）；桌面版（`app://`）和 Android App（Capacitor）不註冊。開發伺服器（`npm run dev`）也不註冊。
+- 新版部署後，已開啟的頁面會在新的 service worker 啟用時自動重新整理（`autoUpdate`）。正在錄音或還有段落在上傳時不會重新整理，等錄音結束、上傳都完成後才會（`src/platform/updateReloadGate.ts`）。
+
+### 在真的手機上安裝（手動檢查）
+
+需要 HTTPS 的建置版，兩種做法擇一：
+
+- 部署到 Vercel 或 Cloudflare Pages（見下方），用手機開正式網址。
+- 本機建置版加 quick tunnel：直接執行 `npm run prototype -- --share`（建置、`vite preview`、後端和通道一次啟動，並印出含 `#oc-setup` 的網址與 QR code），用手機開啟那個網址。
+
+  要自己一步一步來時，後端也要另外啟動，設定要手動輸入：
+
+  ```bash
+  # 1. 後端（8787）。npm run dev -w @oc/api 只讀 apps/api/.env（不讀 prototype 寫的 .env.local），
+  #    所以 apps/api/.env 要有 ACCESS_KEYS（至少 16 字元）和轉寫服務設定，見 apps/api/README.md。
+  npm run dev -w @oc/api
+  # 2. 另開一個終端機：建置版（4173，/api 經 proxy 轉到 8787）
+  npm run build -w @oc/web
+  npm run preview -w @oc/web
+  # 3. 再開一個終端機（repo 根目錄）：
+  npx cloudflared tunnel --url http://localhost:4173
+  ```
+
+  用手機開啟印出的 `https://<隨機名稱>.trycloudflare.com`，按右上齒輪開啟「設定」：「後端網址」填 `https://<隨機名稱>.trycloudflare.com/api`，「存取金鑰」填 `apps/api/.env` 的 `ACCESS_KEYS` 第一把，按「測試連線」再按「儲存」。
+
+手機上確認：Chrome 選單出現「安裝應用程式」（或「加到主畫面」），安裝後從主畫面以獨立視窗開啟，圖示是桃紫底白色麥克風；開飛航模式再開啟，筆記仍在。
 
 ## 建置產物
 
 `npm run build -w @oc/web` 只產生靜態檔，部署時上傳整個 `apps/web/dist`：
 
 - `index.html`
-- `assets/index-<hash>.js`、`assets/index-<hash>.css`（之後的里程碑會多出按需載入的 `assets/*-<hash>.js` 分塊）
+- `assets/index-<hash>.js`、`assets/index-<hash>.css`，以及按需載入的 `assets/*-<hash>.js` 分塊
+- `manifest.webmanifest`、`sw.js`、`workbox-<hash>.js`（PWA，M9 起）
+- `icons/icon-192.png`、`icons/icon-512.png`、`icons/icon-maskable-512.png`
 
 建置不需要任何環境變數。後端網址與存取金鑰（M3 起）由使用者在 App 的「設定」輸入，存在該瀏覽器的 localStorage，不會寫進建置產物。
+
+`sw.js` 和 `manifest.webmanifest` 的檔名沒有 hash，不要讓 CDN 長時間快取它們；Vercel 與 Cloudflare Pages 的預設設定（每次重新驗證）就可以，不需要另外設定。
 
 ## 部署限制
 
@@ -81,6 +216,7 @@ open-copilot 的網頁入口（Vite + React）。所有畫面與邏輯都在 `pa
 
 - Node 用 24（與開發機相同；Vite 7 最低需要 20.19 或 22.12）。
 - M4 起，根目錄安裝依賴時也會安裝 `@oc/desktop` 的 `electron`，它會額外下載約 100 MB 的 Electron 執行檔。網頁建置用不到它，可在部署平台加上環境變數 `ELECTRON_SKIP_BINARY_DOWNLOAD` = `1` 跳過下載。
+- 根目錄的 devDependency `cloudflared`（只有 `npm run prototype -- --share` 用到）在安裝時也會從 GitHub 下載 cloudflared 執行檔，預設是最新版；GitHub 連不上時安裝會失敗。部署平台可加上環境變數 `CLOUDFLARED_VERSION`（例如 `2026.10.3`）固定版本，讓每次建置下載同一個檔案。缺少執行檔時，`--share` 第一次執行會自己下載。
 
 ## 連接後端（M3 起）
 
@@ -114,3 +250,4 @@ curl -s -i https://api.example.com/health -H 'Origin: https://notes.example.com'
 - [ ] 輸入標題與內文，等一秒後重新整理，內容仍在。
 - [ ] DevTools Console 沒有錯誤。
 - [ ] （M3 起）「設定」填入後端網址與存取金鑰，按「測試連線」顯示「連線成功」；按「錄製」說幾句話再停止，文字插入筆記。
+- [ ] （M9 起）DevTools → Application：Manifest 顯示名稱 open-copilot 和三個圖示；Service workers 顯示 `sw.js` 為 activated。勾選 Network 的 Offline 後重新整理，畫面與筆記仍在。

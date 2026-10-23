@@ -2,7 +2,7 @@
 
 Hono + Node 的小型 API。主要功能有兩項：
 
-- **轉寫**：接收前端錄音切好的單段音訊，交給轉寫服務（預設 Groq `whisper-large-v3-turbo`，也可改用 OpenAI `gpt-4o-mini-transcribe`），把結果轉成繁體中文（台灣）後回傳。
+- **轉寫**：接收前端錄音切好的單段音訊，交給轉寫服務（預設 Groq `whisper-large-v3-turbo`，也可改用 OpenAI `gpt-4o-mini-transcribe`；沒有金鑰時在 Windows 上改用內建離線辨識），把結果轉成繁體中文（台灣）後回傳。
 - **AI**：用 Groq 的 LLM 產生筆記的摘要與待辦事項。
 
 ## API
@@ -37,8 +37,9 @@ CORS：只允許 `ALLOWED_ORIGINS` 內的來源，並公開 `Retry-After` 標頭
 |---|---|---|
 | `groq` | `GROQ_API_KEY` | `whisper-large-v3-turbo`（可用 `GROQ_TRANSCRIBE_MODEL` 覆寫） |
 | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini-transcribe`（固定） |
+| `windows` | 不需要（只能在 Windows 執行，需要 ffmpeg） | Windows 內建 `System.Speech` zh-TW 聽寫（離線、不加標點、準確度較低） |
 
-沒設定 `TRANSCRIBE_PROVIDER` 時：有 `GROQ_API_KEY` 就用 Groq；否則有 `OPENAI_API_KEY` 就用 OpenAI；兩者都沒有就拒絕啟動，印出 `[config] No transcription API key: ...` 並以 exit code 1 結束。啟動成功時會印出 `[transcribe] provider groq, model whisper-large-v3-turbo`（不印金鑰）。
+沒設定 `TRANSCRIBE_PROVIDER` 時：有 `GROQ_API_KEY` 就用 Groq；否則有 `OPENAI_API_KEY` 就用 OpenAI；否則在 Windows 上用 `windows`（內建離線辨識）；以上都不符合（不是 Windows 又沒有金鑰）就拒絕啟動，印出 `[config] No transcription API key: ...` 並以 exit code 1 結束。啟動成功時會印出 `[transcribe] provider groq, model whisper-large-v3-turbo`（不印金鑰）。
 
 申請 Groq 金鑰：
 
@@ -49,6 +50,18 @@ CORS：只允許 `ALLOWED_ORIGINS` 內的來源，並公開 `Retry-After` 標頭
 Groq 免費額度（設計時的數字）：每分鐘 20 次、每小時 7,200 音訊秒、每天 28,800 音訊秒、每天 2,000 次請求；每次請求最少按 10 秒計費。超過時 Groq 回 429，本服務改回 429 `rate_limited` 並轉傳 `Retry-After`，前端依此等待後重送。
 
 prompt：前端會送前一段最後 200 字當 `prompt`。Whisper 系列的 prompt 上限是 224 tokens，所以後端只保留最後 60 個字，前面固定加上 `以下是繁體中文的語音內容。`（整個 prompt 另以 224 個 UTF-8 位元組為上限：一般繁體字前綴加 60 字是 219 位元組；emoji、CJK 擴充 B 等每字 4 位元組的字會讓尾段少於 60 字，確保不超過 224 tokens）。兩種轉寫服務都套用這個規則。
+
+### Windows 內建離線辨識（`windows`）
+
+沒有雲端金鑰時的備案，也可以用 `TRANSCRIBE_PROVIDER=windows` 指定。每一段音訊：
+
+1. 寫進暫存檔（副檔名只保留 .webm/.ogg/.oga/.opus/.m4a/.mp4/.wav，其他用 .bin），用 `ffmpeg -protocol_whitelist file -format_whitelist matroska,webm,ogg,mov,mp4,m4a,wav -i <in> -ar 16000 -ac 1 -f wav <out.wav>` 轉成 16 kHz 單聲道 WAV（ffmpeg 取 `FFMPEG_PATH`，沒設定就用 PATH 上的 `ffmpeg`）。只允許本機檔案和音訊容器，上傳 HLS 或 concat 清單也讀不到伺服器上的其他檔案。
+2. 執行 `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File apps/api/scripts/windows-stt.ps1 -Wav <out.wav>`，用 `System.Speech` 的 zh-TW 聽寫辨識，輸出 UTF-8 JSON `{ "text": "..." }`。
+3. 從請求進來起算 30 秒逾時（排隊時間也算，和前端每個請求 30 秒的逾時一致；排隊時就用完的段直接失敗，不再轉檔）；最多同時處理 2 段，其餘排隊；暫存檔一律刪除。ffmpeg 或 PowerShell 失敗、逾時都回 502 `upstream_error`。
+
+限制：不加標點、準確度比 Groq 低（例：「請小明」可能變成「井小民」）；`prompt` 會被忽略。啟動時找不到 ffmpeg 會印出 `[config] ffmpeg not found at "..."` 並以 exit code 1 結束；不在 Windows 上指定 `windows` 也會拒絕啟動。安裝 ffmpeg：`winget install Gyan.FFmpeg`（裝好後重開終端機），或把 `FFMPEG_PATH` 設成 `ffmpeg.exe` 的完整路徑。
+
+`apps/api/scripts/*.ps1` 必須存成 UTF-8 with BOM，否則 Windows PowerShell 5 會讀錯中文（`src/transcriber/windowsScripts.test.ts` 會檢查）。
 
 ## AI 摘要與待辦事項
 
@@ -75,11 +88,12 @@ curl -s https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_AP
 
 | 名稱 | 必填 | 說明 |
 |---|---|---|
-| `TRANSCRIBE_PROVIDER` | 否 | `groq` 或 `openai`（不分大小寫）；不填則依上節規則自動選擇；其他值拒絕啟動 |
-| `GROQ_API_KEY` | 二擇一 | Groq API 金鑰；使用 Groq 轉寫時必填；AI 端點也靠它啟用 |
+| `TRANSCRIBE_PROVIDER` | 否 | `groq`、`openai` 或 `windows`（不分大小寫）；不填則依上節規則自動選擇；其他值拒絕啟動；`windows` 只能在 Windows 使用 |
+| `GROQ_API_KEY` | 建議 | Groq API 金鑰；使用 Groq 轉寫時必填；AI 端點也靠它啟用。不是 Windows 時，它和 `OPENAI_API_KEY` 至少要有一個 |
 | `GROQ_TRANSCRIBE_MODEL` | 否 | Groq 轉寫模型，預設 `whisper-large-v3-turbo` |
 | `GROQ_LLM_MODEL` | 否 | `/ai/*` 使用的 Groq LLM，預設 `openai/gpt-oss-120b` |
 | `OPENAI_API_KEY` | 二擇一 | OpenAI API 金鑰；使用 OpenAI 時必填 |
+| `FFMPEG_PATH` | 否 | ffmpeg 執行檔路徑，只有 `windows` provider 使用；預設 PATH 上的 `ffmpeg` |
 | `ACCESS_KEYS` | 是 | 存取金鑰，逗號分隔。每把請用至少 16 字元的隨機值（例如 `node -e "console.log(crypto.randomUUID())"`）；較短的金鑰仍可啟動，但會印出警告 |
 | `ALLOWED_ORIGINS` | 否 | CORS 允許來源，逗號分隔；預設 `http://localhost:5173,https://localhost,capacitor://localhost,app://bundle`。每項只能是 `scheme://host[:port]`（例如 `https://notes.example.com`），不可有路徑或結尾斜線；格式不對會拒絕啟動 |
 | `PORT` | 否 | 監聽埠，預設 `8787` |
@@ -119,12 +133,16 @@ curl -X POST http://localhost:8787/ai/todos \
 
 前端「設定」頁的後端網址填 `http://localhost:8787`，存取金鑰填 `ACCESS_KEYS` 其中一把。
 
+想一次啟動後端與網頁、並自動填好設定，請在 repo 根目錄執行 `npm run prototype`（說明見 `apps/web/README.md`）。
+
 ## 測試
 
 ```bash
 npm test -w @oc/api          # Vitest；Groq／OpenAI 以假物件或假 fetch 取代，不連網
 npm run typecheck -w @oc/api
 ```
+
+在 Windows 上，`npm test -w @oc/api` 也會跑 `src/transcriber/windowsTranscriber.integration.test.ts`：用 Windows TTS 合成一段中文，再用 `windows` provider 實際辨識（需要 ffmpeg 與 zh-TW 語音）；其他平台自動略過。
 
 ## Docker
 
@@ -136,6 +154,8 @@ docker run --rm -p 8787:8787 --env-file apps/api/.env open-copilot-api
 ```
 
 `--env-file` 內若設定了 `PORT`，`-p` 的容器埠要跟著改。
+
+Docker 映像是 Linux，不支援 `windows` provider：容器裡必須設定 `GROQ_API_KEY` 或 `OPENAI_API_KEY`，否則拒絕啟動。
 
 同一份 `.env` 要給 `docker run --env-file` 用時，值不可加引號：Node 的 `--env-file`（`npm run dev`）會去掉引號，Docker 會原樣保留，例如 `GROQ_API_KEY="gsk_..."` 進到容器就帶著引號，每次呼叫轉寫服務都會回 502 `upstream_error`。留空的 `NAME=` 視為未設定。
 

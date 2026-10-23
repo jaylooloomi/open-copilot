@@ -10,6 +10,10 @@ describe('@oc/core public API', () => {
     expect(typeof core.openAppDb).toBe('function');
     expect(typeof core.createIndexedDbStorage).toBe('function');
     expect(typeof core.createBrowserFileSaver).toBe('function');
+    expect(typeof core.applySetupLink).toBe('function');
+    expect(typeof core.encodeSetupPayload).toBe('function');
+    expect(typeof core.decodeSetupPayload).toBe('function');
+    expect(core.SETUP_HASH_PARAM).toBe('oc-setup');
   });
 
   it('builds a working platform from the exported factories', async () => {

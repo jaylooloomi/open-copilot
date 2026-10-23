@@ -1,3 +1,4 @@
+/// <reference types="vite-plugin-pwa/vanillajs" />
 import type { OcDesktopBridge } from './platform/desktopFileSaver';
 
 declare global {

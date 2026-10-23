@@ -3,7 +3,7 @@ import type { ShareOptions } from '@capacitor/share';
 import { Blob as NodeBlob } from 'node:buffer';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { selectPlatform } from './selectPlatform';
+import { detectPlatformKind, selectPlatform } from './selectPlatform';
 
 // Outside the Android app Capacitor reports a web platform; tests opt in per call.
 const { isNativePlatform, writeFile, rmdir, share } = vi.hoisted(() => ({
@@ -160,5 +160,26 @@ describe('selectPlatform', () => {
     const mic = installFakeMicrophone();
     await selectPlatform();
     expect(navigator.mediaDevices.getUserMedia).toBe(mic.getUserMedia);
+  });
+});
+
+describe('detectPlatformKind', () => {
+  it('is web in a browser', () => {
+    expect(detectPlatformKind()).toBe('web');
+  });
+
+  it('is android inside the Capacitor app', () => {
+    isNativePlatform.mockReturnValueOnce(true);
+    expect(detectPlatformKind()).toBe('android');
+  });
+
+  it('is desktop when the Electron preload bridge exists', () => {
+    window.ocDesktop = { saveFile: vi.fn(async () => true) };
+    expect(detectPlatformKind()).toBe('desktop');
+  });
+
+  it('is desktop for a page served from app:// even before the bridge exists', () => {
+    expect(detectPlatformKind({ protocol: 'app:' })).toBe('desktop');
+    expect(detectPlatformKind({ protocol: 'https:' })).toBe('web');
   });
 });

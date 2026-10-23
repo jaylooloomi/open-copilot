@@ -1,4 +1,4 @@
-import { NotesApp, PlatformProvider, type Platform } from '@oc/core';
+import { applySetupLink, NotesApp, PlatformProvider, type Platform } from '@oc/core';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -11,6 +11,9 @@ export async function startApp(
   container: HTMLElement,
   selectPlatform: () => Promise<Platform>,
 ): Promise<void> {
+  // `npm run prototype` opens /#oc-setup=…: save those settings before NotesApp reads them, and
+  // drop the hash (it carries the access key) from the address bar right away.
+  if (applySetupLink(window) === 'invalid') console.warn('Ignored an invalid #oc-setup link');
   const root = createRoot(container);
   let platform: Platform;
   try {
