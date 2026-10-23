@@ -12,7 +12,8 @@ open-copilot 的網頁入口（Vite + React）。所有畫面與邏輯都在 `pa
 | `npm run dev -w @oc/web` | 開發伺服器 `http://localhost:5173` |
 | `npm test -w @oc/web` | 單元測試（Vitest） |
 | `npm run typecheck -w @oc/web` | 型別檢查 |
-| `npm run e2e -w @oc/web` | 端對端測試（Playwright；第一次先執行 `npm exec -w @oc/web -- playwright install chromium`） |
+| `npm run e2e -w @oc/web` | 端對端測試（Playwright；第一次先執行 `npm exec -w @oc/web -- playwright install chromium`）。同時啟動開發伺服器（5173）和建置後的 `vite preview`（4173），後者跑 `e2e-pwa/` 的 PWA 測試 |
+| `npm run icons -w @oc/web` | 由 `icons/*.svg` 重新產生 `public/icons/*.png`；改過 SVG 後執行並 commit PNG（`src/pwaIcons.test.ts` 會檢查是否一致） |
 | `npm run build -w @oc/web` | 正式建置，輸出到 `apps/web/dist` |
 | `npm run preview -w @oc/web` | 以靜態伺服器提供 `apps/web/dist`，網址 `http://localhost:4173` |
 
@@ -31,11 +32,30 @@ npm run prototype
 3. 同時啟動後端（`http://localhost:8787`）和網頁開發伺服器（`http://localhost:5173`）。任何一個結束，另一個也會停止；按 Ctrl+C 會一起關閉。
 4. 開啟瀏覽器到 `http://localhost:5173/#oc-setup=...`。網頁讀到 `#oc-setup` 後，把後端網址 `http://localhost:5173/api` 和存取金鑰存進設定，並立刻從網址列移除；格式不對、或後端網址和網頁不同源（別人做的連結可能把錄音導到其他網站）就忽略、保留原設定，只在主控台印一行警告。
 
-選項：`npm run prototype -- --no-open`（不開瀏覽器，只印出網址）、`npm run prototype -- --check`（兩個服務和 `/api` proxy 都正常後自動結束，用來檢查環境）。
+選項：`npm run prototype -- --no-open`（不開瀏覽器，只印出網址）、`npm run prototype -- --check`（兩個服務和 `/api` proxy 都正常後自動結束，用來檢查環境）、`npm run prototype -- --share`（另外產生手機用的分享網址，見下一節）。不認得的選項會直接報錯結束。
 
 印出的網址含存取金鑰，不要分享。開發伺服器會把 `/api/*` 轉到 `http://localhost:8787/*`（`vite.config.ts` 的 `server.proxy`），所以網頁版是同源呼叫後端，不會遇到 CORS。8787 和 5173 必須空著。
 
 Windows 離線辨識需要 ffmpeg（`winget install Gyan.FFmpeg`，或用 `FFMPEG_PATH` 指定），結果不含標點，準確度也比 Groq 低。
+
+### 手機分享網址（`npm run prototype -- --share`）
+
+```bash
+npm run prototype -- --share
+```
+
+除了上面的步驟，啟動器還會：
+
+1. 用 npm 套件 `cloudflared`（根目錄的 devDependency，安裝時下載執行檔，不用另外安裝系統軟體）執行 `cloudflared tunnel --url http://localhost:5173`，向 Cloudflare 要一個免帳號的 quick tunnel，得到 `https://<隨機名稱>.trycloudflare.com`。
+2. 經過通道檢查 `/api/health`，再印出手機用的網址和 QR code。網址的 `#oc-setup` 帶入 `apiBaseUrl = https://<隨機名稱>.trycloudflare.com/api` 和存取金鑰，手機開啟後自動填好設定；`/api` 由 Vite proxy 轉到本機後端，所以不需要 CORS 設定。
+3. 印出警告：**分享網址是公開的，請只在測試時開啟，用完按 Ctrl+C 關閉；後端仍然需要存取金鑰。**網址含存取金鑰，只給自己的手機使用。
+
+Vite 的 `server.allowedHosts` 已允許 `.trycloudflare.com`，其他網域仍會被擋（403）。每次執行的網址都不一樣。`npm run prototype -- --share --check` 會在分享網址也能連上後自動結束。
+
+疑難排解：
+- 等不到通道網址：確認這台電腦能連到 Cloudflare（公司網路可能擋掉），終端機會印出 cloudflared 最後的訊息。`~/.cloudflared/config.yml` 存在時 quick tunnel 無法使用，請先改名。
+- 印出「這台電腦 60 秒內連不到分享網址」：通常是本機 DNS 還沒更新，手機多半仍能開啟；打不開就重新執行。
+- 分享模式跑的是開發伺服器，不會註冊 service worker，所以不能在手機上「安裝」；要測安裝請見「PWA」一節。
 
 ### 桌面版搭配原型後端
 
@@ -60,14 +80,45 @@ npm run e2e:real -w @oc/web
 
 轉寫服務依後端的預設順序：這個 shell 有 `GROQ_API_KEY` 就真的呼叫 Groq，否則有 `OPENAI_API_KEY` 用 OpenAI，都沒有就用 Windows 離線辨識。輸出會印出 `[e2e:real] transcribe provider: ...` 和轉寫結果，HTML 報告（`apps/web/playwright-report/real`）的 annotation 也有記錄。
 
+## PWA（可安裝、可離線開啟）
+
+建置版（`npm run build -w @oc/web`）是 PWA：
+
+- `vite-plugin-pwa`（`generateSW`、`registerType: 'autoUpdate'`）產生 `manifest.webmanifest` 和 `sw.js`。manifest 名稱 `open-copilot`、`display: standalone`、`lang: zh-TW`，`theme_color` 與 `background_color` 都是主色 `#c026d3`；圖示是 `public/icons/` 的 192、512 與 maskable 512（由 `icons/*.svg` 以 `npm run icons -w @oc/web` 產生並 commit）。
+- Service worker 只快取網頁本身（`**/*.{js,css,html,png,svg}`），所以沒有網路時重新整理仍看得到筆記（筆記在 IndexedDB）。`/api/*` 和任何跨網域請求一律直接走網路，不會快取。
+- 只有一般瀏覽器會註冊 service worker（`src/main.tsx` 依 `detectPlatformKind()` 判斷）；桌面版（`app://`）和 Android App（Capacitor）不註冊。開發伺服器（`npm run dev`）也不註冊。
+- 新版部署後，已開啟的頁面會在新的 service worker 啟用時自動重新整理（`autoUpdate`）。錄音中遇到更新時，已上傳但未插入的段落會留在 IndexedDB，重新整理後可用「⚠ 第 N 段未轉寫・重試」補上。
+
+### 在真的手機上安裝（手動檢查）
+
+需要 HTTPS 的建置版，兩種做法擇一：
+
+- 部署到 Vercel 或 Cloudflare Pages（見下方），用手機開正式網址。
+- 本機建置版加 quick tunnel：
+
+  ```bash
+  npm run build -w @oc/web
+  npm run preview -w @oc/web
+  # 另開一個終端機（repo 根目錄）：
+  npx cloudflared tunnel --url http://localhost:4173
+  ```
+
+  `vite preview` 沿用 `server.allowedHosts` 和 `/api` proxy，用手機開啟印出的 `https://<隨機名稱>.trycloudflare.com`。
+
+手機上確認：Chrome 選單出現「安裝應用程式」（或「加到主畫面」），安裝後從主畫面以獨立視窗開啟，圖示是桃紫底白色麥克風；開飛航模式再開啟，筆記仍在。
+
 ## 建置產物
 
 `npm run build -w @oc/web` 只產生靜態檔，部署時上傳整個 `apps/web/dist`：
 
 - `index.html`
-- `assets/index-<hash>.js`、`assets/index-<hash>.css`（之後的里程碑會多出按需載入的 `assets/*-<hash>.js` 分塊）
+- `assets/index-<hash>.js`、`assets/index-<hash>.css`，以及按需載入的 `assets/*-<hash>.js` 分塊
+- `manifest.webmanifest`、`sw.js`、`workbox-<hash>.js`（PWA，M9 起）
+- `icons/icon-192.png`、`icons/icon-512.png`、`icons/icon-maskable-512.png`
 
 建置不需要任何環境變數。後端網址與存取金鑰（M3 起）由使用者在 App 的「設定」輸入，存在該瀏覽器的 localStorage，不會寫進建置產物。
+
+`sw.js` 和 `manifest.webmanifest` 的檔名沒有 hash，不要讓 CDN 長時間快取它們；Vercel 與 Cloudflare Pages 的預設設定（每次重新驗證）就可以，不需要另外設定。
 
 ## 部署限制
 
@@ -158,3 +209,4 @@ curl -s -i https://api.example.com/health -H 'Origin: https://notes.example.com'
 - [ ] 輸入標題與內文，等一秒後重新整理，內容仍在。
 - [ ] DevTools Console 沒有錯誤。
 - [ ] （M3 起）「設定」填入後端網址與存取金鑰，按「測試連線」顯示「連線成功」；按「錄製」說幾句話再停止，文字插入筆記。
+- [ ] （M9 起）DevTools → Application：Manifest 顯示名稱 open-copilot 和三個圖示；Service workers 顯示 `sw.js` 為 activated。勾選 Network 的 Offline 後重新整理，畫面與筆記仍在。
