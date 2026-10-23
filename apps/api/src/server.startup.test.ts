@@ -106,15 +106,20 @@ describe('server startup', () => {
     expect(stderr).not.toContain('sk-startup-openai-secret');
   }, 30_000);
 
-  it('exits 1 with a one-line hint when no transcription key is set', () => {
-    const result = startServer({ ACCESS_KEYS: 'startup-test-key-0123' });
+  it.skipIf(process.platform === 'win32')(
+    'exits 1 with a one-line hint when no transcription key is set',
+    () => {
+      const result = startServer({ ACCESS_KEYS: 'startup-test-key-0123' });
 
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain(
-      '[config] No transcription API key: set GROQ_API_KEY (free key at https://console.groq.com/keys) or OPENAI_API_KEY',
-    );
-    expect(result.stderr).not.toContain('at loadConfig');
-  }, 30_000);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        '[config] No transcription API key: set GROQ_API_KEY (free key at https://console.groq.com/keys) or OPENAI_API_KEY',
+      );
+      expect(result.stderr).toContain('TRANSCRIBE_PROVIDER=windows only works on Windows');
+      expect(result.stderr).not.toContain('at loadConfig');
+    },
+    30_000,
+  );
 
   it('exits 1 naming ACCESS_KEYS when only a Groq key is set, without printing the key', () => {
     const result = startServer({ GROQ_API_KEY: 'gsk-startup-secret' });

@@ -58,4 +58,13 @@ describe('createTranscriber', () => {
       createTranscriber({ provider: 'openai', apiKey: 'sk-test', model: 'whisper-1' }),
     ).toThrow(/gpt-4o-mini-transcribe/);
   });
+
+  it('builds the Windows offline transcriber without touching the network', () => {
+    const transcriber = createTranscriber({
+      provider: 'windows',
+      model: 'System.Speech zh-TW',
+      ffmpegPath: 'ffmpeg',
+    });
+    expect(typeof transcriber.transcribe).toBe('function');
+  });
 });

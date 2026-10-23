@@ -12,13 +12,16 @@ import {
 const base = { GROQ_API_KEY: 'gsk-test', ACCESS_KEYS: 'key-a' };
 
 describe('loadConfig', () => {
-  it('refuses to start without any transcription key', () => {
+  it('refuses to start without any transcription key off Windows', () => {
     for (const env of [
       { ACCESS_KEYS: 'key-a' },
       { ACCESS_KEYS: 'key-a', GROQ_API_KEY: '   ', OPENAI_API_KEY: '' },
     ]) {
-      expect(() => loadConfig(env)).toThrow(
+      expect(() => loadConfig(env, 'linux')).toThrow(
         'No transcription API key: set GROQ_API_KEY (free key at https://console.groq.com/keys) or OPENAI_API_KEY',
+      );
+      expect(() => loadConfig(env, 'darwin')).toThrow(
+        'the offline TRANSCRIBE_PROVIDER=windows only works on Windows',
       );
     }
   });
@@ -106,9 +109,12 @@ describe('loadConfig', () => {
       GROQ_TRANSCRIBE_MODEL: '',
       GROQ_LLM_MODEL: '',
       OPENAI_API_KEY: '',
+      FFMPEG_PATH: '',
       ACCESS_KEYS: '',
     });
-    expect(() => loadConfig(example)).toThrow('No transcription API key');
+    expect(() => loadConfig(example, 'linux')).toThrow('No transcription API key');
+    // On Windows the offline provider needs no key, but the missing ACCESS_KEYS still stops it.
+    expect(() => loadConfig(example, 'win32')).toThrow('ACCESS_KEYS');
     expect(() => loadConfig({ ...example, GROQ_API_KEY: 'gsk-real' })).toThrow('ACCESS_KEYS');
   });
 });
@@ -141,7 +147,7 @@ describe('transcription provider', () => {
     const both = { ...base, OPENAI_API_KEY: 'sk-test' };
     expect(loadConfig({ ...both, TRANSCRIBE_PROVIDER: 'openai' }).transcriber.provider).toBe('openai');
     expect(loadConfig({ ...both, TRANSCRIBE_PROVIDER: ' Groq ' }).transcriber.provider).toBe('groq');
-    expect(loadConfig({ ...both, TRANSCRIBE_PROVIDER: 'OPENAI' }).transcriber.apiKey).toBe('sk-test');
+    expect(loadConfig({ ...both, TRANSCRIBE_PROVIDER: 'OPENAI' }).transcriber).toMatchObject({ provider: 'openai', apiKey: 'sk-test' });
   });
 
   it('requires the key of the explicitly chosen provider', () => {
@@ -160,7 +166,7 @@ describe('transcription provider', () => {
     } catch (err) {
       message = (err as Error).message;
     }
-    expect(message).toBe('TRANSCRIBE_PROVIDER must be "groq" or "openai", got "azure"');
+    expect(message).toBe('TRANSCRIBE_PROVIDER must be "groq", "openai" or "windows", got "azure"');
     expect(message).not.toContain('gsk-test');
     expect(message).not.toContain('sk-test');
   });
@@ -174,7 +180,7 @@ describe('transcription provider', () => {
         message = (err as Error).message;
       }
       expect(message).toBe(
-        'TRANSCRIBE_PROVIDER must be "groq" or "openai", got an unrecognized value (not shown)',
+        'TRANSCRIBE_PROVIDER must be "groq", "openai" or "windows", got an unrecognized value (not shown)',
       );
       expect(message).not.toContain(pasted);
     }
@@ -196,6 +202,50 @@ describe('transcription provider', () => {
       GROQ_TRANSCRIBE_MODEL: 'whisper-large-v3',
     });
     expect(config.transcriber.model).toBe('gpt-4o-mini-transcribe');
+  });
+});
+
+describe('windows provider', () => {
+  it('falls back to the Windows offline recognizer when no key is set on Windows', () => {
+    const config = loadConfig({ ACCESS_KEYS: 'key-a' }, 'win32');
+    expect(config.transcriber).toEqual({
+      provider: 'windows',
+      model: 'System.Speech zh-TW',
+      ffmpegPath: 'ffmpeg',
+    });
+    expect(config.ai).toBeNull();
+  });
+
+  it('still prefers a cloud key on Windows', () => {
+    expect(loadConfig(base, 'win32').transcriber.provider).toBe('groq');
+    expect(
+      loadConfig({ ACCESS_KEYS: 'key-a', OPENAI_API_KEY: 'sk-test' }, 'win32').transcriber.provider,
+    ).toBe('openai');
+  });
+
+  it('honours TRANSCRIBE_PROVIDER=windows even with keys, and reads FFMPEG_PATH', () => {
+    const config = loadConfig(
+      { ...base, TRANSCRIBE_PROVIDER: ' Windows ', FFMPEG_PATH: ' C:\\ffmpeg\\bin\\ffmpeg.exe ' },
+      'win32',
+    );
+    expect(config.transcriber).toEqual({
+      provider: 'windows',
+      model: 'System.Speech zh-TW',
+      ffmpegPath: 'C:\\ffmpeg\\bin\\ffmpeg.exe',
+    });
+    // AI stays on Groq whatever the transcriber is.
+    expect(config.ai).toEqual({ apiKey: 'gsk-test', model: 'openai/gpt-oss-120b' });
+  });
+
+  it('ignores a blank FFMPEG_PATH', () => {
+    const config = loadConfig({ ACCESS_KEYS: 'key-a', FFMPEG_PATH: '  ' }, 'win32');
+    expect(config.transcriber).toMatchObject({ provider: 'windows', ffmpegPath: 'ffmpeg' });
+  });
+
+  it('refuses TRANSCRIBE_PROVIDER=windows off Windows', () => {
+    expect(() => loadConfig({ ...base, TRANSCRIBE_PROVIDER: 'windows' }, 'linux')).toThrow(
+      'TRANSCRIBE_PROVIDER=windows only works on Windows',
+    );
   });
 });
 

@@ -6,18 +6,17 @@ import {
   type UpstreamClientOptions,
 } from './openaiTranscriber';
 import type { Transcriber } from './types';
+import { createWindowsTranscriber } from './windowsTranscriber';
 
-export type TranscribeProvider = 'groq' | 'openai';
+export type TranscribeProvider = 'groq' | 'openai' | 'windows';
 
 /**
- * loadConfig 產生的轉寫服務設定；model 一律是實際使用的模型名稱。
+ * loadConfig 產生的轉寫服務設定；model 一律是實際使用的模型名稱（windows 為 'System.Speech zh-TW'）。
  * config.ts 應從這裡匯入 TranscriberConfig／TranscribeProvider，不要重複宣告。
  */
-export interface TranscriberConfig {
-  provider: TranscribeProvider;
-  apiKey: string;
-  model: string;
-}
+export type TranscriberConfig =
+  | { provider: 'groq' | 'openai'; apiKey: string; model: string }
+  | { provider: 'windows'; model: string; ffmpegPath: string };
 
 /** 依設定建出轉寫服務。options.fetch 只給測試注入假上游，server.ts 不傳。 */
 export function createTranscriber(
@@ -39,9 +38,12 @@ export function createTranscriber(
         );
       }
       return createOpenAITranscriber(config.apiKey, createOpenAIClient(config.apiKey, options));
+    case 'windows':
+      // 離線辨識不連網，options.fetch 用不到。
+      return createWindowsTranscriber({ ffmpegPath: config.ffmpegPath });
     default: {
-      const unknownProvider: never = config.provider;
-      throw new Error(`Unknown transcribe provider: ${String(unknownProvider)}`);
+      const unknownProvider: never = config;
+      throw new Error(`Unknown transcribe provider: ${String((unknownProvider as { provider: unknown }).provider)}`);
     }
   }
 }
