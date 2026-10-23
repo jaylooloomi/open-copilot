@@ -23,11 +23,25 @@ export default defineConfig({
         },
       },
     },
+    {
+      // M9: the service worker only exists in the production build (vite preview).
+      name: 'pwa',
+      testDir: './e2e-pwa',
+      use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:4173' },
+    },
   ],
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: 'npm run dev',
+      url: 'http://localhost:5173',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      command: 'npm run build && npm run preview',
+      url: 'http://localhost:4173',
+      reuseExistingServer: false,
+      timeout: 180_000,
+    },
+  ],
 });

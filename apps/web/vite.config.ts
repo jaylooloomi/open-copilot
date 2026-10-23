@@ -52,6 +52,10 @@ export const PWA_OPTIONS: Partial<VitePWAOptions> = {
     ],
   },
   workbox: {
+    // autoUpdate: a new service worker activates at once and controls the open page, which
+    // registerSW then reloads. vite-plugin-pwa sets these only when it injects the register script.
+    skipWaiting: true,
+    clientsClaim: true,
     // The app itself (including the lazily loaded docx chunk), so a reload works offline.
     globPatterns: ['**/*.{js,css,html,png,svg}'],
     maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,

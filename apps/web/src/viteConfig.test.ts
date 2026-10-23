@@ -101,6 +101,12 @@ describe('vite.config', () => {
     ]);
   });
 
+  it('activates a new service worker at once and takes over open pages (autoUpdate)', () => {
+    // vite-plugin-pwa only adds these itself when it injects the register script, and this app
+    // turns that off (injectRegister: false), so they must be set here.
+    expect(PWA_OPTIONS.workbox).toMatchObject({ skipWaiting: true, clientsClaim: true });
+  });
+
   it('precaches the app files and never caches the backend or other origins', () => {
     const workbox = PWA_OPTIONS.workbox!;
     expect(workbox.globPatterns).toEqual(['**/*.{js,css,html,png,svg}']);
