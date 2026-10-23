@@ -7,7 +7,8 @@
     "test": "npm run test --workspaces --if-present",
     "test:workflow": "node --test \"scripts/ci/*.test.mjs\" \"scripts/prototype/*.test.mjs\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "e2e": "npm run e2e -w @oc/web"
+    "e2e": "npm run e2e -w @oc/web",
+    "prototype": "node scripts/prototype.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
