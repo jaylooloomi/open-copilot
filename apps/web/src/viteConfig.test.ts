@@ -119,6 +119,13 @@ describe('vite.config', () => {
     expect(at('http://localhost:4173/apiary.png')).toBe(false);
   });
 
+  it('uses one /api pattern for the proxy, the navigation denylist and the network-only route', () => {
+    const apiPattern = new RegExp(API_PROXY_PATH);
+    expect(PWA_OPTIONS.workbox!.navigateFallbackDenylist).toEqual([apiPattern]);
+    // isNetworkOnlyRequest must inline its regex (workbox serializes it), so compare the source text.
+    expect(isNetworkOnlyRequest.toString()).toContain(String(apiPattern));
+  });
+
   it('keeps the network-only route self-contained, because workbox copies its source into sw.js', () => {
     const copy = new Function(`return (${isNetworkOnlyRequest.toString()});`)() as typeof isNetworkOnlyRequest;
     expect(copy({ url: new URL('http://localhost/api/health'), sameOrigin: true })).toBe(true);

@@ -56,7 +56,7 @@ export const PWA_OPTIONS: Partial<VitePWAOptions> = {
     globPatterns: ['**/*.{js,css,html,png,svg}'],
     maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
     navigateFallback: 'index.html',
-    navigateFallbackDenylist: [/^\/api(?:[/?]|$)/],
+    navigateFallbackDenylist: [new RegExp(API_PROXY_PATH)],
     runtimeCaching: [{ urlPattern: isNetworkOnlyRequest, handler: 'NetworkOnly' }],
   },
 };
