@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_FFMPEG_PATH, probeFfmpeg } from './transcriber/windowsTranscriber';
 
 const apiDir = fileURLToPath(new URL('..', import.meta.url));
 
@@ -42,9 +43,12 @@ function freePort(): Promise<number> {
   });
 }
 
-/** PATH 上的 ffmpeg 能不能執行（決定 windows provider 的啟動測試要不要跑）。 */
+/**
+ * server 預設的 ffmpeg 能不能執行（決定 windows provider 的啟動測試要不要跑）。
+ * 沿用 probeFfmpeg，與 server 檢查同一個路徑、也有逾時。
+ */
 function hasFfmpeg(): boolean {
-  return spawnSync('ffmpeg', ['-version'], { stdio: 'ignore', windowsHide: true }).status === 0;
+  return probeFfmpeg(DEFAULT_FFMPEG_PATH);
 }
 
 /**

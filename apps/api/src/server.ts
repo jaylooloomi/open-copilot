@@ -14,6 +14,7 @@ function exitWithConfigError(message: string): never {
   process.exit(1);
 }
 
+/** 讀取設定；設定錯誤時印一行說明並以 exit code 1 結束。 */
 function loadConfigOrExit(): AppConfig {
   try {
     return loadConfig(process.env);
