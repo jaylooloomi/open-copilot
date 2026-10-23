@@ -1,16 +1,18 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { VitePWA, type VitePWAOptions } from 'vite-plugin-pwa';
 
 /** The local backend started by `npm run prototype` (apps/api). */
 export const API_PROXY_TARGET = 'http://localhost:8787';
 /** `/api`, `/api/...` and `/api?...`, but not lookalikes such as `/apiary`. */
 export const API_PROXY_PATH = '^/api(?:[/?]|$)';
-
 /**
  * Hosts a Cloudflare quick tunnel uses (`npm run prototype -- --share`), e.g.
  * quiet-river-1234.trycloudflare.com. Vite rejects any other non-localhost Host with 403.
  */
 export const SHARE_ALLOWED_HOSTS = ['.trycloudflare.com'];
+/** The brand color: --oc-primary in packages/core/src/styles/app.css and theme-color in index.html. */
+export const THEME_COLOR = '#c026d3';
 
 /** `/api/transcribe` → `/transcribe`, `/api` → `/`; the query string is kept. */
 export function stripApiPrefix(path: string): string {
@@ -18,8 +20,49 @@ export function stripApiPrefix(path: string): string {
   return stripped.startsWith('/') ? stripped : `/${stripped}`;
 }
 
+/**
+ * Requests the service worker must never answer from a cache: the backend (`/api`, `/api/...`)
+ * and anything on another origin. generateSW copies this function's source into sw.js, so it
+ * must not use anything outside its own body.
+ */
+export function isNetworkOnlyRequest({ url, sameOrigin }: { url: URL; sameOrigin: boolean }): boolean {
+  return !sameOrigin || /^\/api(?:[/?]|$)/.test(url.pathname);
+}
+
+/** PWA (add-ons design 4). src/main.tsx registers the service worker, and only in browsers. */
+export const PWA_OPTIONS: Partial<VitePWAOptions> = {
+  strategies: 'generateSW',
+  registerType: 'autoUpdate',
+  // No registerSW.js in index.html: Electron (app://) and Android (Capacitor) must not register.
+  injectRegister: false,
+  manifest: {
+    name: 'open-copilot',
+    short_name: 'open-copilot',
+    description: '邊錄音邊轉成文字的語音筆記',
+    lang: 'zh-TW',
+    start_url: '/',
+    scope: '/',
+    display: 'standalone',
+    theme_color: THEME_COLOR,
+    background_color: THEME_COLOR,
+    icons: [
+      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  },
+  workbox: {
+    // The app itself (including the lazily loaded docx chunk), so a reload works offline.
+    globPatterns: ['**/*.{js,css,html,png,svg}'],
+    maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+    navigateFallback: 'index.html',
+    navigateFallbackDenylist: [/^\/api(?:[/?]|$)/],
+    runtimeCaching: [{ urlPattern: isNetworkOnlyRequest, handler: 'NetworkOnly' }],
+  },
+};
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), VitePWA(PWA_OPTIONS)],
   server: {
     port: 5173,
     strictPort: true,
