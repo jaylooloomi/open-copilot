@@ -10,6 +10,7 @@ import {
   WINDOWS_HINT,
   chooseTranscriber,
   encodeSetup,
+  apiEnvironment,
   ensureAccessKey,
   ffmpegUsable,
   generateAccessKey,
@@ -229,4 +230,31 @@ test('ensureAccessKey keeps CRLF line endings when appending', (t) => {
     readFileSync(envLocalPath, 'utf8'),
     'GROQ_API_KEY=gsk-x\r\nPORT=8787\r\n# Written by npm run prototype; reused on every run.\r\nACCESS_KEYS=crlf-key-0123456789\r\n',
   );
+});
+
+test('apiEnvironment gives the backend the key the setup link carries', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'oc-proto-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const envLocalPath = join(dir, '.env.local');
+
+  // ACCESS_KEYS made of separators only has no key: the launcher creates one and the backend must get it.
+  for (const blank of [',', ' , ']) {
+    const env = { ACCESS_KEYS: blank, OTHER: 'x' };
+    const access = ensureAccessKey({ env, envLocalPath, createKey: () => 'created-key-0123456789' });
+    assert.equal(access.source, 'created');
+    assert.deepEqual(apiEnvironment(env, access), {
+      ACCESS_KEYS: 'created-key-0123456789',
+      OTHER: 'x',
+      PORT: '8787',
+    });
+  }
+
+  // A usable ACCESS_KEYS list is passed on unchanged (the link uses its first entry).
+  const env = { ACCESS_KEYS: ' , key-1, key-2' };
+  const access = ensureAccessKey({ env, envLocalPath });
+  assert.deepEqual(apiEnvironment(env, access), { ACCESS_KEYS: ' , key-1, key-2', PORT: '8787' });
+  assert.deepEqual(apiEnvironment({}, { key: 'new-key', source: 'created' }), {
+    ACCESS_KEYS: 'new-key',
+    PORT: '8787',
+  });
 });

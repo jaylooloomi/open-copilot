@@ -17,7 +17,8 @@ function toBase64Url(text: string): string {
     .replace(/=+$/, '');
 }
 
-const API = 'http://localhost:5173/api';
+/** Same origin as the page (jsdom serves http://localhost:3000), like every planned producer. */
+const API = `${window.location.origin}/api`;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -103,6 +104,21 @@ describe('applySetupLink', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('quota', 'QuotaExceededError');
     });
+
+    expect(applySetupLink(window)).toBe('invalid');
+
+    expect(loadSettings()).toEqual({ apiBaseUrl: 'https://old.example.com', accessKey: 'old-key' });
+    expect(window.location.hash).toBe('');
+  });
+
+  it.each([
+    ['another host', 'https://attacker.example/api'],
+    ['another port on the same host', 'http://localhost:8787'],
+    ['another scheme', window.location.origin.replace(/^http:/, 'https:') + '/api'],
+  ])('refuses a backend on %s: keeps the old settings and removes the hash', (_label, apiBaseUrl) => {
+    saveSettings({ apiBaseUrl: 'https://old.example.com', accessKey: 'old-key' });
+    const encoded = encodeSetupPayload({ apiBaseUrl, accessKey: 'attacker-key-0123' });
+    window.history.replaceState(null, '', `/#${SETUP_HASH_PARAM}=${encoded}`);
 
     expect(applySetupLink(window)).toBe('invalid');
 

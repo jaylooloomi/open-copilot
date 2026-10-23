@@ -29,7 +29,7 @@ npm run prototype
 1. 決定轉寫服務：環境變數、`apps/api/.env.local` 或 `apps/api/.env` 有 `GROQ_API_KEY` 或 `OPENAI_API_KEY` 就用雲端；都沒有時，在 Windows 上改用內建離線辨識，並印出「目前使用 Windows 內建離線辨識，設定 GROQ_API_KEY 可提高準確度」；沒有金鑰而且不是 Windows、或 Windows 上找不到 ffmpeg（`FFMPEG_PATH` 或 PATH 上的 `ffmpeg`）時，在啟動任何伺服器之前印出申請 Groq 金鑰的步驟並以 exit code 1 結束。
 2. 沒有 `ACCESS_KEYS` 時產生一把隨機存取金鑰，寫進 `apps/api/.env.local`（已被 `.gitignore` 排除），之後重複使用。
 3. 同時啟動後端（`http://localhost:8787`）和網頁開發伺服器（`http://localhost:5173`）。任何一個結束，另一個也會停止；按 Ctrl+C 會一起關閉。
-4. 開啟瀏覽器到 `http://localhost:5173/#oc-setup=...`。網頁讀到 `#oc-setup` 後，把後端網址 `http://localhost:5173/api` 和存取金鑰存進設定，並立刻從網址列移除；格式不對就忽略、保留原設定。
+4. 開啟瀏覽器到 `http://localhost:5173/#oc-setup=...`。網頁讀到 `#oc-setup` 後，把後端網址 `http://localhost:5173/api` 和存取金鑰存進設定，並立刻從網址列移除；格式不對、或後端網址和網頁不同源（別人做的連結可能把錄音導到其他網站）就忽略、保留原設定，只在主控台印一行警告。
 
 選項：`npm run prototype -- --no-open`（不開瀏覽器，只印出網址）、`npm run prototype -- --check`（兩個服務和 `/api` proxy 都正常後自動結束，用來檢查環境）。
 

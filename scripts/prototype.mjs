@@ -8,11 +8,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   API_ORIGIN,
-  API_PORT,
   GROQ_KEY_STEPS,
   PROXY_API_BASE_URL,
   WEB_ORIGIN,
   WINDOWS_HINT,
+  apiEnvironment,
   chooseTranscriber,
   ensureAccessKey,
   ffmpegUsable,
@@ -52,7 +52,7 @@ if (access.source === 'created') {
 }
 
 // 3. Both servers; when one stops, supervise() stops the other.
-const apiEnv = { ...env, ACCESS_KEYS: env.ACCESS_KEYS ?? access.key, PORT: String(API_PORT) };
+const apiEnv = apiEnvironment(env, access);
 const viteBin = join(
   dirname(createRequire(join(webDir, 'package.json')).resolve('vite/package.json')),
   'bin',

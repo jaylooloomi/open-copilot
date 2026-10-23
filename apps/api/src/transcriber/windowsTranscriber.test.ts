@@ -87,6 +87,10 @@ describe('createWindowsTranscriber', () => {
       '-loglevel',
       'error',
       '-y',
+      '-protocol_whitelist',
+      'file',
+      '-format_whitelist',
+      'matroska,webm,ogg,mov,mp4,m4a,wav',
       '-i',
       input,
       '-ar',
@@ -113,16 +117,65 @@ describe('createWindowsTranscriber', () => {
     expect(await readdir(tempDir)).toEqual([]);
   });
 
-  it('keeps known extensions and uses .bin for anything else', async () => {
+  it('keeps known audio extensions and uses .bin for anything else', async () => {
     const { run, calls } = fakeRunner(answerAll);
     const transcriber = createWindowsTranscriber({ run, tempDir });
-    await transcriber.transcribe({ file: audio('segment-2.mp4'), prompt: '' });
-    await transcriber.transcribe({ file: audio('segment-3'), prompt: '' });
+    for (const name of ['segment-2.mp4', 'segment-3', 'x.M4A', 'list.m3u8', 'cat.txt', 'a.ffconcat']) {
+      await transcriber.transcribe({ file: audio(name), prompt: '' });
+    }
     const inputs = calls
       .filter((c) => c.command === 'ffmpeg')
-      .map((c) => c.args[c.args.indexOf('-i') + 1]);
-    expect(inputs[0]).toMatch(/input\.mp4$/);
-    expect(inputs[1]).toMatch(/input\.bin$/);
+      .map((c) => c.args[c.args.indexOf('-i') + 1]!.replace(/^.*input/, 'input'));
+    expect(inputs).toEqual([
+      'input.mp4',
+      'input.bin',
+      'input.m4a',
+      'input.bin',
+      'input.bin',
+      'input.bin',
+    ]);
+  });
+
+  it('counts the time a segment waits in the queue against its budget', async () => {
+    let release: () => void = () => {};
+    const { run, calls } = fakeRunner(async (command) => {
+      if (command === 'ffmpeg' && calls.filter((c) => c.command === 'ffmpeg').length === 1) {
+        await new Promise<void>((resolve) => (release = resolve));
+      }
+      return answerAll(command);
+    });
+    const transcriber = createWindowsTranscriber({ run, tempDir, concurrency: 1, timeoutMs: 1_000 });
+
+    const first = transcriber.transcribe({ file: audio('segment-1.webm'), prompt: '' });
+    const second = transcriber.transcribe({ file: audio('segment-2.webm'), prompt: '' });
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    release();
+    await expect(Promise.all([first, second])).resolves.toEqual(['今天的會議', '今天的會議']);
+
+    const secondFfmpeg = calls.filter((c) => c.command === 'ffmpeg')[1]!;
+    // The second segment arrived with the first, so ~400 ms of its 1 s budget went to waiting.
+    expect(secondFfmpeg.timeoutMs).toBeLessThanOrEqual(650);
+  });
+
+  it('fails a segment whose budget ran out while it was queued, without starting ffmpeg', async () => {
+    let release: () => void = () => {};
+    const { run, calls } = fakeRunner(async (command) => {
+      if (command === 'ffmpeg' && calls.length === 1) {
+        await new Promise<void>((resolve) => (release = resolve));
+      }
+      return answerAll(command);
+    });
+    const transcriber = createWindowsTranscriber({ run, tempDir, concurrency: 1, timeoutMs: 100 });
+
+    const first = transcriber.transcribe({ file: audio('segment-1.webm'), prompt: '' });
+    const second = transcriber.transcribe({ file: audio('segment-2.webm'), prompt: '' });
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    release();
+    await first;
+    await expect(second).rejects.toThrow(/queue/);
+    expect(calls.filter((c) => c.command === 'ffmpeg')).toHaveLength(1);
   });
 
   it('shares one 30 s budget across both steps and passes the request signal on', async () => {

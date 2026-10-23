@@ -49,7 +49,7 @@ describe('startApp', () => {
   it('applies an #oc-setup link before the app reads its settings, then drops the hash', async () => {
     const container = mount();
     const encoded = encodeSetupPayload({
-      apiBaseUrl: 'http://localhost:5173/api',
+      apiBaseUrl: `${window.location.origin}/api`,
       accessKey: 'prototype-key-0123',
     });
     window.history.replaceState(null, '', `/#oc-setup=${encoded}`);
@@ -58,7 +58,7 @@ describe('startApp', () => {
 
     expect(window.location.hash).toBe('');
     expect(JSON.parse(localStorage.getItem('oc.settings') ?? 'null')).toEqual({
-      apiBaseUrl: 'http://localhost:5173/api',
+      apiBaseUrl: `${window.location.origin}/api`,
       accessKey: 'prototype-key-0123',
     });
     // Configured from the first render: the record button says 錄製, not 請先設定.

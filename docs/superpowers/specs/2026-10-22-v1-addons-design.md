@@ -42,7 +42,7 @@
 - 實作 `apps/api/src/transcriber/windowsTranscriber.ts`：
   1. 上傳的音訊寫進暫存檔，再用 `ffmpeg -i <in> -ar 16000 -ac 1 -f wav <out.wav>` 轉檔。ffmpeg 路徑取 `FFMPEG_PATH`，沒設定就用 PATH 上的 `ffmpeg`。
   2. 用 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File apps/api/scripts/windows-stt.ps1 -Wav <out.wav>` 辨識。這支腳本必須存成 **UTF-8 with BOM**，否則 Windows PowerShell 5 會讀錯中文。腳本用 `SpeechRecognitionEngine(zh-TW)` 搭配 `DictationGrammar` 和 `SetInputToWaveFile`，迴圈呼叫 `Recognize()`，回傳 null **或丟出例外**都視為結束，避免無窮迴圈。最後把結果以 UTF-8 JSON `{ "text": "..." }` 輸出到 stdout。
-  3. 單次辨識逾時 30 秒，最多同時處理 2 段，多的排隊。暫存檔一律在 `finally` 刪除。
+  3. 單次辨識逾時 30 秒（從請求進來起算，排隊時間也算，與前端的請求逾時一致），最多同時處理 2 段，多的排隊。暫存檔一律在 `finally` 刪除。
   4. 忽略 `prompt`。輸出照樣經過 `toTraditional`。
 - 錯誤處理：ffmpeg 或 PowerShell 失敗、逾時都丟錯，由後端對應成 502 `upstream_error`。
 - 啟動檢查：provider 是 `windows`，但不在 Windows 上或找不到 ffmpeg 時，立即失敗並給出明確訊息。Docker（Linux）映像不支援這個 provider，README 要寫明。
@@ -68,7 +68,7 @@
   2. Chromium 帶 `--use-fake-ui-for-media-stream`、`--use-fake-device-for-media-stream`、`--use-file-for-fake-audio-capture=<wav>` 啟動。
   3. 啟動真的後端，用 `#oc-setup` 填好設定，按「錄製」，約 25 秒後按「停止」。後端走預設的 provider 選擇順序：有 Groq key 就真的打 Groq，否則用 `windows` 離線辨識。
   4. **判定**：編輯器裡至少出現 3 個預先指定關鍵詞中的 2 個（繁體）；不能出現簡體字樣本（例如「这」「们」）；而且沒有任何未轉寫標記。關鍵詞要挑 Windows 辨識器也能穩定辨識出來的詞（例如「會議」「測試」「版本」）。
-- 這台機器沒有 key 時用 `windows` provider 跑，所以**一定要實際跑過並通過**。只有在非 Windows、而且沒有任何 key 的環境才 skip。測試報告要寫明這次用的是哪個 provider。
+- 這台機器沒有 key 時用 `windows` provider 跑，所以**一定要實際跑過並通過**。只有在非 Windows、而且沒有任何 key 的環境才 skip。（實作註：測試音訊要用 Windows 的 System.Speech 合成，所以非 Windows 一律 skip，即使有 key；見 M6-frontend 計畫的設計決策 9。）測試報告要寫明這次用的是哪個 provider。
 - 執行指令：`npm run e2e:real -w @oc/web`。
 
 ## 2. M7：GitHub Actions CI

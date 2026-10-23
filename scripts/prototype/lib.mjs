@@ -108,6 +108,18 @@ export function ensureAccessKey({ env, envLocalPath, createKey = generateAccessK
   return { key, source: 'created' };
 }
 
+/**
+ * The backend's environment. ACCESS_KEYS is passed on only when ensureAccessKey took the key from
+ * it; otherwise (unset, or separators only like ",") the backend gets the key the setup link carries.
+ */
+export function apiEnvironment(env, access) {
+  return {
+    ...env,
+    ACCESS_KEYS: access.source === 'env' ? env.ACCESS_KEYS : access.key,
+    PORT: String(API_PORT),
+  };
+}
+
 /** base64url(JSON) without padding, as packages/core/src/settings/setupLink.ts decodes it. */
 export function encodeSetup({ apiBaseUrl, accessKey }) {
   return Buffer.from(JSON.stringify({ apiBaseUrl, accessKey }), 'utf8').toString('base64url');

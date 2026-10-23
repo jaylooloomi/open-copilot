@@ -55,9 +55,9 @@ prompt：前端會送前一段最後 200 字當 `prompt`。Whisper 系列的 pro
 
 沒有雲端金鑰時的備案，也可以用 `TRANSCRIBE_PROVIDER=windows` 指定。每一段音訊：
 
-1. 寫進暫存檔，用 `ffmpeg -i <in> -ar 16000 -ac 1 -f wav <out.wav>` 轉成 16 kHz 單聲道 WAV（ffmpeg 取 `FFMPEG_PATH`，沒設定就用 PATH 上的 `ffmpeg`）。
+1. 寫進暫存檔（副檔名只保留 .webm/.ogg/.oga/.opus/.m4a/.mp4/.wav，其他用 .bin），用 `ffmpeg -protocol_whitelist file -format_whitelist matroska,webm,ogg,mov,mp4,m4a,wav -i <in> -ar 16000 -ac 1 -f wav <out.wav>` 轉成 16 kHz 單聲道 WAV（ffmpeg 取 `FFMPEG_PATH`，沒設定就用 PATH 上的 `ffmpeg`）。只允許本機檔案和音訊容器，上傳 HLS 或 concat 清單也讀不到伺服器上的其他檔案。
 2. 執行 `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File apps/api/scripts/windows-stt.ps1 -Wav <out.wav>`，用 `System.Speech` 的 zh-TW 聽寫辨識，輸出 UTF-8 JSON `{ "text": "..." }`。
-3. 從開始處理該段起算 30 秒逾時（排隊時間不算）；最多同時處理 2 段，其餘排隊；暫存檔一律刪除。ffmpeg 或 PowerShell 失敗、逾時都回 502 `upstream_error`。
+3. 從請求進來起算 30 秒逾時（排隊時間也算，和前端每個請求 30 秒的逾時一致；排隊時就用完的段直接失敗，不再轉檔）；最多同時處理 2 段，其餘排隊；暫存檔一律刪除。ffmpeg 或 PowerShell 失敗、逾時都回 502 `upstream_error`。
 
 限制：不加標點、準確度比 Groq 低（例：「請小明」可能變成「井小民」）；`prompt` 會被忽略。啟動時找不到 ffmpeg 會印出 `[config] ffmpeg not found at "..."` 並以 exit code 1 結束；不在 Windows 上指定 `windows` 也會拒絕啟動。安裝 ffmpeg：`winget install Gyan.FFmpeg`（裝好後重開終端機），或把 `FFMPEG_PATH` 設成 `ffmpeg.exe` 的完整路徑。
 

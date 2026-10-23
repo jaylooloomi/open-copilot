@@ -55,10 +55,20 @@ function readSetupParam(hash: string): string | null {
   return new URLSearchParams(hash.slice(1)).get(SETUP_HASH_PARAM);
 }
 
+function isSameOrigin(url: string, origin: string): boolean {
+  try {
+    return new URL(url).origin === origin;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * App 啟動時呼叫（在讀取設定之前）：hash 有 `oc-setup` 就驗證，合法才存進設定；
  * 不論合不合法都立刻用 history.replaceState 把 hash 移除，因為裡面可能有存取金鑰。
  * 存檔失敗（例如 localStorage 已滿或被封鎖）也回 'invalid'，舊設定維持不變。
+ * 後端網址必須和目前頁面同源（prototype 用 `<網頁>/api`、M9 用 `<tunnel>/api`）：別人做的連結
+ * 若指向其他網站，會把之後的錄音和金鑰送過去，所以一律當成 'invalid'，不覆蓋設定。
  */
 export function applySetupLink(
   win: Pick<Window, 'location' | 'history'> = window,
@@ -67,7 +77,7 @@ export function applySetupLink(
   if (encoded === null) return 'none';
   const settings = decodeSetupPayload(encoded);
   let saved = false;
-  if (settings) {
+  if (settings && isSameOrigin(settings.apiBaseUrl, win.location.origin)) {
     saveSettings(settings);
     const stored = loadSettings();
     saved = stored.apiBaseUrl === settings.apiBaseUrl && stored.accessKey === settings.accessKey;

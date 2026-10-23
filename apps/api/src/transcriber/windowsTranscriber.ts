@@ -8,7 +8,10 @@ import type { Transcriber } from './types';
 
 /** 啟動紀錄顯示的「模型」名稱。 */
 export const WINDOWS_STT_MODEL = 'System.Speech zh-TW';
-/** 一段音訊從轉檔到辨識完成的期限（ffmpeg 與 PowerShell 共用），不含排隊時間。 */
+/**
+ * 一段音訊從請求進來到辨識完成的期限（排隊、ffmpeg 與 PowerShell 共用）。前端每個請求也是 30 秒
+ * 逾時，所以從請求進來起算，後端不會為前端已放棄的請求繼續做事。
+ */
 export const WINDOWS_STT_TIMEOUT_MS = 30_000;
 /** 同時處理的段數上限，其餘排隊。 */
 export const WINDOWS_STT_CONCURRENCY = 2;
@@ -38,11 +41,24 @@ export interface WindowsTranscriberOptions {
   tempDir?: string;
 }
 
-/** 暫存檔沿用上傳檔的副檔名（ffmpeg 會再自己判斷格式）；看起來怪的一律用 .bin。 */
+/** 暫存檔只沿用常見音訊的副檔名，其他（例如 .m3u8 播放清單）一律用 .bin。 */
+const AUDIO_EXTENSIONS = new Set(['.webm', '.ogg', '.oga', '.opus', '.m4a', '.mp4', '.wav']);
+
 function inputExtension(filename: string): string {
   const ext = extname(filename).toLowerCase();
-  return /^\.[a-z0-9]{1,8}$/.test(ext) ? ext : '.bin';
+  return AUDIO_EXTENSIONS.has(ext) ? ext : '.bin';
 }
+
+/**
+ * ffmpeg 只能讀本機檔案、只能用音訊容器的解析器：上傳的檔案若是 HLS 播放清單或 concat 清單，
+ * 不會被拿去讀伺服器上的其他檔案。
+ */
+export const FFMPEG_INPUT_GUARD = [
+  '-protocol_whitelist',
+  'file',
+  '-format_whitelist',
+  'matroska,webm,ogg,mov,mp4,m4a,wav',
+] as const;
 
 /** stepMs 是這一步實際拿到的時間（共用期限剩下的部分），budgetMs 是整段的期限。 */
 function assertSucceeded(
@@ -103,10 +119,18 @@ export function createWindowsTranscriber(options: WindowsTranscriberOptions = {}
   } = options;
   const limit = createLimiter(concurrency);
 
-  async function transcribeOnce(file: File, signal: AbortSignal | undefined): Promise<string> {
+  async function transcribeOnce(
+    file: File,
+    signal: AbortSignal | undefined,
+    deadline: number,
+  ): Promise<string> {
     // 排隊期間用戶端已斷線：不必再轉檔。
     signal?.throwIfAborted();
-    const deadline = Date.now() + timeoutMs;
+    if (Date.now() >= deadline) {
+      throw new WindowsTranscribeError(
+        `timed out after waiting in the queue (${timeoutMs}ms budget per segment)`,
+      );
+    }
     const remaining = () => Math.max(1, deadline - Date.now());
     const dir = await mkdtemp(join(tempDir, 'oc-stt-'));
     try {
@@ -116,7 +140,7 @@ export function createWindowsTranscriber(options: WindowsTranscriberOptions = {}
       const ffmpegMs = remaining();
       const converted = await run(
         ffmpegPath,
-        ['-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-i', input, '-ar', '16000', '-ac', '1', '-f', 'wav', wav],
+        ['-nostdin', '-hide_banner', '-loglevel', 'error', '-y', ...FFMPEG_INPUT_GUARD, '-i', input, '-ar', '16000', '-ac', '1', '-f', 'wav', wav],
         { timeoutMs: ffmpegMs, signal },
       );
       // 執行中被取消時 runProcess 回 code null；改丟 AbortError，不要報成「exited with code null」。
@@ -145,7 +169,9 @@ export function createWindowsTranscriber(options: WindowsTranscriberOptions = {}
 
   return {
     transcribe({ file, signal }) {
-      return limit(() => transcribeOnce(file, signal));
+      // 期限從請求進來就開始算，排隊時間也算在內。
+      const deadline = Date.now() + timeoutMs;
+      return limit(() => transcribeOnce(file, signal, deadline));
     },
   };
 }
