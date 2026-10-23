@@ -44,8 +44,18 @@ function inputExtension(filename: string): string {
   return /^\.[a-z0-9]{1,8}$/.test(ext) ? ext : '.bin';
 }
 
-function assertSucceeded(result: ProcessResult, step: string, timeoutMs: number): void {
-  if (result.timedOut) throw new WindowsTranscribeError(`${step} timed out after ${timeoutMs}ms`);
+/** stepMs 是這一步實際拿到的時間（共用期限剩下的部分），budgetMs 是整段的期限。 */
+function assertSucceeded(
+  result: ProcessResult,
+  step: string,
+  stepMs: number,
+  budgetMs: number,
+): void {
+  if (result.timedOut) {
+    throw new WindowsTranscribeError(
+      `${step} timed out after ${stepMs}ms (${budgetMs}ms budget per segment)`,
+    );
+  }
   if (result.code !== 0) {
     const detail = result.stderr
       .trim()
@@ -103,18 +113,23 @@ export function createWindowsTranscriber(options: WindowsTranscriberOptions = {}
       const input = join(dir, `input${inputExtension(file.name)}`);
       const wav = join(dir, 'audio.wav');
       await writeFile(input, new Uint8Array(await file.arrayBuffer()));
+      const ffmpegMs = remaining();
       const converted = await run(
         ffmpegPath,
         ['-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-i', input, '-ar', '16000', '-ac', '1', '-f', 'wav', wav],
-        { timeoutMs: remaining(), signal },
+        { timeoutMs: ffmpegMs, signal },
       );
-      assertSucceeded(converted, 'ffmpeg', timeoutMs);
+      // 執行中被取消時 runProcess 回 code null；改丟 AbortError，不要報成「exited with code null」。
+      signal?.throwIfAborted();
+      assertSucceeded(converted, 'ffmpeg', ffmpegMs, timeoutMs);
+      const sttMs = remaining();
       const recognized = await run(
         'powershell.exe',
         ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Wav', wav],
-        { timeoutMs: remaining(), signal },
+        { timeoutMs: sttMs, signal },
       );
-      assertSucceeded(recognized, 'windows-stt', timeoutMs);
+      signal?.throwIfAborted();
+      assertSucceeded(recognized, 'windows-stt', sttMs, timeoutMs);
       return parseSttOutput(recognized.stdout);
     } finally {
       // 刪不掉（例如被 kill 的程序還沒放開檔案）只記錄，不蓋掉原本的結果或錯誤。

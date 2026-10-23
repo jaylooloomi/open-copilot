@@ -139,11 +139,40 @@ describe('createWindowsTranscriber', () => {
   });
 
   it('fails with a timeout error and still deletes the temp files', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
     const { run, calls } = fakeRunner(() => ({ ...ok(), code: null, timedOut: true }));
     const transcriber = createWindowsTranscriber({ run, tempDir });
     await expect(transcriber.transcribe({ file: audio(), prompt: '' })).rejects.toThrow(
-      'ffmpeg timed out after 30000ms',
+      'ffmpeg timed out after 30000ms (30000ms budget per segment)',
     );
+    expect(calls).toHaveLength(1);
+    expect(await readdir(tempDir)).toEqual([]);
+  });
+
+  it('reports the time the timed-out step actually had, not the whole budget', async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const { run } = fakeRunner((command) => {
+      if (command === 'powershell.exe') return { ...ok(), code: null, timedOut: true };
+      now += 25_000; // ffmpeg used 25 s of the 30 s budget
+      return ok();
+    });
+    const transcriber = createWindowsTranscriber({ run, tempDir });
+    await expect(transcriber.transcribe({ file: audio(), prompt: '' })).rejects.toThrow(
+      'windows-stt timed out after 5000ms (30000ms budget per segment)',
+    );
+  });
+
+  it('surfaces a cancellation during a step as an AbortError, not an exit code', async () => {
+    const controller = new AbortController();
+    const { run, calls } = fakeRunner(() => {
+      controller.abort();
+      return { ...ok(), code: null };
+    });
+    const transcriber = createWindowsTranscriber({ run, tempDir });
+    await expect(
+      transcriber.transcribe({ file: audio(), prompt: '', signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
     expect(calls).toHaveLength(1);
     expect(await readdir(tempDir)).toEqual([]);
   });
@@ -171,11 +200,17 @@ describe('createWindowsTranscriber', () => {
 
   it('runs at most two segments at a time and queues the rest', async () => {
     const gates: (() => void)[] = [];
-    const { run } = fakeRunner((command) =>
-      command === 'powershell.exe'
-        ? ok(sttJson('好'))
-        : new Promise<ProcessResult>((resolve) => gates.push(() => resolve(ok()))),
-    );
+    let active = 0;
+    let maxActive = 0;
+    const { run } = fakeRunner((command) => {
+      if (command === 'powershell.exe') {
+        active -= 1;
+        return ok(sttJson('好'));
+      }
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      return new Promise<ProcessResult>((resolve) => gates.push(() => resolve(ok())));
+    });
     const transcriber = createWindowsTranscriber({ run, tempDir });
 
     const results = [1, 2, 3].map((n) =>
@@ -190,6 +225,7 @@ describe('createWindowsTranscriber', () => {
     gates[1]!();
     gates[2]!();
     await expect(Promise.all(results)).resolves.toEqual(['好', '好', '好']);
+    expect(maxActive).toBe(2);
   });
 
   it('does not start anything for a request that was already cancelled', async () => {
