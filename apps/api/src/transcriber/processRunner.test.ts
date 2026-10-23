@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createLimiter, runProcess } from './processRunner';
+import { MAX_STDERR_CHARS, createLimiter, runProcess } from './processRunner';
 
 const node = process.execPath;
 
@@ -43,6 +43,43 @@ describe('runProcess', () => {
     expect(result.code).toBeNull();
     expect(result.timedOut).toBe(false);
   });
+
+  it('keeps only the first MAX_STDERR_CHARS characters of stderr', async () => {
+    const result = await runProcess(
+      node,
+      ['-e', `process.stderr.write("x".repeat(${MAX_STDERR_CHARS * 3}))`],
+      { timeoutMs: 10_000 },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stderr.length).toBe(MAX_STDERR_CHARS);
+  });
+
+  it('escalates to a hard kill when the process ignores the first kill', async () => {
+    // POSIX 上第一次 kill 是 SIGTERM，這個子程序會忽略它；Windows 的 kill 本來就是強制結束。
+    const started = Date.now();
+    const result = await runProcess(
+      node,
+      ['-e', 'process.on("SIGTERM", () => {}); setTimeout(() => {}, 30000)'],
+      { timeoutMs: 300 },
+    );
+    expect(result.timedOut).toBe(true);
+    expect(result.code).toBeNull();
+    expect(Date.now() - started).toBeLessThan(6000);
+  }, 15_000);
+
+  it('settles after a timeout even when a grandchild still holds the output pipes', async () => {
+    // 子程序再開一個繼承 stdout/stderr 的孫程序，孫程序活得比逾時久，'close' 不會準時到。
+    const script = [
+      'const { spawn } = require("node:child_process");',
+      'spawn(process.execPath, ["-e", "setTimeout(() => {}, 8000)"], { stdio: ["ignore", "inherit", "inherit"] });',
+      'setTimeout(() => {}, 30000);',
+    ].join(' ');
+    const started = Date.now();
+    const result = await runProcess(node, ['-e', script], { timeoutMs: 500 });
+    expect(result.timedOut).toBe(true);
+    expect(result.code).toBeNull();
+    expect(Date.now() - started).toBeLessThan(6000);
+  }, 15_000);
 
   it('does not start anything when the signal is already aborted', async () => {
     const result = await runProcess('oc-never-started', [], {
