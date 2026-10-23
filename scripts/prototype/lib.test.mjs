@@ -336,6 +336,27 @@ test('watchTunnel gives up when every stream ends, on timeout, or when cancelled
   chattyWatch.cancel();
 });
 
+
+test('watchTunnel survives stream errors, settles with no streams, and keeps partial lines bounded', async () => {
+  const broken = new PassThrough();
+  const brokenWatch = watchTunnel([broken], { timeoutMs: 5_000 });
+  broken.write('2026-10-23T01:02:03Z ERR pipe went away');
+  broken.destroy(new Error('EPIPE'));
+  assert.equal(await brokenWatch.ready, null);
+  assert.deepEqual(brokenWatch.tail(), ['2026-10-23T01:02:03Z ERR pipe went away']);
+
+  const started = Date.now();
+  assert.equal(await watchTunnel([], { timeoutMs: 5_000 }).ready, null);
+  assert.ok(Date.now() - started < 1_000, 'no streams settles at once');
+
+  const noisy = new PassThrough();
+  const noisyWatch = watchTunnel([noisy], { timeoutMs: 5_000, maxLineLength: 100 });
+  noisy.write('x'.repeat(250));
+  noisy.end();
+  assert.equal(await noisyWatch.ready, null);
+  assert.ok(noisyWatch.tail().every((line) => line.length <= 100), 'partial lines are capped');
+});
+
 test('shareSetupUrl points the phone at <tunnel>/api through #oc-setup', () => {
   const link = shareSetupUrl('https://quiet-river-1234.trycloudflare.com', 'k-0123456789abcdef');
   assert.equal(

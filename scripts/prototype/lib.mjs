@@ -262,9 +262,10 @@ export function findTunnelUrl(line) {
  * Reads cloudflared's output. `ready` resolves with the tunnel URL once the URL and a registered
  * connection have both been logged, or with null when every stream ends, `timeoutMs` passes or
  * cancel() is called. tail() returns the last `tailLines` non-blank lines for error messages.
- * The streams keep being read after `ready`, so cloudflared never blocks on a full pipe.
+ * The streams keep being read after `ready`, so cloudflared never blocks on a full pipe. A stream
+ * error counts as the stream closing; a line longer than `maxLineLength` is cut to that length.
  */
-export function watchTunnel(streams, { timeoutMs = 90_000, tailLines = 20 } = {}) {
+export function watchTunnel(streams, { timeoutMs = 90_000, tailLines = 20, maxLineLength = 8_192 } = {}) {
   const tail = [];
   let url = null;
   let connected = false;
@@ -281,7 +282,8 @@ export function watchTunnel(streams, { timeoutMs = 90_000, tailLines = 20 } = {}
     resolveReady(value);
   };
   const timer = setTimeout(() => finish(null), timeoutMs);
-  const onLine = (line) => {
+  const onLine = (whole) => {
+    const line = whole.slice(0, maxLineLength);
     if (line.trim() === '') return;
     tail.push(line);
     if (tail.length > tailLines) tail.shift();
@@ -297,16 +299,23 @@ export function watchTunnel(streams, { timeoutMs = 90_000, tailLines = 20 } = {}
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? '';
       for (const line of lines) onLine(line);
+      // A line with no newline yet keeps only what onLine would keep.
+      if (buffer.length > maxLineLength) buffer = buffer.slice(0, maxLineLength);
     });
-    stream.on('end', () => {
+    const flush = () => {
       if (buffer !== '') onLine(buffer);
       buffer = '';
-    });
+    };
+    stream.on('end', flush);
+    // A broken pipe must not crash the launcher; 'close' follows and settles `ready`.
+    stream.on('error', () => {});
     stream.on('close', () => {
+      flush();
       open -= 1;
       if (open === 0) finish(null);
     });
   }
+  if (streams.length === 0) finish(null);
   return { ready, tail: () => [...tail], cancel: () => finish(null) };
 }
 
