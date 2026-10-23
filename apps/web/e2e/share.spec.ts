@@ -9,10 +9,9 @@ test.use(pixel7);
 /**
  * What the phone opens: <tunnel>/#oc-setup=… with apiBaseUrl <tunnel>/api (shareSetupUrl in
  * scripts/prototype/lib.mjs). The dev server stands in for the tunnel origin, and page.route
- * answers /api before the Vite proxy, so no backend is involved.
+ * answers /api before the Vite proxy, so no backend is involved. The API URL is built from
+ * baseURL so it stays same-origin with the page, which #oc-setup requires.
  */
-const ORIGIN = 'http://localhost:5173';
-const SHARE_API = `${ORIGIN}/api`;
 const ACCESS_KEY = 'share-key-0123456789';
 
 /** What scripts/prototype.mjs puts after #oc-setup=. */
@@ -41,12 +40,18 @@ function savedNotesContain(page: Page, text: string): Promise<boolean> {
         open.onerror = () => reject(open.error);
         open.onsuccess = () => {
           const db = open.result;
-          const request = db.transaction('notes', 'readonly').objectStore('notes').getAll();
-          request.onerror = () => reject(request.error);
-          request.onsuccess = () => {
+          try {
+            const request = db.transaction('notes', 'readonly').objectStore('notes').getAll();
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+              db.close();
+              resolve(JSON.stringify(request.result).includes(needle));
+            };
+          } catch (error) {
+            // A missing store throws here; pass it on instead of leaving the poll to time out.
             db.close();
-            resolve(JSON.stringify(request.result).includes(needle));
-          };
+            reject(error);
+          }
         };
       }),
     text,
@@ -59,8 +64,10 @@ test('開發伺服器接受 Cloudflare quick tunnel 的網域，其他網域仍�
   expect(await statusForHost(baseURL!, 'evil.example')).toBe(403);
 });
 
-test('手機開啟分享網址：自動填好設定，錄音轉寫後重新整理內容仍在', async ({ page }) => {
+test('手機開啟分享網址：自動填好設定，錄音轉寫後重新整理內容仍在', async ({ page, baseURL }) => {
   test.setTimeout(60_000);
+  expect(baseURL).toBeTruthy();
+  const SHARE_API = new URL('/api', baseURL).href;
   const authorization: (string | undefined)[] = [];
   await page.route(`${SHARE_API}/health`, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }),
