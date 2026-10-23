@@ -1,7 +1,12 @@
 // @vitest-environment node
 // (esbuild, which vite.config.ts pulls in, refuses to load under jsdom.)
 import { describe, expect, it } from 'vitest';
-import config, { API_PROXY_PATH, API_PROXY_TARGET, stripApiPrefix } from '../vite.config';
+import config, {
+  API_PROXY_PATH,
+  API_PROXY_TARGET,
+  SHARE_ALLOWED_HOSTS,
+  stripApiPrefix,
+} from '../vite.config';
 
 interface ProxyRule {
   target: string;
@@ -45,5 +50,13 @@ describe('vite.config', () => {
     expect(stripApiPrefix('/api/ai/summary')).toBe('/ai/summary');
     expect(stripApiPrefix('/api')).toBe('/');
     expect(stripApiPrefix('/api?probe=1')).toBe('/?probe=1');
+  });
+
+  it('lets Cloudflare quick tunnel hosts reach the dev server (npm run prototype -- --share)', () => {
+    expect(SHARE_ALLOWED_HOSTS).toEqual(['.trycloudflare.com']);
+    expect(config.server?.allowedHosts).toBe(SHARE_ALLOWED_HOSTS);
+    // vite preview inherits server.allowedHosts and server.proxy, so a tunnel to 4173 works too.
+    expect(config.preview?.allowedHosts).toBeUndefined();
+    expect(config.preview?.proxy).toBeUndefined();
   });
 });

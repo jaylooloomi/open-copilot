@@ -6,6 +6,12 @@ export const API_PROXY_TARGET = 'http://localhost:8787';
 /** `/api`, `/api/...` and `/api?...`, but not lookalikes such as `/apiary`. */
 export const API_PROXY_PATH = '^/api(?:[/?]|$)';
 
+/**
+ * Hosts a Cloudflare quick tunnel uses (`npm run prototype -- --share`), e.g.
+ * quiet-river-1234.trycloudflare.com. Vite rejects any other non-localhost Host with 403.
+ */
+export const SHARE_ALLOWED_HOSTS = ['.trycloudflare.com'];
+
 /** `/api/transcribe` → `/transcribe`, `/api` → `/`; the query string is kept. */
 export function stripApiPrefix(path: string): string {
   const stripped = path.replace(/^\/api(?=[/?]|$)/, '');
@@ -17,6 +23,8 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // The share URL (npm run prototype -- --share) reaches this server through a quick tunnel.
+    allowedHosts: SHARE_ALLOWED_HOSTS,
     // apps/web/android is the Capacitor project; Gradle writes thousands of files there.
     watch: { ignored: ['**/android/**'] },
     // Same-origin backend for the prototype: http://localhost:5173/api/* → http://localhost:8787/*,
