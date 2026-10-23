@@ -13,7 +13,9 @@ try {
   $engine.SetInputToWaveFile($Wav)
   while ($true) {
     # Recognize() returns null at the end of the file; some files throw instead. Both end the loop.
-    try { $result = $engine.Recognize() } catch { break }
+    # The exception text goes to stderr so a partial transcript can still be diagnosed; the normal
+    # end-of-file exception ("no audio input") lands there too and is harmless on exit code 0.
+    try { $result = $engine.Recognize() } catch { [Console]::Error.WriteLine($_.Exception.Message); break }
     if ($null -eq $result) { break }
     if ($result.Text) { $parts.Add($result.Text) }
   }

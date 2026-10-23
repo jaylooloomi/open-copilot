@@ -26,8 +26,10 @@ describe('windows-stt.ps1', () => {
     expect(text).toContain('SetInputToWaveFile($Wav)');
   });
 
-  it('ends the Recognize() loop on null or on an exception', () => {
-    expect(text).toContain('try { $result = $engine.Recognize() } catch { break }');
+  it('ends the Recognize() loop on null or on an exception, reporting the exception on stderr', () => {
+    expect(text).toContain(
+      'try { $result = $engine.Recognize() } catch { [Console]::Error.WriteLine($_.Exception.Message); break }',
+    );
     expect(text).toContain('if ($null -eq $result) { break }');
   });
 
