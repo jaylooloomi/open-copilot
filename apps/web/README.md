@@ -16,6 +16,50 @@ open-copilot 的網頁入口（Vite + React）。所有畫面與邏輯都在 `pa
 | `npm run build -w @oc/web` | 正式建置，輸出到 `apps/web/dist` |
 | `npm run preview -w @oc/web` | 以靜態伺服器提供 `apps/web/dist`，網址 `http://localhost:4173` |
 
+## 一鍵啟動原型（`npm run prototype`）
+
+在 repo 根目錄執行：
+
+```bash
+npm run prototype
+```
+
+啟動器（`scripts/prototype.mjs`）會：
+
+1. 決定轉寫服務：環境變數、`apps/api/.env.local` 或 `apps/api/.env` 有 `GROQ_API_KEY` 或 `OPENAI_API_KEY` 就用雲端；都沒有時，在 Windows 上改用內建離線辨識，並印出「目前使用 Windows 內建離線辨識，設定 GROQ_API_KEY 可提高準確度」；沒有金鑰而且不是 Windows、或 Windows 上找不到 ffmpeg（`FFMPEG_PATH` 或 PATH 上的 `ffmpeg`）時，在啟動任何伺服器之前印出申請 Groq 金鑰的步驟並以 exit code 1 結束。
+2. 沒有 `ACCESS_KEYS` 時產生一把隨機存取金鑰，寫進 `apps/api/.env.local`（已被 `.gitignore` 排除），之後重複使用。
+3. 同時啟動後端（`http://localhost:8787`）和網頁開發伺服器（`http://localhost:5173`）。任何一個結束，另一個也會停止；按 Ctrl+C 會一起關閉。
+4. 開啟瀏覽器到 `http://localhost:5173/#oc-setup=...`。網頁讀到 `#oc-setup` 後，把後端網址 `http://localhost:5173/api` 和存取金鑰存進設定，並立刻從網址列移除；格式不對就忽略、保留原設定。
+
+選項：`npm run prototype -- --no-open`（不開瀏覽器，只印出網址）、`npm run prototype -- --check`（兩個服務和 `/api` proxy 都正常後自動結束，用來檢查環境）。
+
+印出的網址含存取金鑰，不要分享。開發伺服器會把 `/api/*` 轉到 `http://localhost:8787/*`（`vite.config.ts` 的 `server.proxy`），所以網頁版是同源呼叫後端，不會遇到 CORS。8787 和 5173 必須空著。
+
+Windows 離線辨識需要 ffmpeg（`winget install Gyan.FFmpeg`，或用 `FFMPEG_PATH` 指定），結果不含標點，準確度也比 Groq 低。
+
+### 桌面版搭配原型後端
+
+1. 先執行 `npm run prototype`，讓後端保持執行。
+2. 開啟桌面版（`npm run dev -w @oc/desktop` 或安裝版），按右上齒輪開啟「設定」。
+3. 「後端網址」填 `http://localhost:8787`；「存取金鑰」填 `apps/api/.env.local` 裡 `ACCESS_KEYS=` 後面的值（自訂了 `ACCESS_KEYS` 時填第一把）。按「測試連線」，再按「儲存」。
+
+後端的 CORS 預設允許 `app://bundle`，不用另外設定。
+
+## 真實語音端對端測試（`npm run e2e:real`）
+
+不在預設的 `npm run e2e` 和 CI 裡，只能在 Windows 執行：
+
+```bash
+npm run e2e:real -w @oc/web
+```
+
+1. 用 PowerShell `System.Speech` 的繁中語音（優先 `Microsoft Hanhan`，沒有就用任一個 zh-TW 語音）把約 22 秒的固定句子合成 WAV（`apps/api/scripts/windows-tts.ps1`）。
+2. Chromium 以這個 WAV 當麥克風（`--use-file-for-fake-audio-capture`）。
+3. 啟動真的後端（8787，不讀 `apps/api/.env`）和網頁開發伺服器（5173），用 `#oc-setup` 填好設定，錄 25 秒後停止。
+4. 通過條件：「會議」「測試」「版本」至少出現 2 個；沒有簡體字樣本（例如「这」「们」）；沒有未轉寫標記。
+
+轉寫服務依後端的預設順序：這個 shell 有 `GROQ_API_KEY` 就真的呼叫 Groq，否則有 `OPENAI_API_KEY` 用 OpenAI，都沒有就用 Windows 離線辨識。輸出會印出 `[e2e:real] transcribe provider: ...` 和轉寫結果，HTML 報告（`apps/web/playwright-report/real`）的 annotation 也有記錄。
+
 ## 建置產物
 
 `npm run build -w @oc/web` 只產生靜態檔，部署時上傳整個 `apps/web/dist`：
