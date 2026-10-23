@@ -58,6 +58,7 @@
 ## 2. M7：GitHub Actions CI
 
 - `.github/workflows/ci.yml`，觸發條件：推送到任何分支，以及 pull request。
+  （實作註記：pull request 只觸發「目標為 main」的 PR，因為分支推送已經跑過 CI，避免同一次推送跑兩次；見 M7 計畫設計決策 7。）
 - **job `web-api`**（ubuntu-latest，Node 24）：
   1. `npm ci`
   2. `npm run typecheck`
