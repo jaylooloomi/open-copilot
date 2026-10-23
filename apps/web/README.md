@@ -47,7 +47,7 @@ npm run prototype -- --share
 除了上面的步驟，啟動器還會：
 
 1. 用 npm 套件 `cloudflared`（根目錄的 devDependency，安裝時下載執行檔，不用另外安裝系統軟體）執行 `cloudflared tunnel --url http://localhost:5173`，向 Cloudflare 要一個免帳號的 quick tunnel，得到 `https://<隨機名稱>.trycloudflare.com`。
-2. 經過通道檢查 `/api/health`，再印出手機用的網址和 QR code。網址的 `#oc-setup` 帶入 `apiBaseUrl = https://<隨機名稱>.trycloudflare.com/api` 和存取金鑰，手機開啟後自動填好設定；`/api` 由 Vite proxy 轉到本機後端，所以不需要 CORS 設定。
+2. 經過通道檢查 `/api/health`，再印出手機用的網址和 QR code（60 秒內檢查不過仍會印出並加上警告，見下方疑難排解）。網址的 `#oc-setup` 帶入 `apiBaseUrl = https://<隨機名稱>.trycloudflare.com/api` 和存取金鑰，手機開啟後自動填好設定；`/api` 由 Vite proxy 轉到本機後端，所以不需要 CORS 設定。
 3. 印出警告：**分享網址是公開的，請只在測試時開啟，用完按 Ctrl+C 關閉；後端仍然需要存取金鑰。**網址含存取金鑰，只給自己的手機使用。
 
 Vite 的 `server.allowedHosts` 已允許 `.trycloudflare.com`，其他網域仍會被擋（403）。每次執行的網址都不一樣。`npm run prototype -- --share --check` 會在分享網址也能連上後自動結束。
