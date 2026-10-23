@@ -36,12 +36,26 @@ function savedTitles(page: Page): Promise<string[]> {
         open.onerror = () => reject(open.error);
         open.onsuccess = () => {
           const db = open.result;
-          const request = db.transaction('notes', 'readonly').objectStore('notes').getAll();
-          request.onerror = () => reject(request.error);
-          request.onsuccess = () => {
+          // The app may not have created its store yet; report "nothing saved" instead of hanging.
+          if (!db.objectStoreNames.contains('notes')) {
             db.close();
-            resolve((request.result as Array<{ title: string }>).map((note) => note.title));
-          };
+            resolve([]);
+            return;
+          }
+          try {
+            const request = db.transaction('notes', 'readonly').objectStore('notes').getAll();
+            request.onerror = () => {
+              db.close();
+              reject(request.error);
+            };
+            request.onsuccess = () => {
+              db.close();
+              resolve((request.result as Array<{ title: string }>).map((note) => note.title));
+            };
+          } catch (error) {
+            db.close();
+            reject(error);
+          }
         };
       }),
   );
@@ -99,8 +113,12 @@ test('離線時重新整理仍看得到筆記，/api 不會進快取', async ({ 
   await page.getByRole('textbox', { name: '標題' }).fill('離線測試筆記');
   await expect.poll(() => savedTitles(page)).toContain('離線測試筆記');
 
-  // Whatever answers (or not), a backend request must never be stored.
+  // Whatever answers (or not), a backend request must never be stored. This is a smoke check:
+  // strategies such as NetworkFirst write the cache after responding (inside waitUntil), so give
+  // such a delayed cache.put time to land before reading. The NetworkOnly routing itself is
+  // guarded by the unit tests in viteConfig.test.ts.
   await page.evaluate(() => fetch('/api/health').then(() => undefined, () => undefined));
+  await page.waitForTimeout(1_000);
   const cached = await cachedPaths(page);
   expect(cached).toContain('/index.html');
   expect(cached.filter((path) => /^\/api(?:[/?]|$)/.test(path))).toEqual([]);
