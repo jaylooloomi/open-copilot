@@ -10,10 +10,22 @@ import { installBackgroundMicGuard } from './backgroundMicGuard';
 import { createCapacitorFileSaver } from './capacitorFileSaver';
 import { createDesktopFileSaver } from './desktopFileSaver';
 
+/** Which shell runs this page: a plain browser, Electron (M4) or the Capacitor Android app (M5). */
+export type PlatformKind = 'web' | 'desktop' | 'android';
+
+export function detectPlatformKind(
+  location: Pick<Location, 'protocol'> = window.location,
+): PlatformKind {
+  if (Capacitor.isNativePlatform()) return 'android';
+  // apps/desktop serves the page from app://bundle and its preload exposes window.ocDesktop.
+  if (window.ocDesktop || location.protocol === 'app:') return 'desktop';
+  return 'web';
+}
+
 /** Web, Electron (M4) and the Capacitor Android app (M5). */
 export async function selectPlatform(): Promise<Platform> {
   const db = await openAppDb();
-  const isCapacitorApp = Capacitor.isNativePlatform();
+  const isCapacitorApp = detectPlatformKind() === 'android';
   // Android silences a backgrounded app's microphone; end the recording there instead.
   if (isCapacitorApp) installBackgroundMicGuard();
   return {
