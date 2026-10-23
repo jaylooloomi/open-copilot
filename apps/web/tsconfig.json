@@ -3,7 +3,9 @@
   "include": [
     "src",
     "e2e",
+    "e2e-pwa",
     "e2e-real",
+    "scripts",
     "vite.config.ts",
     "vitest.config.ts",
     "playwright.config.ts",
