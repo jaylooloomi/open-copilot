@@ -38,4 +38,10 @@ describe('AndroidManifest.xml', () => {
   it('asks for nothing else', () => {
     expect(permissions()).toHaveLength(3);
   });
+
+  it('keeps app data out of Android backups', () => {
+    // localStorage (oc.settings) holds the access key; the app has its own JSON backup instead.
+    const application = manifest().match(/<application\b[^>]*>/)?.[0] ?? '';
+    expect(application).toMatch(/\sandroid:allowBackup="false"/);
+  });
 });
