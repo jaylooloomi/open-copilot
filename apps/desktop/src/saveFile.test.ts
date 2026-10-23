@@ -37,6 +37,7 @@ describe('createSaveFileHandler', () => {
   it.each([
     ['報告.docx', 'Word 文件', 'docx'],
     ['筆記.txt', '純文字', 'txt'],
+    ['open-copilot-backup.json', 'JSON 備份', 'json'],
   ])('offers a matching file type filter for %s', async (filename, name, ext) => {
     const { saveFile, showSaveDialog } = setup({ canceled: true });
     await saveFile(filename, bytes);

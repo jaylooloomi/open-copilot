@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +8,8 @@ import {
   createWindowsTranscriber,
   findFfmpegProblem,
   parseSttOutput,
+  removeStaleTempDirs,
+  STALE_TEMP_DIR_MS,
   WINDOWS_STT_MAX_QUEUED,
   WINDOWS_STT_TIMEOUT_MS,
 } from './windowsTranscriber';
@@ -378,5 +380,45 @@ describe('findFfmpegProblem', () => {
     const problem = findFfmpegProblem('C:\\missing\\ffmpeg.exe', () => false);
     expect(problem).toContain('ffmpeg not found at "C:\\missing\\ffmpeg.exe"');
     expect(problem).toContain('FFMPEG_PATH');
+  });
+});
+
+describe('removeStaleTempDirs', () => {
+  /** Creates `name` under tempDir and backdates it by ageMs. */
+  async function entry(name: string, ageMs: number, kind: 'dir' | 'file' = 'dir') {
+    const path = join(tempDir, name);
+    if (kind === 'dir') {
+      await mkdir(path);
+      await writeFile(join(path, 'audio.wav'), 'x');
+    } else {
+      await writeFile(path, 'x');
+    }
+    const time = new Date(Date.now() - ageMs);
+    await utimes(path, time, time);
+  }
+
+  it('deletes oc-stt-* folders older than 10 minutes and leaves everything else', async () => {
+    expect(STALE_TEMP_DIR_MS).toBe(10 * 60_000);
+    await entry('oc-stt-killed', 11 * 60_000);
+    await entry('oc-stt-in-use', 60_000);
+    await entry('other-old', 60 * 60_000);
+    await entry('oc-stt-file', 60 * 60_000, 'file');
+
+    await expect(removeStaleTempDirs(tempDir)).resolves.toBe(1);
+
+    expect((await readdir(tempDir)).sort()).toEqual(['oc-stt-file', 'oc-stt-in-use', 'other-old']);
+  });
+
+  it('does nothing when the folder does not exist', async () => {
+    await expect(removeStaleTempDirs(join(tempDir, 'missing'))).resolves.toBe(0);
+  });
+
+  it('runs when the transcriber is created, so folders left by a killed server go away', async () => {
+    await entry('oc-stt-killed', 11 * 60_000);
+    const { run } = fakeRunner(answerAll);
+
+    createWindowsTranscriber({ run, tempDir });
+
+    await vi.waitFor(async () => expect(await readdir(tempDir)).toEqual([]));
   });
 });

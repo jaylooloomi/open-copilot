@@ -13,6 +13,8 @@ RUN npm pkg delete workspaces \
 FROM node:24-slim
 ENV NODE_ENV=production
 ENV PORT=8787
+# The server listens on 127.0.0.1 by default; inside a container that would make -p unreachable.
+ENV HOST=0.0.0.0
 WORKDIR /app
 COPY --from=deps /app/package.json /app/package-lock.json /app/tsconfig.base.json ./
 COPY --from=deps /app/node_modules ./node_modules

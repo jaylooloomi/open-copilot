@@ -4,6 +4,7 @@ import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_ALLOWED_ORIGINS,
+  DEFAULT_HOST,
   MIN_ACCESS_KEY_LENGTH,
   accessKeyWarning,
   loadConfig,
@@ -71,6 +72,7 @@ describe('loadConfig', () => {
         'app://bundle',
       ],
       port: 8787,
+      host: '127.0.0.1',
     });
     expect(config.allowedOrigins).not.toBe(DEFAULT_ALLOWED_ORIGINS);
   });
@@ -88,6 +90,14 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, PORT: 'abc' })).toThrow('PORT');
     expect(() => loadConfig({ ...base, PORT: '0' })).toThrow('PORT');
     expect(() => loadConfig({ ...base, PORT: '70000' })).toThrow('PORT');
+  });
+
+  it('listens on loopback only unless HOST says otherwise', () => {
+    expect(DEFAULT_HOST).toBe('127.0.0.1');
+    expect(loadConfig(base).host).toBe('127.0.0.1');
+    expect(loadConfig({ ...base, HOST: '   ' }).host).toBe('127.0.0.1');
+    expect(loadConfig({ ...base, HOST: ' 0.0.0.0 ' }).host).toBe('0.0.0.0');
+    expect(loadConfig({ ...base, HOST: '::' }).host).toBe('::');
   });
 
   it('falls back to the default port when PORT is blank', () => {
@@ -112,6 +122,9 @@ describe('loadConfig', () => {
       FFMPEG_PATH: '',
       ACCESS_KEYS: '',
     });
+    // HOST stays commented out: an empty `HOST=` in `docker run --env-file` would override the
+    // image's HOST=0.0.0.0 and leave the container listening on its own loopback only.
+    expect(example).not.toHaveProperty('HOST');
     expect(() => loadConfig(example, 'linux')).toThrow('No transcription API key');
     // On Windows the offline provider needs no key, but the missing ACCESS_KEYS still stops it.
     expect(() => loadConfig(example, 'win32')).toThrow('ACCESS_KEYS');

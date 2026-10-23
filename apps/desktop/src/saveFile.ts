@@ -26,6 +26,7 @@ const FILTERS: Record<string, FileFilter> = {
   md: { name: 'Markdown', extensions: ['md'] },
   docx: { name: 'Word 文件', extensions: ['docx'] },
   txt: { name: '純文字', extensions: ['txt'] },
+  json: { name: 'JSON 備份', extensions: ['json'] },
 };
 const ALL_FILES: FileFilter = { name: '所有檔案', extensions: ['*'] };
 

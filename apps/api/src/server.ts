@@ -42,8 +42,9 @@ const app = createApp({
   allowedOrigins: config.allowedOrigins,
 });
 
-const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
-  console.log(`open-copilot api listening on http://localhost:${info.port}`);
+const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
+  const shownHost = info.family === 'IPv6' ? `[${info.address}]` : info.address;
+  console.log(`open-copilot api listening on http://${shownHost}:${info.port}`);
   // 只印服務與模型，不印金鑰。
   console.log(
     `[transcribe] provider ${config.transcriber.provider}, model ${config.transcriber.model}`,
