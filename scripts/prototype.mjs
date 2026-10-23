@@ -139,3 +139,6 @@ if (!shuttingDown) {
 // still closing aborts with a libuv assertion (src/win/async.c) and exit code 127. Both children
 // have exited here and nothing else keeps the event loop alive, so the process ends by itself.
 process.exitCode = ok ? 0 : 1;
+// Safety net: if some stray handle (a future ref'd timer, a socket) keeps the loop alive, exit
+// anyway once the children's handles have had time to close. unref() so it never delays a clean exit.
+setTimeout(() => process.exit(process.exitCode), 2000).unref();
